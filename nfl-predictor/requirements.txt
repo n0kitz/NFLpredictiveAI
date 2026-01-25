@@ -1,0 +1,15 @@
+# NFL Prediction System Dependencies
+
+# Web scraping
+requests>=2.28.0
+beautifulsoup4>=4.11.0
+
+# HTML parsing (optional faster parser)
+lxml>=4.9.0
+
+# Type checking (development)
+typing-extensions>=4.0.0
+
+# Testing (development)
+pytest>=7.0.0
+pytest-cov>=4.0.0

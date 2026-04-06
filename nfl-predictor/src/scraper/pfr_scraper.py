@@ -11,6 +11,12 @@ from dataclasses import dataclass
 import requests
 from bs4 import BeautifulSoup
 
+try:
+    import cloudscraper
+    _HAS_CLOUDSCRAPER = True
+except ImportError:
+    _HAS_CLOUDSCRAPER = False
+
 from ..database.db import Database, get_database
 from .team_mappings import (
     TeamMappings, CURRENT_TEAMS, PFR_TEAM_ABBR_MAP,
@@ -62,12 +68,21 @@ class PFRScraper:
         self.db = db or get_database()
         self.rate_limit = rate_limit
         self.team_mappings = TeamMappings()
+        self._use_cloudscraper = False
+
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
                           'AppleWebKit/537.36 (KHTML, like Gecko) '
                           'Chrome/120.0.0.0 Safari/537.36'
         })
+
+        # Prepare cloudscraper session as fallback
+        if _HAS_CLOUDSCRAPER:
+            self._cs_session = cloudscraper.create_scraper()
+        else:
+            self._cs_session = None
+
         self._last_request_time = 0.0
         self._teams_initialized = False
 
@@ -84,6 +99,8 @@ class PFRScraper:
         """
         Fetch and parse a page from PFR.
 
+        Falls back to cloudscraper if requests gets a 403.
+
         Args:
             url: URL to fetch
 
@@ -92,11 +109,33 @@ class PFRScraper:
         """
         self._rate_limit_wait()
 
+        # Use cloudscraper directly if a previous request already switched
+        session = self._cs_session if self._use_cloudscraper else self.session
+
         try:
             logger.debug(f"Fetching: {url}")
-            response = self.session.get(url, timeout=30)
+            response = session.get(url, timeout=30)
             response.raise_for_status()
             return BeautifulSoup(response.text, 'html.parser')
+        except requests.exceptions.HTTPError as e:
+            if e.response is not None and e.response.status_code == 403 and not self._use_cloudscraper:
+                if self._cs_session is not None:
+                    logger.info("Got 403, retrying with cloudscraper...")
+                    self._use_cloudscraper = True
+                    self._rate_limit_wait()
+                    try:
+                        response = self._cs_session.get(url, timeout=30)
+                        response.raise_for_status()
+                        return BeautifulSoup(response.text, 'html.parser')
+                    except requests.RequestException as e2:
+                        logger.error(f"cloudscraper also failed for {url}: {e2}")
+                        return None
+                else:
+                    logger.error(f"Got 403 for {url} and cloudscraper is not installed. "
+                                 f"Install it with: pip install cloudscraper")
+                    return None
+            logger.error(f"Failed to fetch {url}: {e}")
+            return None
         except requests.RequestException as e:
             logger.error(f"Failed to fetch {url}: {e}")
             return None
@@ -426,7 +465,7 @@ class PFRScraper:
 
         return inserted, skipped
 
-    def scrape_seasons(self, start_year: int = 1990, end_year: int = 2024,
+    def scrape_seasons(self, start_year: int = 1990, end_year: int = 2025,
                        resume: bool = True) -> Dict[str, Any]:
         """
         Scrape multiple seasons of NFL game data.
@@ -494,6 +533,47 @@ class PFRScraper:
 
         return stats
 
+    def parse_season_from_html(self, html: str, season: int) -> List[ScrapedGame]:
+        """
+        Parse games from a locally saved PFR schedule HTML page.
+
+        Use this when PFR blocks automated requests (403). Download the page
+        manually in your browser and pass the HTML content here.
+
+        Args:
+            html: Raw HTML string of the PFR season schedule page
+            season: NFL season year (e.g., 2024)
+
+        Returns:
+            List of ScrapedGame objects
+        """
+        soup = BeautifulSoup(html, 'html.parser')
+
+        games = []
+
+        table = soup.find('table', {'id': 'games'})
+        if not table:
+            logger.error(f"Could not find games table in provided HTML for season {season}")
+            return []
+
+        tbody = table.find('tbody')
+        if not tbody:
+            logger.error(f"Could not find tbody in games table for season {season}")
+            return []
+
+        rows = tbody.find_all('tr')
+
+        for row in rows:
+            if row.get('class') and 'thead' in row.get('class', []):
+                continue
+
+            game = self._parse_game_row(row, season)
+            if game:
+                games.append(game)
+
+        logger.info(f"Parsed {len(games)} games from HTML for {season} season")
+        return games
+
     def get_scrape_progress(self) -> Dict[str, Any]:
         """Get current scraping progress."""
         incomplete = self.db.get_incomplete_scrapes()
@@ -516,7 +596,7 @@ def main():
 
     parser = argparse.ArgumentParser(description='Scrape NFL data from Pro Football Reference')
     parser.add_argument('--start', type=int, default=1990, help='Start year (default: 1990)')
-    parser.add_argument('--end', type=int, default=2024, help='End year (default: 2024)')
+    parser.add_argument('--end', type=int, default=2025, help='End year (default: 2025)')
     parser.add_argument('--rate-limit', type=float, default=4.0,
                         help='Seconds between requests (default: 4.0)')
     parser.add_argument('--no-resume', action='store_true',
@@ -524,10 +604,34 @@ def main():
     parser.add_argument('--progress', action='store_true',
                         help='Show current progress and exit')
     parser.add_argument('--season', type=int, help='Scrape only a specific season')
+    parser.add_argument(
+        '--from-file',
+        metavar='HTML_PATH',
+        help='Parse a locally saved PFR schedule HTML file instead of scraping. '
+             'Use --start to specify the season year.'
+    )
 
     args = parser.parse_args()
 
     scraper = PFRScraper(rate_limit=args.rate_limit)
+
+    if args.from_file:
+        season = args.season or args.start
+        html_path = Path(args.from_file)
+        if not html_path.exists():
+            logger.error(f"File not found: {html_path}")
+            return
+        logger.info(f"Parsing local HTML file for season {season}: {html_path}")
+        html = html_path.read_text(encoding='utf-8')
+        scraper.initialize_teams()
+        games = scraper.parse_season_from_html(html, season)
+        if games:
+            inserted, skipped = scraper.store_games(games)
+            scraper.db.calculate_team_season_stats(season)
+            logger.info(f"Completed: {inserted} inserted, {skipped} skipped")
+        else:
+            logger.error(f"No games found in {html_path}")
+        return
 
     if args.progress:
         progress = scraper.get_scrape_progress()

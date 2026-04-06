@@ -378,8 +378,15 @@ Examples:
     parser.add_argument(
         '--end',
         type=int,
-        default=2024,
-        help='End year for scraping (default: 2024)'
+        default=2025,
+        help='End year for scraping (default: 2025)'
+    )
+
+    parser.add_argument(
+        '--from-file',
+        metavar='HTML_PATH',
+        help='Parse a locally saved PFR schedule HTML file instead of scraping. '
+             'Use --start to specify the season year.'
     )
 
     parser.add_argument(
@@ -443,6 +450,27 @@ Examples:
         print("Initializing database...")
         db.init_schema()
         print("Database initialized.")
+        return
+
+    # Parse from local HTML file
+    if args.from_file:
+        from pathlib import Path
+        html_path = Path(args.from_file)
+        if not html_path.exists():
+            print(f"Error: File not found: {html_path}")
+            return
+        season = args.start
+        print(f"Parsing local HTML file for season {season}: {html_path}")
+        html = html_path.read_text(encoding='utf-8')
+        scraper = PFRScraper(db)
+        scraper.initialize_teams()
+        games = scraper.parse_season_from_html(html, season)
+        if games:
+            inserted, skipped = scraper.store_games(games)
+            scraper.db.calculate_team_season_stats(season)
+            print(f"Completed: {inserted} inserted, {skipped} skipped")
+        else:
+            print(f"No games found in {html_path}")
         return
 
     # Run scraper if requested

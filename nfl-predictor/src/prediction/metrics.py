@@ -57,9 +57,34 @@ class TeamMetrics:
     offensive_strength: float = 0.0  # Points scored relative to league avg
     defensive_strength: float = 0.0  # Points allowed relative to league avg
 
+    # Strength of schedule
+    strength_of_schedule: float = 0.5  # avg opponent win%, 0.5 = league average
+
+    # Home field advantage
+    dynamic_hfa: float = 0.032  # team-specific HFA derived from data
+
     # Data quality
     games_analyzed: int = 0
     seasons_analyzed: int = 0
+
+
+def _get_league_avg_ppg(db: Database, current_season: int, seasons_to_analyze: int) -> float:
+    """Calculate league average points per game over the analysis window."""
+    start_season = current_season - seasons_to_analyze + 1
+    row = db.fetchone(
+        """
+        SELECT AVG(total_ppg) as avg_ppg FROM (
+            SELECT (home_score + away_score) / 2.0 as total_ppg
+            FROM games
+            WHERE season BETWEEN ? AND ?
+              AND home_score IS NOT NULL
+        )
+        """,
+        (start_season, current_season),
+    )
+    if row and row['avg_ppg'] is not None:
+        return row['avg_ppg']
+    return 22.0  # fallback
 
 
 def calculate_exponential_weight(games_ago: int, decay_rate: float = 0.1) -> float:
@@ -243,15 +268,70 @@ def calculate_team_metrics(
         metrics.weighted_win_pct = weighted_wins / total_weight
         metrics.weighted_point_diff = weighted_point_diff / total_weight
 
-    # Offensive/defensive strength (relative to league average ~22 ppg)
-    league_avg_ppg = 22.0
+    # Offensive/defensive strength (relative to league average)
+    league_avg_ppg = _get_league_avg_ppg(db, current_season, seasons_to_analyze)
     if total_games > 0:
         metrics.offensive_strength = (metrics.avg_points_scored - league_avg_ppg) / league_avg_ppg
         metrics.defensive_strength = (league_avg_ppg - metrics.avg_points_allowed) / league_avg_ppg
 
     metrics.seasons_analyzed = seasons_to_analyze
 
+    # Strength of schedule: average win% of opponents
+    metrics.strength_of_schedule = _calculate_sos(db, team_id, current_season, seasons_to_analyze)
+
+    # Dynamic home field advantage from historical data
+    metrics.dynamic_hfa = _calculate_dynamic_hfa(db, team_id, current_season, seasons_to_analyze)
+
     return metrics
+
+
+def _calculate_sos(db: Database, team_id: int, current_season: int, seasons: int) -> float:
+    """Calculate strength of schedule: average win% of all opponents faced."""
+    start_season = current_season - seasons + 1
+    row = db.fetchone(
+        """
+        SELECT AVG(opp_win_pct) as sos FROM (
+            SELECT
+                CASE WHEN g.home_team_id = ? THEN g.away_team_id ELSE g.home_team_id END as opp_id,
+                tss.win_percentage as opp_win_pct
+            FROM games g
+            JOIN team_season_stats tss ON tss.team_id = CASE WHEN g.home_team_id = ? THEN g.away_team_id ELSE g.home_team_id END
+                AND tss.season = g.season
+            WHERE (g.home_team_id = ? OR g.away_team_id = ?)
+              AND g.season BETWEEN ? AND ?
+              AND g.home_score IS NOT NULL
+        )
+        """,
+        (team_id, team_id, team_id, team_id, start_season, current_season),
+    )
+    if row and row['sos'] is not None:
+        return row['sos']
+    return 0.5
+
+
+def _calculate_dynamic_hfa(db: Database, team_id: int, current_season: int, seasons: int) -> float:
+    """Calculate team-specific home field advantage from historical home/away win rates."""
+    start_season = current_season - seasons + 1
+    row = db.fetchone(
+        """
+        SELECT
+            SUM(CASE WHEN g.home_team_id = ? AND g.winner_id = ? THEN 1 ELSE 0 END) as home_wins,
+            SUM(CASE WHEN g.home_team_id = ? THEN 1 ELSE 0 END) as home_games,
+            SUM(CASE WHEN g.away_team_id = ? AND g.winner_id = ? THEN 1 ELSE 0 END) as away_wins,
+            SUM(CASE WHEN g.away_team_id = ? THEN 1 ELSE 0 END) as away_games
+        FROM games g
+        WHERE (g.home_team_id = ? OR g.away_team_id = ?)
+          AND g.season BETWEEN ? AND ?
+          AND g.home_score IS NOT NULL
+        """,
+        (team_id, team_id, team_id, team_id, team_id, team_id, team_id, team_id, start_season, current_season),
+    )
+    if not row or not row['home_games'] or not row['away_games']:
+        return 0.032
+    home_win_pct = row['home_wins'] / row['home_games']
+    away_win_pct = row['away_wins'] / row['away_games']
+    hfa = (home_win_pct - away_win_pct) / 2.0
+    return max(0.0, min(0.10, hfa))
 
 
 def calculate_head_to_head(

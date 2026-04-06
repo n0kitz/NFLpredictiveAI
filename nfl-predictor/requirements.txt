@@ -3,9 +3,15 @@
 # Web scraping
 requests>=2.28.0
 beautifulsoup4>=4.11.0
+cloudscraper>=1.2.71
 
 # HTML parsing (optional faster parser)
 lxml>=4.9.0
+
+# API server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.0
 
 # Type checking (development)
 typing-extensions>=4.0.0

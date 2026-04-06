@@ -223,9 +223,11 @@ class PredictionEngine:
                 f"{home_metrics.team_abbr} {h2h['team1_wins']}-{h2h['team2_wins']}"
             )
         else:
-            # If insufficient H2H data, redistribute weight to other factors
-            # Increase win_pct weight
-            pass
+            # Redistribute H2H weight (10%) to win_pct component
+            components = [
+                (name, prob, weight + 0.10) if name == 'win_pct' else (name, prob, weight)
+                for name, prob, weight in components
+            ]
 
         # Calculate weighted average
         total_weight = sum(w for _, _, w in components)
@@ -238,7 +240,7 @@ class PredictionEngine:
         )
 
         # Ensure probabilities are valid
-        home_prob = max(0.05, min(0.95, home_prob))
+        home_prob = max(0.02, min(0.98, home_prob))
         away_prob = 1.0 - home_prob
 
         return home_prob, away_prob, key_factors

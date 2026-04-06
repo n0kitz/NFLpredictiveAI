@@ -216,23 +216,6 @@ class Database:
                        limit: Optional[int] = None) -> List[sqlite3.Row]:
         """Get games for a specific team."""
         query = """
-            SELECT * FROM game_details
-            WHERE home_team_id = ? OR away_team_id = ?
-        """
-        params: List[Any] = [team_id, team_id]
-
-        if season:
-            query += " AND season = ?"
-            params.append(season)
-
-        query += " ORDER BY date DESC"
-
-        if limit:
-            query += " LIMIT ?"
-            params.append(limit)
-
-        # Need to use a different approach since game_details view uses names
-        query = """
             SELECT g.*,
                    ht.name AS home_team, ht.abbreviation AS home_abbr,
                    at.name AS away_team, at.abbreviation AS away_abbr,
@@ -241,9 +224,9 @@ class Database:
             JOIN teams ht ON g.home_team_id = ht.team_id
             JOIN teams at ON g.away_team_id = at.team_id
             LEFT JOIN teams wt ON g.winner_id = wt.team_id
-            WHERE g.home_team_id = ? OR g.away_team_id = ?
+            WHERE (g.home_team_id = ? OR g.away_team_id = ?)
         """
-        params = [team_id, team_id]
+        params: List[Any] = [team_id, team_id]
 
         if season:
             query += " AND g.season = ?"
@@ -494,13 +477,18 @@ class Database:
             self.upsert_team_season_stats(team_id, season, stats)
 
 
-# Singleton instance
+# Singleton instance (CLI usage)
 _database: Optional[Database] = None
 
 
 def get_database(db_path: Optional[Path] = None) -> Database:
-    """Get the database singleton instance."""
+    """Get the database singleton instance. Use for CLI only."""
     global _database
     if _database is None:
         _database = Database(db_path)
     return _database
+
+
+def create_database(db_path: Optional[Path] = None) -> Database:
+    """Create a new Database instance. Use for web server (one per request)."""
+    return Database(db_path)

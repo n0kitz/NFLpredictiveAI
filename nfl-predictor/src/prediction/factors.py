@@ -212,8 +212,8 @@ def apply_game_factors(
     """
     Apply game factors to adjust a base prediction.
 
-    This is a stub implementation that currently returns the base prediction
-    unchanged. In future versions, this will apply factor adjustments.
+    Calculates per-factor probability adjustments and applies them
+    symmetrically to the home/away win probabilities.
 
     Args:
         base_prediction: The initial prediction without factors

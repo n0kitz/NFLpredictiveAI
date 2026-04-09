@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd /Users/normenkitzmann/IdeaProjects/NFL/nfl-predictor && pip install fastapi 'uvicorn[standard]' pydantic 2>&1 | tail -5)",
+      "Bash(python -c \"from src.api.app import app; print\\('API module loads OK'\\)\" 2>&1)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "mcp__claude_ai_GitHub_CLI__get_file_contents",
+      "Bash(python -m src.cli.main --scrape --start 2025 --end 2025 2>&1)",
+      "Bash(curl -s http://localhost:8000/api/teams/BUF/season/2025 2>/dev/null | python -m json.tool 2>&1 || echo \"API not running - that's fine, the DB is fixed\")"
+    ]
+  }
+}

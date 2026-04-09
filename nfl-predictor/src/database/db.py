@@ -476,6 +476,80 @@ class Database:
 
             self.upsert_team_season_stats(team_id, season, stats)
 
+    # Prediction history operations
+    def insert_prediction(self, home_team_id: int, away_team_id: int,
+                          predicted_winner_id: int, home_prob: float,
+                          away_prob: float, confidence: str) -> int:
+        """Save a prediction to history. Returns the row id."""
+        cursor = self.execute(
+            """
+            INSERT INTO prediction_history
+                (home_team_id, away_team_id, predicted_winner_id, home_prob, away_prob, confidence)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (home_team_id, away_team_id, predicted_winner_id, home_prob, away_prob, confidence),
+        )
+        self.commit()
+        return cursor.lastrowid
+
+    def get_prediction_history(self, limit: int = 50, offset: int = 0) -> List[sqlite3.Row]:
+        """Get prediction history with team names, newest first."""
+        return self.fetchall(
+            """
+            SELECT ph.*,
+                   ht.name AS home_team, ht.abbreviation AS home_abbr,
+                   at.name AS away_team, at.abbreviation AS away_abbr,
+                   pw.name AS predicted_winner, pw.abbreviation AS predicted_winner_abbr,
+                   aw.name AS actual_winner, aw.abbreviation AS actual_winner_abbr
+            FROM prediction_history ph
+            JOIN teams ht ON ph.home_team_id = ht.team_id
+            JOIN teams at ON ph.away_team_id = at.team_id
+            JOIN teams pw ON ph.predicted_winner_id = pw.team_id
+            LEFT JOIN teams aw ON ph.actual_winner_id = aw.team_id
+            ORDER BY ph.predicted_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        )
+
+    def get_prediction_history_stats(self) -> Optional[sqlite3.Row]:
+        """Get aggregate accuracy stats for resolved predictions."""
+        return self.fetchone(
+            """
+            SELECT COUNT(*) AS total,
+                   SUM(CASE WHEN correct = 1 THEN 1 ELSE 0 END) AS correct,
+                   COUNT(CASE WHEN correct IS NOT NULL THEN 1 END) AS resolved
+            FROM prediction_history
+            """
+        )
+
+    def enrich_prediction_history(self) -> int:
+        """Match unresolved predictions to completed games and fill actual_winner_id/correct."""
+        unresolved = self.fetchall(
+            "SELECT id, home_team_id, away_team_id, predicted_winner_id FROM prediction_history WHERE correct IS NULL"
+        )
+        enriched = 0
+        for row in unresolved:
+            game = self.fetchone(
+                """
+                SELECT winner_id FROM games
+                WHERE home_team_id = ? AND away_team_id = ?
+                  AND home_score IS NOT NULL
+                ORDER BY date DESC LIMIT 1
+                """,
+                (row['home_team_id'], row['away_team_id']),
+            )
+            if game and game['winner_id'] is not None:
+                correct = 1 if game['winner_id'] == row['predicted_winner_id'] else 0
+                self.execute(
+                    "UPDATE prediction_history SET actual_winner_id = ?, correct = ? WHERE id = ?",
+                    (game['winner_id'], correct, row['id']),
+                )
+                enriched += 1
+        if enriched:
+            self.commit()
+        return enriched
+
 
 # Singleton instance (CLI usage)
 _database: Optional[Database] = None

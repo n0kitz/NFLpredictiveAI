@@ -123,9 +123,10 @@ class PredictionEngine:
         Calculate win probability based on team metrics.
 
         Uses a weighted combination of factors:
-        - 30%: Weighted win percentage
-        - 25%: Offensive/defensive strength
-        - 20%: Recent form
+        - 25%: Weighted win percentage
+        - 20%: Offensive/defensive strength
+        - 15%: Recent form
+        - 15%: Strength of schedule
         - 15%: Home/away splits
         - 10%: Head-to-head record
 
@@ -141,14 +142,14 @@ class PredictionEngine:
         key_factors = []
         components = []
 
-        # 1. Weighted win percentage (30%)
+        # 1. Weighted win percentage (25%)
         home_win_pct = home_metrics.weighted_win_pct
         away_win_pct = away_metrics.weighted_win_pct
 
         win_pct_component = self._normalize_to_probability(
             home_win_pct, away_win_pct
         )
-        components.append(('win_pct', win_pct_component, 0.30))
+        components.append(('win_pct', win_pct_component, 0.25))
 
         key_factors.append(
             f"{home_metrics.team_abbr}: {home_metrics.current_season_wins}-"
@@ -161,21 +162,21 @@ class PredictionEngine:
             f"{away_metrics.point_differential:+d} point diff"
         )
 
-        # 2. Offensive/defensive strength (25%)
+        # 2. Offensive/defensive strength (20%)
         home_strength = calculate_strength_rating(home_metrics)
         away_strength = calculate_strength_rating(away_metrics)
 
         strength_component = self._normalize_to_probability(
             home_strength, away_strength
         )
-        components.append(('strength', strength_component, 0.25))
+        components.append(('strength', strength_component, 0.20))
 
-        # 3. Recent form (20%)
+        # 3. Recent form (15%)
         home_form = calculate_form_rating(home_metrics)
         away_form = calculate_form_rating(away_metrics)
 
         form_component = self._normalize_to_probability(home_form, away_form)
-        components.append(('form', form_component, 0.20))
+        components.append(('form', form_component, 0.15))
 
         recent_total_home = home_metrics.recent_wins + home_metrics.recent_losses
         recent_total_away = away_metrics.recent_wins + away_metrics.recent_losses
@@ -187,7 +188,19 @@ class PredictionEngine:
                 f"{away_metrics.recent_wins}-{away_metrics.recent_losses} last 5"
             )
 
-        # 4. Home/away splits (15%)
+        # 4. Strength of schedule (15%)
+        home_sos = home_metrics.strength_of_schedule
+        away_sos = away_metrics.strength_of_schedule
+
+        sos_component = self._normalize_to_probability(home_sos, away_sos)
+        components.append(('sos', sos_component, 0.15))
+
+        key_factors.append(
+            f"SOS: {home_metrics.team_abbr} {home_sos:.3f}, "
+            f"{away_metrics.team_abbr} {away_sos:.3f}"
+        )
+
+        # 5. Home/away splits (15%)
         home_at_home = home_metrics.home_win_pct
         away_on_road = away_metrics.away_win_pct
 
@@ -203,7 +216,7 @@ class PredictionEngine:
                 f"{home_metrics.home_wins}-{home_metrics.home_losses}"
             )
 
-        # 5. Head-to-head record (10%)
+        # 6. Head-to-head record (10%)
         h2h = calculate_head_to_head(self.db, home_id, away_id, limit=10)
         if h2h['total_games'] >= 2:
             if h2h['total_games'] > 0:
@@ -233,11 +246,26 @@ class PredictionEngine:
         total_weight = sum(w for _, _, w in components)
         home_prob = sum(p * w for _, p, w in components) / total_weight
 
-        # Apply home field advantage
-        home_prob += HOME_FIELD_ADVANTAGE
+        # Apply dynamic home field advantage
+        hfa = home_metrics.dynamic_hfa
+        home_prob += hfa
         key_factors.append(
-            f"Home field advantage: +{HOME_FIELD_ADVANTAGE:.1%} to {home_metrics.team_abbr}"
+            f"Home field advantage: +{hfa:.1%} to {home_metrics.team_abbr}"
         )
+
+        # Bye week / rest advantage
+        home_rest = home_metrics.rest_days
+        away_rest = away_metrics.rest_days
+        if home_rest >= 10 and away_rest <= 8:
+            home_prob += 0.015
+            key_factors.append(
+                f"{home_metrics.team_abbr} coming off bye (+1.5%)"
+            )
+        elif away_rest >= 10 and home_rest <= 8:
+            home_prob -= 0.015
+            key_factors.append(
+                f"{away_metrics.team_abbr} coming off bye (+1.5%)"
+            )
 
         # Ensure probabilities are valid
         home_prob = max(0.02, min(0.98, home_prob))

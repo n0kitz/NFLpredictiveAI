@@ -63,6 +63,9 @@ class TeamMetrics:
     # Home field advantage
     dynamic_hfa: float = 0.032  # team-specific HFA derived from data
 
+    # Rest / bye week
+    rest_days: int = 7  # days since last game
+
     # Data quality
     games_analyzed: int = 0
     seasons_analyzed: int = 0
@@ -282,6 +285,9 @@ def calculate_team_metrics(
     # Dynamic home field advantage from historical data
     metrics.dynamic_hfa = _calculate_dynamic_hfa(db, team_id, current_season, seasons_to_analyze)
 
+    # Rest days since last game
+    metrics.rest_days = _calculate_rest_days(db, team_id, current_season)
+
     return metrics
 
 
@@ -332,6 +338,29 @@ def _calculate_dynamic_hfa(db: Database, team_id: int, current_season: int, seas
     away_win_pct = row['away_wins'] / row['away_games']
     hfa = (home_win_pct - away_win_pct) / 2.0
     return max(0.0, min(0.10, hfa))
+
+
+def _calculate_rest_days(db: Database, team_id: int, current_season: int) -> int:
+    """Calculate days since the team's most recent completed game."""
+    row = db.fetchone(
+        """
+        SELECT MAX(date) as last_date
+        FROM games
+        WHERE (home_team_id = ? OR away_team_id = ?)
+          AND home_score IS NOT NULL
+          AND season = ?
+        """,
+        (team_id, team_id, current_season),
+    )
+    if row and row['last_date']:
+        from datetime import date as date_cls
+        try:
+            last = date_cls.fromisoformat(str(row['last_date']))
+            today = date_cls.today()
+            return (today - last).days
+        except (ValueError, TypeError):
+            pass
+    return 7  # default
 
 
 def calculate_head_to_head(

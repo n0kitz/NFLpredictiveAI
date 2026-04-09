@@ -1,0 +1,222 @@
+@import "tailwindcss";
+
+@theme {
+  /* ── Surface / background — warm-tinted darks ── */
+  --color-surface-900: #08090c;
+  --color-surface-850: #0d0f14;
+  --color-surface-800: #111318;
+  --color-surface-700: #181b23;
+  --color-surface-600: #1f2330;
+  --color-surface-500: #2a2f3e;
+  --color-surface-400: #363c4f;
+
+  /* ── Text ── */
+  --color-text-primary: #eef0f4;
+  --color-text-secondary: #8e95a9;
+  --color-text-muted: #515872;
+
+  /* ── Accent — warm gold for system UI ── */
+  --color-accent: #c9a84c;
+  --color-accent-hover: #dfc06a;
+  --color-accent-dim: rgba(201, 168, 76, 0.12);
+
+  /* ── Semantic ── */
+  --color-win: #34d399;
+  --color-loss: #f87171;
+  --color-tie: #fbbf24;
+  --color-border: rgba(255, 255, 255, 0.06);
+  --color-border-strong: rgba(255, 255, 255, 0.1);
+
+  /* ── Confidence badges ── */
+  --color-conf-high: #34d399;
+  --color-conf-medium: #fbbf24;
+  --color-conf-low: #f87171;
+
+  /* ── Font families ── */
+  --font-display: 'Oswald', 'Impact', sans-serif;
+  --font-body: 'DM Sans', system-ui, sans-serif;
+}
+
+/* ──────────────────────────────────────────────────── */
+/*  Base                                                */
+/* ──────────────────────────────────────────────────── */
+
+body {
+  background-color: var(--color-surface-900);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  position: relative;
+}
+
+/* Subtle film grain overlay */
+#root::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+/* ──────────────────────────────────────────────────── */
+/*  Typography                                          */
+/* ──────────────────────────────────────────────────── */
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+/* ──────────────────────────────────────────────────── */
+/*  Scrollbar                                           */
+/* ──────────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface-500);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-surface-400);
+}
+
+/* ──────────────────────────────────────────────────── */
+/*  Selection                                           */
+/* ──────────────────────────────────────────────────── */
+
+::selection {
+  background: var(--color-accent-dim);
+  color: var(--color-text-primary);
+}
+
+/* ──────────────────────────────────────────────────── */
+/*  Animations                                          */
+/* ──────────────────────────────────────────────────── */
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes bar-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease both;
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Stagger helper classes */
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
+.stagger-5 { animation-delay: 0.25s; }
+.stagger-6 { animation-delay: 0.3s; }
+.stagger-7 { animation-delay: 0.35s; }
+.stagger-8 { animation-delay: 0.4s; }
+
+/* ──────────────────────────────────────────────────── */
+/*  Utilities                                           */
+/* ──────────────────────────────────────────────────── */
+
+/* Team glow effect behind cards */
+.team-glow {
+  position: relative;
+}
+.team-glow::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: -1;
+  filter: blur(20px);
+}
+.team-glow:hover::after {
+  opacity: 0.3;
+}
+
+/* Glass morphism for cards */
+.glass {
+  background: rgba(17, 19, 24, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-border);
+}
+
+/* Field line pattern — decorative */
+.field-lines {
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent 49.5%,
+    rgba(255, 255, 255, 0.02) 49.5%,
+    rgba(255, 255, 255, 0.02) 50.5%,
+    transparent 50.5%,
+    transparent
+  );
+  background-size: 80px 100%;
+}
+
+/* Smooth transitions on interactive elements */
+a, button, select, input {
+  transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}

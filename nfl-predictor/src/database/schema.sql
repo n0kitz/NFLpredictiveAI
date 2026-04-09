@@ -95,6 +95,25 @@ CREATE TABLE IF NOT EXISTS scrape_progress (
     UNIQUE(season, week)
 );
 
+-- Prediction history (auto-saved from /api/predict)
+CREATE TABLE IF NOT EXISTS prediction_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    home_team_id INTEGER NOT NULL,
+    away_team_id INTEGER NOT NULL,
+    predicted_winner_id INTEGER NOT NULL,
+    home_prob REAL NOT NULL,
+    away_prob REAL NOT NULL,
+    confidence TEXT NOT NULL,
+    predicted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    game_id INTEGER,  -- nullable, matched after game is played
+    actual_winner_id INTEGER,  -- filled in by enrichment
+    correct INTEGER,  -- 1/0/null
+    FOREIGN KEY (home_team_id) REFERENCES teams(team_id),
+    FOREIGN KEY (away_team_id) REFERENCES teams(team_id),
+    FOREIGN KEY (predicted_winner_id) REFERENCES teams(team_id),
+    FOREIGN KEY (actual_winner_id) REFERENCES teams(team_id)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_games_season ON games(season);
 CREATE INDEX IF NOT EXISTS idx_games_date ON games(date);
@@ -105,6 +124,7 @@ CREATE INDEX IF NOT EXISTS idx_game_factors_team ON game_factors(team_id);
 CREATE INDEX IF NOT EXISTS idx_team_stats_season ON team_season_stats(team_id, season);
 CREATE INDEX IF NOT EXISTS idx_teams_abbr ON teams(abbreviation);
 CREATE INDEX IF NOT EXISTS idx_teams_franchise ON teams(franchise_id);
+CREATE INDEX IF NOT EXISTS idx_prediction_history_date ON prediction_history(predicted_at);
 
 -- Views for common queries
 

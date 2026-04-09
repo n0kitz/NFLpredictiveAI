@@ -1,0 +1,42 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # Automated weekly scraper — runs every Wednesday at 06:00 UTC
+  cron:
+    build:
+      context: .
+      dockerfile: Dockerfile.cron
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  # Manual one-off scrape (run with: docker compose run scraper)
+  scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    volumes:
+      - ./data:/app/data
+    entrypoint: ["python", "-m", "src.cli.main", "--scrape", "--start", "2024", "--end", "2025"]
+    profiles:
+      - scrape

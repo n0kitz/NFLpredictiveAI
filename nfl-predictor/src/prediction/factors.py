@@ -44,8 +44,7 @@ class FactorAdjuster:
     """
     Handles game factor adjustments for predictions.
 
-    This is a stub implementation that will be expanded in future versions.
-    Currently, it provides the framework for applying manual factors to predictions.
+    Provides the framework for applying manual factors to predictions.
     """
 
     def __init__(self, db: Database):

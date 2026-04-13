@@ -66,6 +66,13 @@ class TeamMetrics:
     # Rest / bye week
     rest_days: int = 7  # days since last game
 
+    # Advanced stats (populated from team_advanced_stats table, 0 if unavailable)
+    turnover_margin: float = 0.0
+    third_down_pct: float = 0.0
+    redzone_efficiency: float = 0.0
+    yards_per_play: float = 0.0
+    sack_rate_allowed: float = 0.0
+
     # Data quality
     games_analyzed: int = 0
     seasons_analyzed: int = 0
@@ -129,7 +136,8 @@ def calculate_team_metrics(
     team_id: int,
     current_season: Optional[int] = None,
     recent_games_count: int = 5,
-    seasons_to_analyze: int = 3
+    seasons_to_analyze: int = 3,
+    cutoff_date: Optional[str] = None,
 ) -> TeamMetrics:
     """
     Calculate comprehensive metrics for a team.
@@ -169,6 +177,9 @@ def calculate_team_metrics(
         games = db.get_team_games(team_id, season)
         for game in games:
             if game['home_score'] is not None:
+                # In backtest mode, exclude games on or after the cutoff date
+                if cutoff_date and str(game['date'])[:10] >= cutoff_date[:10]:
+                    continue
                 all_games.append((game, season_offset))
 
     if not all_games:
@@ -285,8 +296,21 @@ def calculate_team_metrics(
     # Dynamic home field advantage from historical data
     metrics.dynamic_hfa = _calculate_dynamic_hfa(db, team_id, current_season, seasons_to_analyze)
 
-    # Rest days since last game
-    metrics.rest_days = _calculate_rest_days(db, team_id, current_season)
+    # Rest days since last game (pass cutoff_date as reference in backtest mode)
+    metrics.rest_days = _calculate_rest_days(db, team_id, current_season, reference_date=cutoff_date)
+
+    # Advanced stats from team_advanced_stats table.
+    # Fall back to the prior season when the current season isn't imported yet
+    # (e.g. live predictions during a season whose PBP isn't available yet).
+    adv = db.get_advanced_stats(team_id, current_season)
+    if not adv and current_season > 2010:
+        adv = db.get_advanced_stats(team_id, current_season - 1)
+    if adv:
+        metrics.turnover_margin    = adv['turnover_margin']
+        metrics.third_down_pct     = adv['third_down_pct']
+        metrics.redzone_efficiency = adv['redzone_efficiency']
+        metrics.yards_per_play     = adv['yards_per_play']
+        metrics.sack_rate_allowed  = adv['sack_rate_allowed']
 
     return metrics
 
@@ -340,24 +364,54 @@ def _calculate_dynamic_hfa(db: Database, team_id: int, current_season: int, seas
     return max(0.0, min(0.10, hfa))
 
 
-def _calculate_rest_days(db: Database, team_id: int, current_season: int) -> int:
-    """Calculate days since the team's most recent completed game."""
-    row = db.fetchone(
-        """
-        SELECT MAX(date) as last_date
-        FROM games
-        WHERE (home_team_id = ? OR away_team_id = ?)
-          AND home_score IS NOT NULL
-          AND season = ?
-        """,
-        (team_id, team_id, current_season),
-    )
+def _calculate_rest_days(
+    db: Database,
+    team_id: int,
+    current_season: int,
+    reference_date: Optional[str] = None,
+) -> int:
+    """Calculate days since the team's most recent completed game.
+
+    In backtest mode pass reference_date (ISO "YYYY-MM-DD") so the search looks
+    for the last game BEFORE that date across all seasons (handles week-1 teams
+    whose most recent game was last season's playoffs).
+    """
+    from datetime import date as date_cls
+
+    if reference_date:
+        # Backtest mode: search all seasons, stop before this date
+        row = db.fetchone(
+            """
+            SELECT MAX(date) as last_date
+            FROM games
+            WHERE (home_team_id = ? OR away_team_id = ?)
+              AND home_score IS NOT NULL
+              AND date < ?
+            """,
+            (team_id, team_id, reference_date),
+        )
+        try:
+            ref = date_cls.fromisoformat(reference_date[:10])
+        except ValueError:
+            ref = date_cls.today()
+    else:
+        # Live mode: latest completed game in current season, reference is today
+        row = db.fetchone(
+            """
+            SELECT MAX(date) as last_date
+            FROM games
+            WHERE (home_team_id = ? OR away_team_id = ?)
+              AND home_score IS NOT NULL
+              AND season = ?
+            """,
+            (team_id, team_id, current_season),
+        )
+        ref = date_cls.today()
+
     if row and row['last_date']:
-        from datetime import date as date_cls
         try:
             last = date_cls.fromisoformat(str(row['last_date']))
-            today = date_cls.today()
-            return (today - last).days
+            return (ref - last).days
         except (ValueError, TypeError):
             pass
     return 7  # default

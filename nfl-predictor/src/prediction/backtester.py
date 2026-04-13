@@ -134,7 +134,8 @@ class Backtester:
             query = """
                 SELECT g.game_id, g.season, g.week, g.game_type,
                        g.home_team_id, g.away_team_id,
-                       g.home_score, g.away_score, g.winner_id
+                       g.home_score, g.away_score, g.winner_id,
+                       g.date
                 FROM games g
                 WHERE g.season = ? AND g.home_score IS NOT NULL
             """
@@ -165,11 +166,18 @@ class Backtester:
                 home_abbr = home_team['abbreviation']
                 away_abbr = away_team['abbreviation']
 
+                # Use this game's date as the cutoff so only prior data is used
+                game_date = str(game_dict.get('date', ''))[:10]
+
                 try:
                     prediction = self.engine.predict(
                         home_team=home_abbr,
                         away_team=away_abbr,
                         apply_factors=False,
+                        current_season=season,
+                        cutoff_date=game_date if game_date else None,
+                        is_playoff=(game_dict.get("game_type", "regular") != "regular"),
+                        week=game_dict.get("week", 0),
                     )
                 except Exception as e:
                     logger.warning(f"Backtest skip game {game_dict.get('game_id')}: {e}")

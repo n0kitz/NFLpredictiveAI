@@ -30,7 +30,10 @@ nfl-predictor/
 │   │   └── backtester.py      # Replay historical games to measure accuracy
 │   ├── scraper/
 │   │   ├── pfr_scraper.py     # PFR scraper with resumable progress + --from-file
-│   │   └── team_mappings.py   # 32 current + historical teams
+│   │   ├── team_mappings.py   # 32 current + historical teams
+│   │   ├── injury_scraper.py  # ESPN public API — STADIUM_COORDS, ESPN_TEAM_MAP, InjuryScraper
+│   │   ├── weather_scraper.py # Open-Meteo API — dome check, WMO codes, is_adverse
+│   │   └── odds_scraper.py    # The Odds API — OddsScraper (ODDS_API_KEY required)
 │   └── utils/helpers.py
 ├── frontend/
 │   ├── src/
@@ -44,11 +47,14 @@ nfl-predictor/
 │   └── package.json
 ├── tests/
 │   ├── test_basic.py          # Team mappings, DB, metrics, helpers (14 tests)
-│   ├── test_api.py            # All API endpoints via TestClient (23 tests)
+│   ├── test_api.py            # All API endpoints via TestClient (29 tests)
 │   ├── test_prediction.py     # Prediction engine, metrics, backtester (16 tests)
 │   ├── test_scraper.py        # HTML parsing, team mapping resolution (11 tests)
+│   ├── test_injury_scraper.py # InjuryScraper, ESPN_TEAM_MAP, STADIUM_COORDS (10 tests)
+│   ├── test_weather_scraper.py# WeatherScraper dome logic, WMO mapping (12 tests)
 │   └── fixtures/              # Sample PFR HTML for scraper tests
-├── scripts/weekly_scrape.py   # Wednesday cron scrape script + prediction enrichment
+├── scripts/weekly_scrape.py   # Wednesday cron scrape + enrichment + odds + conditions
+├── scripts/fetch_conditions.py# One-off injury + weather fetch for upcoming games
 ├── data/nfl.db                # SQLite database (9170+ games)
 ├── docker-compose.yml         # api + frontend + cron containers
 ├── Dockerfile.api             # Python API server
@@ -88,13 +94,16 @@ docker compose run scraper               # One-off data scrape
 - `GET  /api/teams/{id}/season/{year}` — Season stats
 - `GET  /api/teams/{id}/games` — Recent games
 - `GET  /api/games` — Games (filter by season/type, `?limit=` param, no limit when season is set)
-- `POST /api/predict` — Predict (JSON body, supports optional `factors` array for inline factors, auto-saves to prediction history)
-- `GET  /api/predict/{away}/{home}` — Predict via URL
+- `GET  /api/games/{game_id}/odds` — Vegas odds for a game (404 if none; display-only)
+- `GET  /api/games/{game_id}/conditions` — Injury reports + weather for a game
+- `POST /api/predict` — Predict (JSON body, supports optional `factors` array; auto-saves; includes `vegas_context` + `conditions`)
+- `GET  /api/predict/{away}/{home}` — Predict via URL; add `?model=ml` for ML model
 - `GET  /api/h2h/{team1}/{team2}` — Head-to-head (default 10 games)
 - `GET/POST/DELETE /api/factors` — Game factors CRUD
 - `GET  /api/accuracy` — Backtest accuracy (`?seasons=2024,2025`)
 - `GET  /api/predictions/history` — Prediction history with accuracy stats (`?limit=&offset=`)
 - `POST /api/predictions/enrich` — Match unresolved predictions to completed game results
+- `GET  /api/model/info` — Model info (active model, ML availability, OOS accuracy)
 - `GET  /api/scrape/status` — Scraping progress
 - `GET  /docs` — Swagger UI
 
@@ -143,17 +152,46 @@ Replace `YYYY` with the season year (e.g. 2025).
 - Theme system: CSS variables for dark mode, teamColors.ts for team-specific styling
 - All team colors/styling are independent from component logic (swap theme without touching pages)
 - Scraper has cloudscraper fallback: if requests gets 403, it retries with cloudscraper automatically
-- Cron container runs weekly_scrape.py every Wednesday 06:00 UTC (also enriches prediction history)
+- Cron container runs weekly_scrape.py every Wednesday 06:00 UTC (enriches predictions + odds + conditions)
 - Frontend uses Recharts for trend charts on TeamDetail page
-- 64 pytest tests across 4 test files (API, prediction, scraper, basic)
+- 96 pytest tests across 6 test files (API, prediction, scraper, basic, injury_scraper, weather_scraper)
+- ML model (GradientBoostingClassifier, 32 features, trained 2013-2022): 66.8% OOS accuracy
+- Weighted-sum default: 67.2% OOS accuracy on 2023-2024. ML only activates with `?model=ml`
+
+## Vegas Lines (The Odds API)
+- **Key constraint**: Vegas odds are NEVER used as a prediction input — display-only enrichment.
+- API key read from `ODDS_API_KEY` env var. If absent, everything works as before.
+- `src/scraper/odds_scraper.py` — `OddsScraper` class: `fetch_upcoming_odds()`, `fetch_historical_odds()`, `american_odds_to_implied_prob()`, `map_team_name()`
+- `scripts/fetch_odds.py` — standalone fetch script (prints summary + API quota)
+- Weekly cron (`scripts/weekly_scrape.py`) calls odds fetch at end if key is set
+- `GET /api/games/{game_id}/odds` — returns `GameOddsResponse` (404 if no odds)
+- `POST /api/predict` response includes optional `vegas_context` field (spread, O/U, implied probs)
+- `docker-compose.yml` passes `ODDS_API_KEY=${ODDS_API_KEY:-}` to api and cron services
+
+## Injuries & Weather (Display-Only Enrichment)
+- **Key constraint**: Injuries and weather are NEVER used as prediction inputs — display-only enrichment.
+- `src/scraper/injury_scraper.py` — `InjuryScraper`: ESPN public API (no auth), `STADIUM_COORDS` (lat/lon/is_dome for all 32 stadiums), `ESPN_TEAM_MAP` (JAC→JAX, LA→LAR, WSH→WAS)
+  - `fetch_injuries()` — flat list of all injuries from ESPN
+  - `filter_key_players()` — keeps position in {QB,WR,RB,TE,OT,CB,DE,LB} AND status in {Out,Doubtful,IR,PUP}
+- `src/scraper/weather_scraper.py` — `WeatherScraper`: Open-Meteo (no auth); dome check first (no HTTP call for dome teams)
+  - `fetch_game_weather(home_abbr, game_date)` — returns `{is_dome, condition, temperature_c, wind_speed_kmh, precipitation_mm, weather_code, is_adverse}`
+  - `is_adverse = wind>30 OR precip>5 OR snow WMO codes`
+- `scripts/fetch_conditions.py` — one-off fetch of injuries (all 32 teams) + weather (next 14 days)
+- Weekly cron fetches conditions automatically at end of `weekly_scrape.py`
+- `GET /api/games/{game_id}/conditions` — returns `GameConditionsResponse` (home_injuries, away_injuries, weather)
+- `POST /api/predict` response includes optional `conditions` field (populated for upcoming games ≤14 days)
 
 ## Database Tables
 - `teams` — 32 active + historical teams with franchise tracking
 - `games` — All games 1990-2025 (9170+), scores, winner, overtime
 - `game_factors` — Manual adjustments (-5 to +5) linked to game+team
 - `team_season_stats` — Pre-computed per-team per-season aggregates
+- `team_advanced_stats` — nfl_data_py PBP aggregates per team-season (seasons 2010-2025)
 - `scrape_progress` — Resumable scraping state
 - `prediction_history` — Auto-saved predictions with optional enrichment (actual_winner, correct flag)
+- `game_odds` — Vegas odds from The Odds API (spread, O/U, vig-adjusted implied probs, external_game_id)
+- `injury_reports` — ESPN injury data (team_id, player_name, position, injury_status, report_date)
+- `game_weather` — Open-Meteo weather (home_team_id, game_date, is_dome, temp, wind, precip, condition, is_adverse)
 
 ## Recent Changes (2026-04)
 - Added `/api/teams/{id}/profile` endpoint with all-time + last season stats
@@ -172,3 +210,7 @@ Replace `YYYY` with the season year (e.g. 2025).
 - Season browser with computed standings by division + games-by-week
 - Prediction history: auto-save on predict, enrichment in weekly cron, History page
 - Playoff bracket simulator: seed 14 teams, simulate through Super Bowl
+- ML model: GradientBoostingClassifier, 32-feature vector, trained 2013-2022; weighted-sum default (67.2% vs ML 66.8% OOS)
+- Injury + weather enrichment: ESPN + Open-Meteo, display-only, `GET /api/games/{id}/conditions`, weekly cron auto-fetch
+- `POST /api/predict` response now includes `conditions` (injuries + weather) and `vegas_context` fields
+- `GET /api/model/info` endpoint: reports active model, ML availability, OOS accuracy comparison

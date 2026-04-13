@@ -122,6 +122,8 @@ class PredictionResponse(BaseModel):
     confidence: str
     key_factors: List[str]
     factors_applied: List[AppliedFactor]
+    vegas_context: Optional["VegasContext"] = None
+    conditions: Optional["ConditionsSummary"] = None
 
 
 # ── Head-to-Head ───────────────────────────────────────
@@ -294,6 +296,93 @@ class PredictionHistoryResponse(BaseModel):
     resolved: int
     correct: int
     accuracy: Optional[float] = None
+
+
+# ── Vegas Odds ─────────────────────────────────────────
+
+class GameOddsResponse(BaseModel):
+    id: int
+    game_id: Optional[int] = None
+    external_game_id: Optional[str] = None
+    home_team_id: Optional[int] = None
+    away_team_id: Optional[int] = None
+    game_date: Optional[str] = None
+    opening_spread: Optional[float] = None
+    over_under: Optional[float] = None
+    home_implied_prob: Optional[float] = None
+    away_implied_prob: Optional[float] = None
+    fetched_at: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class VegasContext(BaseModel):
+    spread: Optional[float] = Field(None, description="Home-team spread (negative = home favoured)")
+    over_under: Optional[float] = None
+    home_implied_prob: Optional[float] = None
+    away_implied_prob: Optional[float] = None
+    fetched_at: Optional[str] = None
+
+
+# ── Model info ─────────────────────────────────────────
+
+class ModelInfoResponse(BaseModel):
+    model_type: str                         # always "weighted_sum" (default)
+    active_model: str = "weighted_sum"
+    ml_model_loaded: bool
+    ml_available: bool = False
+    feature_count: Optional[int] = None
+    model_file_exists: bool
+    ml_oos_accuracy: Optional[float] = None
+    weighted_sum_oos_accuracy: Optional[float] = None
+    recommendation: Optional[str] = None
+
+
+# ── Injuries / Weather / Conditions ────────────────────
+
+class InjuryEntry(BaseModel):
+    player_name: str
+    position: str
+    injury_status: str
+    report_date: str
+
+
+class WeatherResponse(BaseModel):
+    is_dome: bool
+    condition: str
+    temperature_c: Optional[float] = None
+    wind_speed_kmh: Optional[float] = None
+    precipitation_mm: Optional[float] = None
+    weather_code: Optional[int] = None
+    is_adverse: bool = False
+
+
+class ConditionsSummary(BaseModel):
+    home_injuries: List[InjuryEntry] = []
+    away_injuries: List[InjuryEntry] = []
+    weather: Optional[WeatherResponse] = None
+
+
+class GameConditionsResponse(BaseModel):
+    game_id: int
+    home_team: str
+    away_team: str
+    conditions: ConditionsSummary
+
+
+# ── SHAP Explanation ───────────────────────────────────
+
+class ExplanationEntry(BaseModel):
+    feature: str
+    label: str
+    shap_value: float
+    direction: str  # "home" | "away" | "neutral"
+    feature_value: float
+
+
+class ExplainPredictionResponse(PredictionResponse):
+    explanation: List[ExplanationEntry] = []
 
 
 # ── General ────────────────────────────────────────────

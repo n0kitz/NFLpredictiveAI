@@ -434,6 +434,12 @@ Examples:
         help='Import factors from CSV file'
     )
 
+    parser.add_argument(
+        '--train-model',
+        action='store_true',
+        help='Train the ML prediction model on 2013-2022 data (takes 5-10 minutes)'
+    )
+
     args = parser.parse_args()
 
     # Configure logging
@@ -471,6 +477,23 @@ Examples:
             print(f"Completed: {inserted} inserted, {skipped} skipped")
         else:
             print(f"No games found in {html_path}")
+        return
+
+    # Train ML model if requested
+    if args.train_model:
+        from ..prediction.ml_model import train_model
+        print("=" * 60)
+        print("  NFL ML Model Training")
+        print("  Training window: seasons 2013-2022")
+        print("  This may take 5-10 minutes depending on hardware.")
+        print("=" * 60)
+        result = train_model(db)
+        print("\n  ── Training Complete ──")
+        print(f"  Seasons:          {result['training_seasons']}")
+        print(f"  Samples:          {result['n_training_samples']:,}")
+        print(f"  CV accuracy:      {result['cv_accuracy']:.4f} ± {result['cv_std']:.4f}")
+        print(f"  Fold accuracies:  {result['fold_accuracies']}")
+        print("\n  Restart the API server to load the new model.")
         return
 
     # Run scraper if requested

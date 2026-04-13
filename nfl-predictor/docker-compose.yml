@@ -9,6 +9,7 @@ services:
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
+      - ODDS_API_KEY=${ODDS_API_KEY:-}
     restart: unless-stopped
 
   frontend:
@@ -28,6 +29,8 @@ services:
       dockerfile: Dockerfile.cron
     volumes:
       - ./data:/app/data
+    environment:
+      - ODDS_API_KEY=${ODDS_API_KEY:-}
     restart: unless-stopped
 
   # Manual one-off scrape (run with: docker compose run scraper)

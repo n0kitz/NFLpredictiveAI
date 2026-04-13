@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { useTeams, usePrediction, useH2H } from '../hooks/useApi';
+import { useTeams, usePrediction, useExplainPrediction, useH2H } from '../hooks/useApi';
 import TeamSelector from '../components/TeamSelector';
 import PredictionCard from '../components/PredictionCard';
 import FactorPanel from '../components/FactorPanel';
+import ExplanationPanel, { ExplanationSkeleton } from '../components/ExplanationPanel';
 import Spinner from '../components/Spinner';
 import { getTeamColors } from '../theme/teamColors';
 import type { InlineFactor } from '../api/types';
@@ -13,12 +14,16 @@ export default function Predict() {
   const [awayAbbr, setAwayAbbr] = useState('');
   const [factors, setFactors] = useState<InlineFactor[]>([]);
   const { data: prediction, loading, error, predict } = usePrediction();
+  const { data: explanationData, loading: explainLoading, explain } = useExplainPrediction();
 
   const showH2H = !!(prediction && homeAbbr && awayAbbr);
 
   function handlePredict() {
     if (homeAbbr && awayAbbr) {
-      predict(homeAbbr, awayAbbr, factors.length > 0 ? factors : undefined);
+      const f = factors.length > 0 ? factors : undefined;
+      // Fire both calls in parallel
+      predict(homeAbbr, awayAbbr, f);
+      explain(homeAbbr, awayAbbr, f);
     }
   }
 
@@ -108,6 +113,16 @@ export default function Predict() {
       {prediction && (
         <div className="space-y-5 animate-fade-up">
           <PredictionCard prediction={prediction} homeAbbr={homeAbbr} awayAbbr={awayAbbr} />
+
+          {/* SHAP explanation — fires in parallel with prediction */}
+          {explainLoading && <ExplanationSkeleton />}
+          {!explainLoading && explanationData && (
+            <ExplanationPanel
+              explanation={explanationData.explanation}
+              homeAbbr={homeAbbr}
+              awayAbbr={awayAbbr}
+            />
+          )}
 
           {/* Key factors */}
           <div className="rounded-lg border border-border bg-surface-850 p-5">

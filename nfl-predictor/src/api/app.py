@@ -25,6 +25,10 @@ from .schemas import (
     ScrapeStatusResponse,
     AccuracyResponse,
     PredictionHistoryItem, PredictionHistoryResponse,
+    GameOddsResponse, VegasContext,
+    ModelInfoResponse,
+    InjuryEntry, WeatherResponse, ConditionsSummary, GameConditionsResponse,
+    ExplanationEntry, ExplainPredictionResponse,
     ErrorResponse,
 )
 
@@ -278,6 +282,97 @@ def list_games(
 
 
 @app.get(
+    "/api/games/{game_id}/odds",
+    response_model=GameOddsResponse,
+    tags=["games"],
+)
+def get_game_odds(game_id: int, db: Database = Depends(get_db)):
+    """Get Vegas betting odds for a specific game."""
+    odds = db.get_odds_for_game(game_id)
+    if not odds:
+        raise HTTPException(status_code=404, detail=f"No odds found for game {game_id}")
+    return GameOddsResponse(**dict(odds))
+
+
+@app.get(
+    "/api/games/{game_id}/conditions",
+    response_model=GameConditionsResponse,
+    tags=["games"],
+)
+def get_game_conditions(game_id: int, db: Database = Depends(get_db)):
+    """Get injury reports and weather conditions for a specific game."""
+    game = db.fetchone(
+        """
+        SELECT g.game_id, g.date, g.home_team_id, g.away_team_id,
+               ht.name AS home_team, at.name AS away_team
+        FROM games g
+        JOIN teams ht ON g.home_team_id = ht.team_id
+        JOIN teams at ON g.away_team_id = at.team_id
+        WHERE g.game_id = ?
+        """,
+        (game_id,),
+    )
+    if not game:
+        raise HTTPException(status_code=404, detail=f"Game {game_id} not found")
+
+    game_d = dict(game)
+    home_team_id = game_d["home_team_id"]
+    away_team_id = game_d["away_team_id"]
+
+    # Injuries
+    home_inj_rows = db.get_key_injuries_for_team(home_team_id)
+    away_inj_rows = db.get_key_injuries_for_team(away_team_id)
+
+    home_injuries = [
+        InjuryEntry(
+            player_name=r["player_name"],
+            position=r["position"],
+            injury_status=r["injury_status"],
+            report_date=r["report_date"],
+        )
+        for r in home_inj_rows
+    ]
+    away_injuries = [
+        InjuryEntry(
+            player_name=r["player_name"],
+            position=r["position"],
+            injury_status=r["injury_status"],
+            report_date=r["report_date"],
+        )
+        for r in away_inj_rows
+    ]
+
+    # Weather — try by game_id first, then by home_team + date
+    weather_row = db.get_weather_for_game(game_id)
+    if not weather_row:
+        weather_row = db.get_weather_for_teams(home_team_id, str(game_d["date"]))
+
+    weather: Optional[WeatherResponse] = None
+    if weather_row:
+        w = dict(weather_row)
+        weather = WeatherResponse(
+            is_dome=bool(w.get("is_dome", 0)),
+            condition=w.get("condition", "Unknown"),
+            temperature_c=w.get("temperature_c"),
+            wind_speed_kmh=w.get("wind_speed_kmh"),
+            precipitation_mm=w.get("precipitation_mm"),
+            weather_code=w.get("weather_code"),
+            is_adverse=bool(w.get("is_adverse", 0)),
+        )
+
+    return GameConditionsResponse(
+        game_id=game_id,
+        home_team=game_d.get("home_team", ""),
+        away_team=game_d.get("away_team", ""),
+        conditions=ConditionsSummary(
+            home_injuries=home_injuries,
+            away_injuries=away_injuries,
+            weather=weather,
+        ),
+    )
+
+
+@app.get(
     "/api/teams/{identifier}/games",
     response_model=GameListResponse,
     tags=["games"],
@@ -305,18 +400,24 @@ def get_team_games(
 # ── Predictions ────────────────────────────────────────
 
 @app.post("/api/predict", response_model=PredictionResponse, tags=["predictions"])
-def predict_game(req: PredictionRequest, db: Database = Depends(get_db)):
-    """Predict the outcome of a matchup."""
+def predict_game(
+    req: PredictionRequest,
+    model: Optional[str] = Query(None, description="Model override: 'ml' to use ML model"),
+    db: Database = Depends(get_db),
+):
+    """Predict the outcome of a matchup. Add ?model=ml to use the ML model."""
     from .schemas import InlineFactor
     from ..prediction.factors import apply_game_factors as _apply_factors
 
     engine = PredictionEngine(db)
+    use_ml = (model == "ml")
     try:
         prediction = engine.predict(
             home_team=req.home_team,
             away_team=req.away_team,
             game_id=req.game_id,
             apply_factors=req.apply_factors,
+            use_ml=use_ml,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -365,6 +466,93 @@ def predict_game(req: PredictionRequest, db: Database = Depends(get_db)):
     except Exception:
         pass  # Don't fail the prediction if history save fails
 
+    # Look up Vegas odds for context (display-only, never used as prediction input)
+    vegas_context: Optional[VegasContext] = None
+    try:
+        from datetime import date as _date
+        today = str(_date.today())
+        odds_row = db.get_odds_for_teams(
+            prediction.home_team_id,
+            prediction.away_team_id,
+            today,
+        )
+        if odds_row:
+            odds_d = dict(odds_row)
+            vegas_context = VegasContext(
+                spread=odds_d.get("opening_spread"),
+                over_under=odds_d.get("over_under"),
+                home_implied_prob=odds_d.get("home_implied_prob"),
+                away_implied_prob=odds_d.get("away_implied_prob"),
+                fetched_at=odds_d.get("fetched_at"),
+            )
+    except Exception:
+        pass  # Vegas context is best-effort only
+
+    # Build conditions summary (injuries + weather) from DB — display-only enrichment
+    conditions: Optional[ConditionsSummary] = None
+    try:
+        from datetime import date as _date2, timedelta
+        today_str = str(_date.today())
+        window_end = str(_date.today() + timedelta(days=14))
+
+        # Only include conditions for upcoming games (next 14 days)
+        upcoming = db.fetchone(
+            """
+            SELECT g.game_id, g.date FROM games g
+            WHERE g.home_team_id = ? AND g.away_team_id = ?
+              AND g.date BETWEEN ? AND ?
+              AND g.home_score IS NULL
+            ORDER BY g.date ASC LIMIT 1
+            """,
+            (prediction.home_team_id, prediction.away_team_id, today_str, window_end),
+        )
+        home_inj = db.get_key_injuries_for_team(prediction.home_team_id)
+        away_inj = db.get_key_injuries_for_team(prediction.away_team_id)
+
+        weather: Optional[WeatherResponse] = None
+        if upcoming:
+            w_row = db.get_weather_for_game(upcoming["game_id"])
+            if not w_row:
+                w_row = db.get_weather_for_teams(
+                    prediction.home_team_id, str(upcoming["date"])
+                )
+            if w_row:
+                w = dict(w_row)
+                weather = WeatherResponse(
+                    is_dome=bool(w.get("is_dome", 0)),
+                    condition=w.get("condition", "Unknown"),
+                    temperature_c=w.get("temperature_c"),
+                    wind_speed_kmh=w.get("wind_speed_kmh"),
+                    precipitation_mm=w.get("precipitation_mm"),
+                    weather_code=w.get("weather_code"),
+                    is_adverse=bool(w.get("is_adverse", 0)),
+                )
+
+        if home_inj or away_inj or weather:
+            conditions = ConditionsSummary(
+                home_injuries=[
+                    InjuryEntry(
+                        player_name=r["player_name"],
+                        position=r["position"],
+                        injury_status=r["injury_status"],
+                        report_date=r["report_date"],
+                    )
+                    for r in home_inj
+                ],
+                away_injuries=[
+                    InjuryEntry(
+                        player_name=r["player_name"],
+                        position=r["position"],
+                        injury_status=r["injury_status"],
+                        report_date=r["report_date"],
+                    )
+                    for r in away_inj
+                ],
+                weather=weather,
+            )
+    except Exception:
+        pass  # Conditions are best-effort enrichment
+
     return PredictionResponse(
         home_team=prediction.home_team,
         away_team=prediction.away_team,
@@ -377,15 +565,23 @@ def predict_game(req: PredictionRequest, db: Database = Depends(get_db)):
         confidence=prediction.confidence,
         key_factors=prediction.key_factors,
         factors_applied=factors_applied,
+        vegas_context=vegas_context,
+        conditions=conditions,
     )
 
 
 @app.get("/api/predict/{away_team}/{home_team}", response_model=PredictionResponse, tags=["predictions"])
-def predict_game_get(away_team: str, home_team: str, db: Database = Depends(get_db)):
-    """Predict via GET: /api/predict/{away_team}/{home_team}"""
+def predict_game_get(
+    away_team: str,
+    home_team: str,
+    model: Optional[str] = Query(None, description="Model override: 'ml' to use ML model"),
+    db: Database = Depends(get_db),
+):
+    """Predict via GET: /api/predict/{away_team}/{home_team}. Add ?model=ml for ML model."""
     engine = PredictionEngine(db)
+    use_ml = (model == "ml")
     try:
-        prediction = engine.predict(home_team=home_team, away_team=away_team)
+        prediction = engine.predict(home_team=home_team, away_team=away_team, use_ml=use_ml)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -401,6 +597,97 @@ def predict_game_get(away_team: str, home_team: str, db: Database = Depends(get_
         confidence=prediction.confidence,
         key_factors=prediction.key_factors,
         factors_applied=[],
+    )
+
+
+# ── Prediction Explanation (SHAP) ──────────────────────
+
+@app.post("/api/predict/explain", response_model=ExplainPredictionResponse, tags=["predictions"])
+def explain_prediction_endpoint(
+    req: PredictionRequest,
+    db: Database = Depends(get_db),
+):
+    """
+    Same as POST /api/predict, but also returns a SHAP-based explanation list.
+
+    The prediction probabilities always use the weighted-sum model (default).
+    The explanation uses the ML model regardless of the active default.
+    Returns explanation=[] silently when the ML model is not loaded.
+    """
+    from .schemas import InlineFactor
+    from ..prediction.factors import apply_game_factors as _apply_factors
+
+    engine = PredictionEngine(db)
+    try:
+        prediction = engine.predict(
+            home_team=req.home_team,
+            away_team=req.away_team,
+            game_id=req.game_id,
+            apply_factors=req.apply_factors,
+            use_ml=False,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    # Apply inline factors
+    if req.factors:
+        inline_game_factors = []
+        for f in req.factors:
+            team_id = prediction.home_team_id if f.team == "home" else prediction.away_team_id
+            inline_game_factors.append(
+                GameFactor(
+                    factor_id=0,
+                    game_id=0,
+                    team_id=team_id,
+                    factor_type=FactorType(f.factor_type.value),
+                    impact_rating=f.impact_rating,
+                )
+            )
+        if inline_game_factors:
+            prediction = _apply_factors(prediction, inline_game_factors)
+
+    factors_applied = [
+        AppliedFactor(
+            factor_type=f.factor_type.value,
+            team_abbr=f.team_abbr,
+            impact_rating=f.impact_rating,
+        )
+        for f in prediction.factors_applied
+    ]
+
+    # Generate SHAP explanation from ML model (empty list if ML unavailable)
+    try:
+        explanation_data = engine.explain_prediction(
+            home_team=req.home_team,
+            away_team=req.away_team,
+        )
+    except Exception:
+        explanation_data = []
+
+    explanation = [
+        ExplanationEntry(
+            feature=e["feature"],
+            label=e["label"],
+            shap_value=e["shap_value"],
+            direction=e["direction"],
+            feature_value=e["feature_value"],
+        )
+        for e in explanation_data
+    ]
+
+    return ExplainPredictionResponse(
+        home_team=prediction.home_team,
+        away_team=prediction.away_team,
+        home_team_id=prediction.home_team_id,
+        away_team_id=prediction.away_team_id,
+        home_win_probability=round(prediction.home_win_probability, 4),
+        away_win_probability=round(prediction.away_win_probability, 4),
+        predicted_winner=prediction.predicted_winner,
+        predicted_winner_probability=round(prediction.predicted_winner_probability, 4),
+        confidence=prediction.confidence,
+        key_factors=prediction.key_factors,
+        factors_applied=factors_applied,
+        explanation=explanation,
     )
 
 
@@ -596,6 +883,16 @@ def scrape_status(db: Database = Depends(get_db)):
         total_games=progress["total_games"],
         incomplete=progress["incomplete"],
     )
+
+
+# ── Model info ─────────────────────────────────────────
+
+@app.get("/api/model/info", response_model=ModelInfoResponse, tags=["system"])
+def model_info(db: Database = Depends(get_db)):
+    """Return which prediction model is active (ML or weighted-sum fallback)."""
+    engine = PredictionEngine(db)
+    info = engine.get_model_info()
+    return ModelInfoResponse(**info)
 
 
 # ── Helpers ────────────────────────────────────────────

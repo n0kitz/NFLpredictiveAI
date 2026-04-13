@@ -114,6 +114,68 @@ CREATE TABLE IF NOT EXISTS prediction_history (
     FOREIGN KEY (actual_winner_id) REFERENCES teams(team_id)
 );
 
+-- Advanced team stats (imported from nfl_data_py / nflverse)
+CREATE TABLE IF NOT EXISTS team_advanced_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_id INTEGER NOT NULL,
+    season INTEGER NOT NULL,
+    turnover_margin REAL DEFAULT 0,
+    third_down_pct REAL DEFAULT 0,
+    redzone_efficiency REAL DEFAULT 0,
+    yards_per_play REAL DEFAULT 0,
+    sack_rate_allowed REAL DEFAULT 0,
+    UNIQUE(team_id, season),
+    FOREIGN KEY (team_id) REFERENCES teams(team_id)
+);
+
+-- Injury reports (from ESPN public API)
+CREATE TABLE IF NOT EXISTS injury_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_id INTEGER NOT NULL,
+    player_name TEXT NOT NULL,
+    position TEXT NOT NULL,
+    injury_status TEXT NOT NULL,
+    report_date TEXT NOT NULL,
+    UNIQUE(team_id, player_name, report_date),
+    FOREIGN KEY (team_id) REFERENCES teams(team_id)
+);
+
+-- Game weather conditions (from Open-Meteo)
+CREATE TABLE IF NOT EXISTS game_weather (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id INTEGER,
+    home_team_id INTEGER,
+    game_date TEXT NOT NULL,
+    is_dome INTEGER NOT NULL DEFAULT 0,
+    temperature_c REAL,
+    wind_speed_kmh REAL,
+    precipitation_mm REAL,
+    weather_code INTEGER,
+    condition TEXT,
+    is_adverse INTEGER NOT NULL DEFAULT 0,
+    fetched_at TEXT,
+    UNIQUE(home_team_id, game_date),
+    FOREIGN KEY (game_id) REFERENCES games(game_id),
+    FOREIGN KEY (home_team_id) REFERENCES teams(team_id)
+);
+
+-- Vegas betting odds (from The Odds API)
+CREATE TABLE IF NOT EXISTS game_odds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id INTEGER,
+    external_game_id TEXT,
+    home_team_id INTEGER,
+    away_team_id INTEGER,
+    game_date TEXT,
+    opening_spread REAL,
+    over_under REAL,
+    home_implied_prob REAL,
+    away_implied_prob REAL,
+    fetched_at TEXT,
+    FOREIGN KEY (game_id) REFERENCES games(game_id),
+    UNIQUE(external_game_id)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_games_season ON games(season);
 CREATE INDEX IF NOT EXISTS idx_games_date ON games(date);

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
-import type { TeamList, Prediction, H2H, TeamMetrics, TeamProfile, GameList, AccuracyStats, InlineFactor } from '../api/types';
+import type { TeamList, Prediction, PredictionExplanation, H2H, TeamMetrics, TeamProfile, GameList, AccuracyStats, InlineFactor } from '../api/types';
 
 /** Generic hook for async data fetching with loading/error states. */
 function useAsync<T>(fetcher: () => Promise<T>, deps: unknown[] = []) {
@@ -71,6 +71,28 @@ export function usePrediction() {
   }, []);
 
   return { data, loading, error, predict };
+}
+
+/** Run a SHAP explanation — triggered manually via callback, in parallel with usePrediction. */
+export function useExplainPrediction() {
+  const [data, setData] = useState<PredictionExplanation | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const explain = useCallback(async (homeTeam: string, awayTeam: string, factors?: InlineFactor[]) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.explainPrediction(homeTeam, awayTeam, factors);
+      setData(result);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Explanation failed');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { data, loading, error, explain };
 }
 
 /** Fetch head-to-head between two teams. */

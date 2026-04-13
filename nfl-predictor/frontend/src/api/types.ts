@@ -183,6 +183,18 @@ export interface PredictionHistory {
   accuracy: number | null;
 }
 
+export interface ExplanationEntry {
+  feature: string;
+  label: string;
+  shap_value: number;
+  direction: 'home' | 'away' | 'neutral';
+  feature_value: number;
+}
+
+export interface PredictionExplanation extends Prediction {
+  explanation: ExplanationEntry[];
+}
+
 export interface AccuracyStats {
   seasons: number[];
   total_games: number;

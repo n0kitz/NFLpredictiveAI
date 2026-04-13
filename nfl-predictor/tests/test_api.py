@@ -200,3 +200,93 @@ class TestFactors:
         r = client.get("/api/factors/999999")
         assert r.status_code == 200
         assert r.json()["count"] == 0
+
+
+# ── Vegas Odds ─────────────────────────────────────────
+
+
+class TestGameOdds:
+    def test_game_odds_not_found(self):
+        """Requesting odds for a non-existent game returns 404."""
+        r = client.get("/api/games/999999/odds")
+        assert r.status_code == 404
+
+    def test_game_odds_malformed_id(self):
+        """Non-integer game_id returns 422 Unprocessable Entity."""
+        r = client.get("/api/games/not-a-number/odds")
+        assert r.status_code == 422
+
+    def test_predict_response_has_vegas_context_field(self):
+        """POST /api/predict always includes vegas_context key (None when no odds stored)."""
+        r = client.post("/api/predict", json={
+            "home_team": "KC",
+            "away_team": "PHI",
+        })
+        assert r.status_code == 200
+        data = r.json()
+        # Field must be present; value is None when no odds are in the DB
+        assert "vegas_context" in data
+
+
+# ── Conditions ──────────────────────────────────────────
+
+
+class TestGameConditions:
+    def test_conditions_endpoint_not_found(self):
+        """Requesting conditions for a non-existent game returns 404."""
+        r = client.get("/api/games/999999/conditions")
+        assert r.status_code == 404
+
+    def test_conditions_endpoint_found(self):
+        """Conditions endpoint for a real game returns the expected structure."""
+        # Get any real game_id from the DB
+        games_r = client.get("/api/games?limit=1")
+        assert games_r.status_code == 200
+        games_data = games_r.json()
+        if not games_data["games"]:
+            pytest.skip("No games in DB")
+
+        game_id = games_data["games"][0]["game_id"]
+        r = client.get(f"/api/games/{game_id}/conditions")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["game_id"] == game_id
+        assert "conditions" in data
+        cond = data["conditions"]
+        assert "home_injuries" in cond
+        assert "away_injuries" in cond
+        assert "weather" in cond  # may be None if not yet fetched
+
+    def test_predict_response_has_conditions_field(self):
+        """POST /api/predict includes a conditions key."""
+        r = client.post("/api/predict", json={
+            "home_team": "KC",
+            "away_team": "PHI",
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert "conditions" in data
+
+
+# ── SHAP Explanation ─────────────────────────────────────
+
+
+class TestExplainEndpoint:
+    def test_explain_endpoint_exists(self):
+        """POST /api/predict/explain returns 200 for valid teams."""
+        r = client.post("/api/predict/explain", json={
+            "home_team": "KC",
+            "away_team": "PHI",
+        })
+        assert r.status_code == 200
+
+    def test_explain_response_has_explanation_key(self):
+        """Response from /api/predict/explain contains an 'explanation' list."""
+        r = client.post("/api/predict/explain", json={
+            "home_team": "KC",
+            "away_team": "PHI",
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert "explanation" in data
+        assert isinstance(data["explanation"], list)

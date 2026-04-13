@@ -7,7 +7,9 @@
       "Bash(npm run:*)",
       "mcp__claude_ai_GitHub_CLI__get_file_contents",
       "Bash(python -m src.cli.main --scrape --start 2025 --end 2025 2>&1)",
-      "Bash(curl -s http://localhost:8000/api/teams/BUF/season/2025 2>/dev/null | python -m json.tool 2>&1 || echo \"API not running - that's fine, the DB is fixed\")"
+      "Bash(curl -s http://localhost:8000/api/teams/BUF/season/2025 2>/dev/null | python -m json.tool 2>&1 || echo \"API not running - that's fine, the DB is fixed\")",
+      "Bash(pip install:*)",
+      "Bash(python -c \"import nfl_data_py; print\\(nfl_data_py.__version__\\)\")"
     ]
   }
 }

@@ -1,11 +1,14 @@
 """Prediction engine and metrics tests against the real database."""
 
 import pytest
+from pathlib import Path
 
 from src.database.db import Database, DEFAULT_DB_PATH
 from src.prediction.engine import PredictionEngine
 from src.prediction.metrics import calculate_team_metrics
 from src.prediction.backtester import Backtester
+from src.prediction.feature_builder import FEATURE_NAMES, build_feature_vector, feature_dict_to_array
+from src.prediction.explainer import generate_shap_explanation, get_explainer
 
 # Skip if database doesn't exist
 pytestmark = pytest.mark.skipif(
@@ -130,3 +133,142 @@ class TestBacktester:
         assert "by_confidence" in d
         assert "calibration" in d
         assert "season_accuracy" in d
+
+
+# ── Feature builder ────────────────────────────────────
+
+
+class TestFeatureBuilder:
+    def _make_metrics(self, db, abbr: str) -> "calculate_team_metrics":
+        team = db.find_team(abbr)
+        return calculate_team_metrics(db, team["team_id"])
+
+    def test_feature_builder_shape(self, db):
+        """Feature array must have exactly 32 elements."""
+        hm = self._make_metrics(db, "KC")
+        am = self._make_metrics(db, "PHI")
+        h2h = {"team1_wins": 3, "team2_wins": 2, "total_games": 5}
+        feat = build_feature_vector(hm, am, h2h, is_playoff=False, week=10)
+        arr = feature_dict_to_array(feat)
+        assert arr.shape == (32,), f"Expected shape (32,), got {arr.shape}"
+
+    def test_feature_builder_keys(self, db):
+        """All FEATURE_NAMES must appear in the feature dict."""
+        hm = self._make_metrics(db, "BUF")
+        am = self._make_metrics(db, "MIA")
+        h2h = {"team1_wins": 1, "team2_wins": 1, "total_games": 2}
+        feat = build_feature_vector(hm, am, h2h, is_playoff=True, week="Wild Card")
+        for name in FEATURE_NAMES:
+            assert name in feat, f"Missing feature key: {name}"
+
+    def test_ml_model_fallback(self, db):
+        """If nfl_model.joblib is absent the engine falls back to weighted-sum."""
+        from src.prediction.ml_model import MODEL_PATH
+
+        # The model may or may not exist; either way _use_ml must be consistent
+        engine = PredictionEngine(db)
+        if not MODEL_PATH.exists():
+            assert not engine._use_ml, "Engine should use weighted-sum when .joblib absent"
+        else:
+            # Model exists — just verify the engine loaded it without error
+            assert engine._use_ml
+            assert engine._ml_model is not None
+
+    def test_model_info_endpoint(self):
+        """GET /api/model/info returns 200 with a model_type field."""
+        from fastapi.testclient import TestClient
+        from src.api.app import app
+
+        client = TestClient(app)
+        r = client.get("/api/model/info")
+        assert r.status_code == 200
+        data = r.json()
+        assert "model_type" in data
+        assert data["model_type"] in ("ml", "weighted_sum")
+
+
+# ── SHAP Explainer ─────────────────────────────────────
+
+
+class TestExplainer:
+    def _make_metrics(self, db, abbr: str):
+        team = db.find_team(abbr)
+        return calculate_team_metrics(db, team["team_id"])
+
+    def test_explainer_no_model(self, db):
+        """generate_shap_explanation returns [] when model is None."""
+        result = generate_shap_explanation(
+            self._make_metrics(db, "KC"),
+            self._make_metrics(db, "PHI"),
+            h2h={"team1_wins": 3, "team2_wins": 2, "total_games": 5},
+            is_playoff=False,
+            week=10,
+            model=None,
+            feature_names=None,
+        )
+        assert result == []
+
+    def test_explainer_returns_list(self, db):
+        """With ML model loaded, generate_shap_explanation returns a list."""
+        from src.prediction.ml_model import MODEL_PATH
+        engine = PredictionEngine(db)
+        if not MODEL_PATH.exists():
+            pytest.skip("ML model not trained — run scripts/train_model.py")
+
+        hm = self._make_metrics(db, "KC")
+        am = self._make_metrics(db, "PHI")
+        h2h = {"team1_wins": 3, "team2_wins": 2, "total_games": 5}
+        result = generate_shap_explanation(
+            hm, am, h2h,
+            is_playoff=False, week=10,
+            model=engine._ml_model,
+            feature_names=engine._ml_features,
+        )
+        assert isinstance(result, list)
+        assert len(result) <= 8
+
+    def test_explanation_entry_schema(self, db):
+        """Each explanation entry has all required keys."""
+        from src.prediction.ml_model import MODEL_PATH
+        engine = PredictionEngine(db)
+        if not MODEL_PATH.exists():
+            pytest.skip("ML model not trained — run scripts/train_model.py")
+
+        hm = self._make_metrics(db, "BUF")
+        am = self._make_metrics(db, "MIA")
+        h2h = {"team1_wins": 2, "team2_wins": 3, "total_games": 5}
+        result = generate_shap_explanation(
+            hm, am, h2h,
+            is_playoff=False, week=8,
+            model=engine._ml_model,
+            feature_names=engine._ml_features,
+        )
+        if result:
+            required_keys = {"feature", "label", "shap_value", "direction", "feature_value"}
+            for entry in result:
+                assert required_keys == set(entry.keys()), f"Missing keys in entry: {entry}"
+
+    def test_direction_logic(self, db):
+        """Direction is derived correctly from shap_value thresholds."""
+        from src.prediction.ml_model import MODEL_PATH
+        engine = PredictionEngine(db)
+        if not MODEL_PATH.exists():
+            pytest.skip("ML model not trained — run scripts/train_model.py")
+
+        hm = self._make_metrics(db, "KC")
+        am = self._make_metrics(db, "SF")
+        h2h = {"team1_wins": 4, "team2_wins": 1, "total_games": 5}
+        result = generate_shap_explanation(
+            hm, am, h2h,
+            is_playoff=False, week=14,
+            model=engine._ml_model,
+            feature_names=engine._ml_features,
+        )
+        for entry in result:
+            sv = entry["shap_value"]
+            if sv > 0.005:
+                assert entry["direction"] == "home", f"Expected home for sv={sv}"
+            elif sv < -0.005:
+                assert entry["direction"] == "away", f"Expected away for sv={sv}"
+            else:
+                assert entry["direction"] == "neutral", f"Expected neutral for sv={sv}"

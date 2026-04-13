@@ -38,6 +38,70 @@ class Database:
             self._connection.row_factory = sqlite3.Row
             # Enable foreign keys
             self._connection.execute("PRAGMA foreign_keys = ON")
+            # Ensure advanced-stats table exists for both fresh and existing DBs
+            self._connection.execute("""
+                CREATE TABLE IF NOT EXISTS team_advanced_stats (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    team_id INTEGER NOT NULL,
+                    season INTEGER NOT NULL,
+                    turnover_margin REAL DEFAULT 0,
+                    third_down_pct REAL DEFAULT 0,
+                    redzone_efficiency REAL DEFAULT 0,
+                    yards_per_play REAL DEFAULT 0,
+                    sack_rate_allowed REAL DEFAULT 0,
+                    UNIQUE(team_id, season),
+                    FOREIGN KEY (team_id) REFERENCES teams(team_id)
+                )
+            """)
+            self._connection.execute("""
+                CREATE TABLE IF NOT EXISTS game_odds (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    game_id INTEGER,
+                    external_game_id TEXT,
+                    home_team_id INTEGER,
+                    away_team_id INTEGER,
+                    game_date TEXT,
+                    opening_spread REAL,
+                    over_under REAL,
+                    home_implied_prob REAL,
+                    away_implied_prob REAL,
+                    fetched_at TEXT,
+                    FOREIGN KEY (game_id) REFERENCES games(game_id),
+                    UNIQUE(external_game_id)
+                )
+            """)
+            self._connection.execute("""
+                CREATE TABLE IF NOT EXISTS injury_reports (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    team_id INTEGER NOT NULL,
+                    player_name TEXT NOT NULL,
+                    position TEXT NOT NULL,
+                    injury_status TEXT NOT NULL,
+                    report_date TEXT NOT NULL,
+                    UNIQUE(team_id, player_name, report_date),
+                    FOREIGN KEY (team_id) REFERENCES teams(team_id)
+                )
+            """)
+            self._connection.execute("""
+                CREATE TABLE IF NOT EXISTS game_weather (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    game_id INTEGER,
+                    home_team_id INTEGER,
+                    game_date TEXT NOT NULL,
+                    is_dome INTEGER NOT NULL DEFAULT 0,
+                    temperature_c REAL,
+                    wind_speed_kmh REAL,
+                    precipitation_mm REAL,
+                    weather_code INTEGER,
+                    condition TEXT,
+                    is_adverse INTEGER NOT NULL DEFAULT 0,
+                    fetched_at TEXT,
+                    UNIQUE(home_team_id, game_date),
+                    FOREIGN KEY (game_id) REFERENCES games(game_id),
+                    FOREIGN KEY (home_team_id) REFERENCES teams(team_id)
+                )
+            """)
+            self._connection.commit()
         return self._connection
 
     def close(self) -> None:
@@ -523,6 +587,33 @@ class Database:
             """
         )
 
+    # Advanced stats operations
+    def upsert_advanced_stats(self, team_id: int, season: int, stats: Dict[str, Any]) -> None:
+        """Insert or replace advanced stats for a team-season."""
+        self.execute(
+            """
+            INSERT OR REPLACE INTO team_advanced_stats
+                (team_id, season, turnover_margin, third_down_pct,
+                 redzone_efficiency, yards_per_play, sack_rate_allowed)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                team_id, season,
+                stats.get('turnover_margin', 0.0),
+                stats.get('third_down_pct', 0.0),
+                stats.get('redzone_efficiency', 0.0),
+                stats.get('yards_per_play', 0.0),
+                stats.get('sack_rate_allowed', 0.0),
+            ),
+        )
+
+    def get_advanced_stats(self, team_id: int, season: int) -> Optional[sqlite3.Row]:
+        """Get advanced stats for a team-season. Returns None if not found."""
+        return self.fetchone(
+            "SELECT * FROM team_advanced_stats WHERE team_id = ? AND season = ?",
+            (team_id, season),
+        )
+
     def enrich_prediction_history(self) -> int:
         """Match unresolved predictions to completed games and fill actual_winner_id/correct."""
         unresolved = self.fetchall(
@@ -549,6 +640,133 @@ class Database:
         if enriched:
             self.commit()
         return enriched
+
+
+    # Game odds operations
+    def upsert_game_odds(self, data: Dict[str, Any]) -> None:
+        """Insert or replace odds for a game (keyed on external_game_id)."""
+        self.execute(
+            """
+            INSERT OR REPLACE INTO game_odds
+                (game_id, external_game_id, home_team_id, away_team_id, game_date,
+                 opening_spread, over_under, home_implied_prob, away_implied_prob, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                data.get('game_id'),
+                data.get('external_game_id'),
+                data.get('home_team_id'),
+                data.get('away_team_id'),
+                data.get('game_date'),
+                data.get('opening_spread'),
+                data.get('over_under'),
+                data.get('home_implied_prob'),
+                data.get('away_implied_prob'),
+                data.get('fetched_at'),
+            ),
+        )
+        self.commit()
+
+    def get_odds_for_game(self, game_id: int) -> Optional[sqlite3.Row]:
+        """Get odds by internal game_id. Returns None if not found."""
+        return self.fetchone(
+            "SELECT * FROM game_odds WHERE game_id = ?",
+            (game_id,),
+        )
+
+    def get_odds_for_teams(self, home_team_id: int, away_team_id: int,
+                           game_date: str) -> Optional[sqlite3.Row]:
+        """
+        Get odds by home/away team IDs and date (±1 day window).
+        Returns the closest match or None.
+        """
+        return self.fetchone(
+            """
+            SELECT * FROM game_odds
+            WHERE home_team_id = ? AND away_team_id = ?
+              AND game_date BETWEEN date(?, '-1 day') AND date(?, '+1 day')
+            ORDER BY ABS(julianday(game_date) - julianday(?))
+            LIMIT 1
+            """,
+            (home_team_id, away_team_id, game_date, game_date, game_date),
+        )
+
+
+    # Injury report operations
+    def upsert_injuries(self, team_id: int, injuries: List[Dict[str, Any]]) -> None:
+        """Insert or replace injury records for a team (keyed on team+player+date)."""
+        for inj in injuries:
+            self.execute(
+                """
+                INSERT OR REPLACE INTO injury_reports
+                    (team_id, player_name, position, injury_status, report_date)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    team_id,
+                    inj.get('player_name', ''),
+                    inj.get('position', ''),
+                    inj.get('injury_status', ''),
+                    inj.get('report_date', ''),
+                ),
+            )
+        self.commit()
+
+    def get_key_injuries_for_team(self, team_id: int) -> List[sqlite3.Row]:
+        """Return today's significant injury entries for a team (most-recent report_date)."""
+        return self.fetchall(
+            """
+            SELECT * FROM injury_reports
+            WHERE team_id = ?
+              AND report_date = (
+                  SELECT MAX(report_date) FROM injury_reports WHERE team_id = ?
+              )
+            ORDER BY position, player_name
+            """,
+            (team_id, team_id),
+        )
+
+    # Game weather operations
+    def upsert_game_weather(self, data: Dict[str, Any]) -> None:
+        """Insert or replace weather for a game (keyed on home_team_id + game_date)."""
+        self.execute(
+            """
+            INSERT OR REPLACE INTO game_weather
+                (game_id, home_team_id, game_date, is_dome, temperature_c,
+                 wind_speed_kmh, precipitation_mm, weather_code, condition,
+                 is_adverse, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                data.get('game_id'),
+                data.get('home_team_id'),
+                data.get('game_date'),
+                1 if data.get('is_dome') else 0,
+                data.get('temperature_c'),
+                data.get('wind_speed_kmh'),
+                data.get('precipitation_mm'),
+                data.get('weather_code'),
+                data.get('condition'),
+                1 if data.get('is_adverse') else 0,
+                data.get('fetched_at'),
+            ),
+        )
+        self.commit()
+
+    def get_weather_for_game(self, game_id: int) -> Optional[sqlite3.Row]:
+        """Get weather record by internal game_id. Returns None if not found."""
+        return self.fetchone(
+            "SELECT * FROM game_weather WHERE game_id = ?",
+            (game_id,),
+        )
+
+    def get_weather_for_teams(self, home_team_id: int,
+                               game_date: str) -> Optional[sqlite3.Row]:
+        """Get weather record by home team ID and date (exact match). Returns None if absent."""
+        return self.fetchone(
+            "SELECT * FROM game_weather WHERE home_team_id = ? AND game_date = ?",
+            (home_team_id, game_date),
+        )
 
 
 # Singleton instance (CLI usage)

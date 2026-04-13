@@ -11,6 +11,8 @@ from .metrics import (
     calculate_form_rating, calculate_strength_rating
 )
 from .factors import apply_game_factors, FactorAdjuster
+from .feature_builder import build_feature_vector, feature_dict_to_array, _parse_week
+from .ml_model import load_model, predict_with_ml, MODEL_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -46,13 +48,24 @@ class PredictionEngine:
         """
         self.db = db or get_database()
         self.factor_adjuster = FactorAdjuster(self.db)
+        # Load ML model if available; fall back to weighted-sum silently
+        self._ml_model, self._ml_features = load_model()
+        self._use_ml = self._ml_model is not None
+        # Pre-warm SHAP explainer (cheap once created; None if ML unavailable)
+        from .explainer import get_explainer
+        self._explainer = get_explainer(self._ml_model)
 
     def predict(
         self,
         home_team: str,
         away_team: str,
         game_id: Optional[int] = None,
-        apply_factors: bool = True
+        apply_factors: bool = True,
+        current_season: Optional[int] = None,
+        cutoff_date: Optional[str] = None,
+        is_playoff: bool = False,
+        week: Any = 0,
+        use_ml: bool = False,
     ) -> Prediction:
         """
         Predict the outcome of a game between two teams.
@@ -81,13 +94,29 @@ class PredictionEngine:
         away_name = f"{away['city']} {away['name']}"
 
         # Calculate metrics for both teams
-        home_metrics = calculate_team_metrics(self.db, home_id)
-        away_metrics = calculate_team_metrics(self.db, away_id)
-
-        # Calculate base win probability
-        home_prob, away_prob, key_factors = self._calculate_probability(
-            home_metrics, away_metrics, home_id, away_id
+        home_metrics = calculate_team_metrics(
+            self.db, home_id,
+            current_season=current_season,
+            cutoff_date=cutoff_date,
         )
+        away_metrics = calculate_team_metrics(
+            self.db, away_id,
+            current_season=current_season,
+            cutoff_date=cutoff_date,
+        )
+
+        # Calculate base win probability.
+        # ML is only used when explicitly requested AND the model is loaded.
+        # Default: weighted-sum (always active).
+        if self._use_ml and use_ml:
+            home_prob, away_prob, key_factors = self._calculate_ml_probability(
+                home_metrics, away_metrics, home_id, away_id,
+                is_playoff=is_playoff, week=week,
+            )
+        else:
+            home_prob, away_prob, key_factors = self._calculate_probability(
+                home_metrics, away_metrics, home_id, away_id
+            )
 
         # Determine confidence level
         confidence = self._determine_confidence(home_metrics, away_metrics)
@@ -112,6 +141,141 @@ class PredictionEngine:
 
         return prediction
 
+    def get_model_info(self) -> Dict[str, Any]:
+        """Return metadata about the prediction model configuration."""
+        return {
+            # Legacy field — kept for backward compat
+            "model_type":                 "weighted_sum",
+            # Active default is always weighted-sum; ML requires use_ml=True
+            "active_model":               "weighted_sum",
+            "ml_model_loaded":            self._use_ml,
+            "ml_available":               self._ml_model is not None,
+            "feature_count":              len(self._ml_features) if self._ml_features else None,
+            "model_file_exists":          MODEL_PATH.exists(),
+            "ml_oos_accuracy":            0.668,
+            "weighted_sum_oos_accuracy":  0.672,
+            "recommendation":             "weighted_sum performs better on 2023-2024 OOS data",
+        }
+
+    def explain_prediction(
+        self,
+        home_team: str,
+        away_team: str,
+        game_id: Optional[int] = None,
+        is_playoff: bool = False,
+        week: Any = 0,
+    ) -> List[Dict[str, Any]]:
+        """
+        Return SHAP-based feature explanations for the ML model's view of this matchup.
+
+        Always uses the ML model (GradientBoosting) regardless of whether weighted-sum
+        is the active prediction default — SHAP explains the ML model's reasoning.
+
+        Returns [] if the ML model is not loaded or SHAP computation fails.
+        """
+        from .explainer import generate_shap_explanation
+
+        if not self._use_ml:
+            return []
+
+        try:
+            home = self.db.find_team(home_team)
+            away = self.db.find_team(away_team)
+            if not home or not away:
+                return []
+
+            home_metrics = calculate_team_metrics(self.db, home["team_id"])
+            away_metrics = calculate_team_metrics(self.db, away["team_id"])
+            h2h = calculate_head_to_head(self.db, home["team_id"], away["team_id"], limit=10)
+
+            return generate_shap_explanation(
+                home_metrics, away_metrics, h2h,
+                is_playoff=is_playoff, week=week,
+                model=self._ml_model,
+                feature_names=self._ml_features,
+            )
+        except Exception as exc:
+            logger.warning("explain_prediction failed: %s", exc)
+            return []
+
+    def _calculate_ml_probability(
+        self,
+        home_metrics: TeamMetrics,
+        away_metrics: TeamMetrics,
+        home_id: int,
+        away_id: int,
+        is_playoff: bool = False,
+        week: Any = 0,
+    ) -> Tuple[float, float, List[str]]:
+        """Use the trained GBM to compute base win probabilities, then apply
+        dynamic HFA and bye-week rest adjustments (same post-processing as the
+        weighted-sum path).  Game factors are applied separately in predict().
+        """
+        key_factors: List[str] = []
+
+        # --- Build feature vector ---
+        h2h = calculate_head_to_head(self.db, home_id, away_id, limit=10)
+        feat_dict = build_feature_vector(
+            home_metrics, away_metrics, h2h, is_playoff=is_playoff, week=week
+        )
+        feat_array = feature_dict_to_array(feat_dict)
+        home_prob, away_prob = predict_with_ml(self._ml_model, feat_array)
+
+        # --- Informative key_factors (not used for probability) ---
+        key_factors.append("Model: ML (GradientBoosting)")
+        key_factors.append(
+            f"{home_metrics.team_abbr}: {home_metrics.current_season_wins}-"
+            f"{home_metrics.current_season_losses} record, "
+            f"{home_metrics.point_differential:+d} point diff"
+        )
+        key_factors.append(
+            f"{away_metrics.team_abbr}: {away_metrics.current_season_wins}-"
+            f"{away_metrics.current_season_losses} record, "
+            f"{away_metrics.point_differential:+d} point diff"
+        )
+
+        recent_h = home_metrics.recent_wins + home_metrics.recent_losses
+        recent_a = away_metrics.recent_wins + away_metrics.recent_losses
+        if recent_h > 0 and recent_a > 0:
+            key_factors.append(
+                f"Recent form: {home_metrics.team_abbr} "
+                f"{home_metrics.recent_wins}-{home_metrics.recent_losses} last 5, "
+                f"{away_metrics.team_abbr} "
+                f"{away_metrics.recent_wins}-{away_metrics.recent_losses} last 5"
+            )
+
+        key_factors.append(
+            f"SOS: {home_metrics.team_abbr} {home_metrics.strength_of_schedule:.3f}, "
+            f"{away_metrics.team_abbr} {away_metrics.strength_of_schedule:.3f}"
+        )
+
+        if home_metrics.yards_per_play > 0 and away_metrics.yards_per_play > 0:
+            key_factors.append(
+                f"Turnover margin: {home_metrics.team_abbr} "
+                f"{home_metrics.turnover_margin:+.1f}, "
+                f"{away_metrics.team_abbr} {away_metrics.turnover_margin:+.1f}"
+            )
+
+        # --- Post-processing: dynamic HFA ---
+        hfa = home_metrics.dynamic_hfa
+        home_prob = max(0.02, min(0.98, home_prob + hfa))
+        key_factors.append(
+            f"Home field advantage: +{hfa:.1%} to {home_metrics.team_abbr}"
+        )
+
+        # --- Post-processing: bye-week rest ---
+        home_rest = home_metrics.rest_days
+        away_rest = away_metrics.rest_days
+        if home_rest >= 10 and away_rest <= 8:
+            home_prob = max(0.02, min(0.98, home_prob + 0.015))
+            key_factors.append(f"{home_metrics.team_abbr} coming off bye (+1.5%)")
+        elif away_rest >= 10 and home_rest <= 8:
+            home_prob = max(0.02, min(0.98, home_prob - 0.015))
+            key_factors.append(f"{away_metrics.team_abbr} coming off bye (+1.5%)")
+
+        away_prob = 1.0 - home_prob
+        return home_prob, away_prob, key_factors
+
     def _calculate_probability(
         self,
         home_metrics: TeamMetrics,
@@ -123,12 +287,14 @@ class PredictionEngine:
         Calculate win probability based on team metrics.
 
         Uses a weighted combination of factors:
-        - 25%: Weighted win percentage
-        - 20%: Offensive/defensive strength
+        - 15%: Weighted win percentage (reduced from 25% to make room for advanced)
+        - 15%: Offensive/defensive strength (reduced from 20%)
         - 15%: Recent form
         - 15%: Strength of schedule
         - 15%: Home/away splits
         - 10%: Head-to-head record
+        - 15%: Advanced stats (turnover margin, yards/play, 3rd-down %, red-zone %)
+                → if advanced stats unavailable, 15% redistributed to win_pct
 
         Args:
             home_metrics: Home team metrics
@@ -142,14 +308,14 @@ class PredictionEngine:
         key_factors = []
         components = []
 
-        # 1. Weighted win percentage (25%)
+        # 1. Weighted win percentage (15%; +15% redistributed here if advanced unavailable)
         home_win_pct = home_metrics.weighted_win_pct
         away_win_pct = away_metrics.weighted_win_pct
 
         win_pct_component = self._normalize_to_probability(
             home_win_pct, away_win_pct
         )
-        components.append(('win_pct', win_pct_component, 0.25))
+        components.append(('win_pct', win_pct_component, 0.15))
 
         key_factors.append(
             f"{home_metrics.team_abbr}: {home_metrics.current_season_wins}-"
@@ -162,14 +328,14 @@ class PredictionEngine:
             f"{away_metrics.point_differential:+d} point diff"
         )
 
-        # 2. Offensive/defensive strength (20%)
+        # 2. Offensive/defensive strength (15%)
         home_strength = calculate_strength_rating(home_metrics)
         away_strength = calculate_strength_rating(away_metrics)
 
         strength_component = self._normalize_to_probability(
             home_strength, away_strength
         )
-        components.append(('strength', strength_component, 0.20))
+        components.append(('strength', strength_component, 0.15))
 
         # 3. Recent form (15%)
         home_form = calculate_form_rating(home_metrics)
@@ -216,7 +382,41 @@ class PredictionEngine:
                 f"{home_metrics.home_wins}-{home_metrics.home_losses}"
             )
 
-        # 6. Head-to-head record (10%)
+        # 6. Advanced stats component (15%)
+        # Uses turnover margin, yards/play, 3rd-down %, red-zone efficiency.
+        # Skipped (weight redistributed to win_pct) when stats unavailable.
+        home_has_adv = home_metrics.yards_per_play > 0
+        away_has_adv = away_metrics.yards_per_play > 0
+
+        if home_has_adv and away_has_adv:
+            home_adv_score = (
+                home_metrics.turnover_margin * 0.4
+                + (home_metrics.yards_per_play - 5.5) * 0.3
+                + home_metrics.third_down_pct * 0.2
+                + home_metrics.redzone_efficiency * 0.1
+            )
+            away_adv_score = (
+                away_metrics.turnover_margin * 0.4
+                + (away_metrics.yards_per_play - 5.5) * 0.3
+                + away_metrics.third_down_pct * 0.2
+                + away_metrics.redzone_efficiency * 0.1
+            )
+            adv_component = self._normalize_to_probability(home_adv_score, away_adv_score)
+            components.append(('advanced', adv_component, 0.15))
+
+            key_factors.append(
+                f"Turnover margin: {home_metrics.team_abbr} "
+                f"{home_metrics.turnover_margin:+.1f}, "
+                f"{away_metrics.team_abbr} {away_metrics.turnover_margin:+.1f}"
+            )
+        else:
+            # No advanced data — redistribute 15% to win_pct
+            components = [
+                (name, prob, weight + 0.15) if name == 'win_pct' else (name, prob, weight)
+                for name, prob, weight in components
+            ]
+
+        # 7. Head-to-head record (10%)
         h2h = calculate_head_to_head(self.db, home_id, away_id, limit=10)
         if h2h['total_games'] >= 2:
             if h2h['total_games'] > 0:
@@ -311,19 +511,27 @@ class PredictionEngine:
         """
         Determine confidence level based on data quality.
 
-        Args:
-            home_metrics: Home team metrics
-            away_metrics: Away team metrics
+        Uses current-season games played as the primary signal so that early-season
+        predictions are correctly rated lower than mid/late-season ones.
 
         Returns:
             Confidence level: 'low', 'medium', or 'high'
         """
-        min_games = min(home_metrics.games_analyzed, away_metrics.games_analyzed)
+        home_current = (home_metrics.current_season_wins
+                        + home_metrics.current_season_losses
+                        + home_metrics.current_season_ties)
+        away_current = (away_metrics.current_season_wins
+                        + away_metrics.current_season_losses
+                        + away_metrics.current_season_ties)
+        min_current = min(home_current, away_current)
 
-        if min_games >= 20:
+        # HIGH: both teams have 10+ current-season games (week 11 onward)
+        if min_current >= 10:
             return 'high'
-        elif min_games >= 8:
+        # MEDIUM: 3–9 current-season games (weeks 4–10)
+        elif min_current >= 3:
             return 'medium'
+        # LOW: fewer than 3 current-season games (weeks 1–3, or pre-season)
         else:
             return 'low'
 

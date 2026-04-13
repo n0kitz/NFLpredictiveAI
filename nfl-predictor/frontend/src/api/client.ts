@@ -6,7 +6,7 @@
  */
 
 import type {
-  Team, TeamList, GameList, Prediction,
+  Team, TeamList, GameList, Prediction, PredictionExplanation,
   H2H, TeamMetrics, TeamSeasonStats, TeamProfile, HealthStatus,
   AccuracyStats, InlineFactor, PredictionHistory,
 } from './types';
@@ -63,6 +63,12 @@ export const api = {
   // Predictions
   predict: (homeTeam: string, awayTeam: string, factors?: InlineFactor[]) =>
     post<Prediction>('/predict', {
+      home_team: homeTeam,
+      away_team: awayTeam,
+      ...(factors && factors.length > 0 ? { factors } : {}),
+    }),
+  explainPrediction: (homeTeam: string, awayTeam: string, factors?: InlineFactor[]) =>
+    post<PredictionExplanation>('/predict/explain', {
       home_team: homeTeam,
       away_team: awayTeam,
       ...(factors && factors.length > 0 ? { factors } : {}),

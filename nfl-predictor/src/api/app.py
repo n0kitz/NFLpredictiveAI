@@ -29,6 +29,9 @@ from .schemas import (
     ModelInfoResponse,
     InjuryEntry, WeatherResponse, ConditionsSummary, GameConditionsResponse,
     ExplanationEntry, ExplainPredictionResponse,
+    PlayerEntry, PlayerStatsEntry, TeamRosterResponse,
+    PlayerProfile, PlayerSearchResult,
+    FantasyPlayerEntry, FantasyLeaderboardResponse,
     ErrorResponse,
 )
 
@@ -565,6 +568,9 @@ def predict_game(
         confidence=prediction.confidence,
         key_factors=prediction.key_factors,
         factors_applied=factors_applied,
+        predicted_spread=(
+            round(prediction.predicted_spread, 1) if prediction.predicted_spread is not None else None
+        ),
         vegas_context=vegas_context,
         conditions=conditions,
     )
@@ -893,6 +899,224 @@ def model_info(db: Database = Depends(get_db)):
     engine = PredictionEngine(db)
     info = engine.get_model_info()
     return ModelInfoResponse(**info)
+
+
+# ── Roster / Players ───────────────────────────────────
+
+def _row_to_player_entry(row) -> PlayerEntry:
+    d = dict(row)
+    stats = None
+    if d.get("games_played") is not None:
+        stats = PlayerStatsEntry(
+            games_played=d.get("games_played", 0),
+            pass_attempts=d.get("pass_attempts", 0),
+            pass_completions=d.get("pass_completions", 0),
+            pass_yards=d.get("pass_yards", 0),
+            pass_tds=d.get("pass_tds", 0),
+            interceptions=d.get("interceptions", 0),
+            passer_rating=d.get("passer_rating", 0.0),
+            rush_attempts=d.get("rush_attempts", 0),
+            rush_yards=d.get("rush_yards", 0),
+            rush_tds=d.get("rush_tds", 0),
+            yards_per_carry=d.get("yards_per_carry", 0.0),
+            targets=d.get("targets", 0),
+            receptions=d.get("receptions", 0),
+            rec_yards=d.get("rec_yards", 0),
+            rec_tds=d.get("rec_tds", 0),
+            yards_per_reception=d.get("yards_per_reception", 0.0),
+            fantasy_points_ppr=d.get("fantasy_points_ppr", 0.0),
+            fantasy_points_standard=d.get("fantasy_points_standard", 0.0),
+        )
+    return PlayerEntry(
+        player_id=d["player_id"],
+        espn_id=d.get("espn_id"),
+        full_name=d.get("full_name", ""),
+        position=d.get("position"),
+        jersey_number=d.get("jersey_number"),
+        depth_position=d.get("depth_position"),
+        is_starter=bool(d.get("is_starter", 0)),
+        roster_status=d.get("roster_status"),
+        height_cm=d.get("height_cm"),
+        weight_kg=d.get("weight_kg"),
+        college=d.get("college"),
+        experience_years=d.get("experience_years", 0),
+        headshot_url=d.get("headshot_url"),
+        stats=stats,
+    )
+
+
+@app.get(
+    "/api/teams/{identifier}/roster",
+    response_model=TeamRosterResponse,
+    tags=["roster"],
+)
+def get_team_roster(
+    identifier: str,
+    season: Optional[int] = Query(None, description="Season year (defaults to most recent)"),
+    db: Database = Depends(get_db),
+):
+    """Get full roster for a team, with player stats for the season."""
+    team = db.find_team(identifier)
+    if not team:
+        raise HTTPException(status_code=404, detail=f"Team not found: {identifier}")
+
+    rows = db.get_team_roster(team["team_id"], season)
+    players = [_row_to_player_entry(r) for r in rows]
+
+    actual_season = rows[0]["season"] if rows else (season or 0)
+
+    return TeamRosterResponse(
+        team_id=team["team_id"],
+        team_abbr=team["abbreviation"],
+        season=actual_season,
+        players=players,
+        count=len(players),
+    )
+
+
+@app.get(
+    "/api/teams/{identifier}/starters",
+    response_model=TeamRosterResponse,
+    tags=["roster"],
+)
+def get_team_starters(
+    identifier: str,
+    season: Optional[int] = Query(None),
+    db: Database = Depends(get_db),
+):
+    """Get starters for a team, ordered by position group."""
+    team = db.find_team(identifier)
+    if not team:
+        raise HTTPException(status_code=404, detail=f"Team not found: {identifier}")
+
+    rows = db.get_team_starters(team["team_id"], season)
+    players = [_row_to_player_entry(r) for r in rows]
+    actual_season = rows[0]["season"] if rows else (season or 0)
+
+    return TeamRosterResponse(
+        team_id=team["team_id"],
+        team_abbr=team["abbreviation"],
+        season=actual_season,
+        players=players,
+        count=len(players),
+    )
+
+
+@app.get("/api/players/search", response_model=list, tags=["roster"])
+def search_players(
+    q: str = Query(..., min_length=2, description="Search query (player name)"),
+    db: Database = Depends(get_db),
+):
+    """Search players by name. Returns up to 20 results."""
+    rows = db.search_players(q)
+    return [
+        PlayerSearchResult(
+            player_id=r["player_id"],
+            full_name=r["full_name"],
+            position=r["position"],
+            team_abbr=r["team_abbr"],
+            jersey_number=r["jersey_number"],
+            headshot_url=r["headshot_url"],
+        )
+        for r in rows
+    ]
+
+
+@app.get("/api/players/{player_id}", response_model=PlayerProfile, tags=["roster"])
+def get_player(player_id: int, db: Database = Depends(get_db)):
+    """Get a player's full profile including current season stats."""
+    player = db.get_player_by_id(player_id)
+    if not player:
+        raise HTTPException(status_code=404, detail=f"Player {player_id} not found")
+
+    d = dict(player)
+    stats_row = db.get_player_stats(player_id)
+    stats = None
+    team_abbr = None
+
+    if stats_row:
+        s = dict(stats_row)
+        stats = PlayerStatsEntry(
+            games_played=s.get("games_played", 0),
+            pass_attempts=s.get("pass_attempts", 0),
+            pass_completions=s.get("pass_completions", 0),
+            pass_yards=s.get("pass_yards", 0),
+            pass_tds=s.get("pass_tds", 0),
+            interceptions=s.get("interceptions", 0),
+            passer_rating=s.get("passer_rating", 0.0),
+            rush_attempts=s.get("rush_attempts", 0),
+            rush_yards=s.get("rush_yards", 0),
+            rush_tds=s.get("rush_tds", 0),
+            yards_per_carry=s.get("yards_per_carry", 0.0),
+            targets=s.get("targets", 0),
+            receptions=s.get("receptions", 0),
+            rec_yards=s.get("rec_yards", 0),
+            rec_tds=s.get("rec_tds", 0),
+            yards_per_reception=s.get("yards_per_reception", 0.0),
+            fantasy_points_ppr=s.get("fantasy_points_ppr", 0.0),
+            fantasy_points_standard=s.get("fantasy_points_standard", 0.0),
+        )
+        team_row = db.get_team_by_id(s.get("team_id", 0))
+        if team_row:
+            team_abbr = team_row["abbreviation"]
+
+    return PlayerProfile(
+        player_id=d["player_id"],
+        espn_id=d.get("espn_id"),
+        full_name=d.get("full_name", ""),
+        first_name=d.get("first_name"),
+        last_name=d.get("last_name"),
+        position=d.get("position"),
+        jersey_number=d.get("jersey_number"),
+        date_of_birth=d.get("date_of_birth"),
+        height_cm=d.get("height_cm"),
+        weight_kg=d.get("weight_kg"),
+        college=d.get("college"),
+        experience_years=d.get("experience_years", 0),
+        status=d.get("status"),
+        headshot_url=d.get("headshot_url"),
+        team_abbr=team_abbr,
+        current_stats=stats,
+    )
+
+
+# ── Fantasy ─────────────────────────────────────────────
+
+@app.get(
+    "/api/fantasy/top",
+    response_model=FantasyLeaderboardResponse,
+    tags=["fantasy"],
+)
+def get_fantasy_top(
+    position: str = Query("QB", description="Position: QB, RB, WR, TE, K"),
+    season: int = Query(2024, description="Season year"),
+    scoring: str = Query("ppr", description="Scoring: ppr or standard"),
+    limit: int = Query(50, ge=1, le=200),
+    db: Database = Depends(get_db),
+):
+    """Get top fantasy players at a position for a season."""
+    rows = db.get_fantasy_leaders(position, season, scoring, limit)
+    players = [
+        FantasyPlayerEntry(
+            player_id=r["player_id"],
+            full_name=r["full_name"],
+            position=r.get("position"),
+            team_abbr=r.get("team_abbr"),
+            headshot_url=r.get("headshot_url"),
+            games_played=r.get("games_played", 0),
+            fantasy_points_ppr=r.get("fantasy_points_ppr", 0.0),
+            fantasy_points_standard=r.get("fantasy_points_standard", 0.0),
+            points_per_game_ppr=r.get("points_per_game_ppr", 0.0),
+        )
+        for r in rows
+    ]
+    return FantasyLeaderboardResponse(
+        position=position.upper(),
+        season=season,
+        scoring=scoring,
+        players=players,
+        count=len(players),
+    )
 
 
 # ── Helpers ────────────────────────────────────────────

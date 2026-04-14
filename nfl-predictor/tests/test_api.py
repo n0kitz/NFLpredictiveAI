@@ -290,3 +290,41 @@ class TestExplainEndpoint:
         data = r.json()
         assert "explanation" in data
         assert isinstance(data["explanation"], list)
+
+
+# ── Roster & Players ──────────────────────────────────
+
+
+class TestRosterEndpoints:
+    def test_team_roster_returns_valid_shape(self):
+        """GET /api/teams/{id}/roster returns team_abbr, season, players, count."""
+        r = client.get("/api/teams/KC/roster")
+        assert r.status_code == 200
+        data = r.json()
+        assert "team_abbr" in data
+        assert "season" in data
+        assert "players" in data
+        assert "count" in data
+        assert isinstance(data["players"], list)
+
+    def test_player_search_returns_list(self):
+        """GET /api/players/search?q=... returns a list."""
+        r = client.get("/api/players/search?q=Patrick")
+        assert r.status_code == 200
+        data = r.json()
+        assert isinstance(data, list)
+
+    def test_player_not_found_returns_404(self):
+        """GET /api/players/999999999 returns 404 for unknown id."""
+        r = client.get("/api/players/999999999")
+        assert r.status_code == 404
+
+    def test_fantasy_top_returns_leaderboard(self):
+        """GET /api/fantasy/top returns position, season, players list."""
+        r = client.get("/api/fantasy/top?position=QB&season=2024")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["position"] == "QB"
+        assert data["season"] == 2024
+        assert "players" in data
+        assert isinstance(data["players"], list)

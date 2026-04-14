@@ -21,6 +21,7 @@ from src.scraper.pfr_scraper import PFRScraper
 from src.scraper.odds_scraper import OddsScraper
 from src.scraper.injury_scraper import InjuryScraper
 from src.scraper.weather_scraper import WeatherScraper
+from src.scraper.roster_scraper import RosterScraper
 
 logging.basicConfig(
     level=logging.INFO,
@@ -169,6 +170,34 @@ def main():
         logger.info(f"Conditions: stored weather for {wx_stored} upcoming game(s)")
     except Exception as e:
         logger.error(f"Conditions fetch failed (non-fatal): {e}")
+
+    # Update rosters for all 32 teams
+    try:
+        roster_scraper = RosterScraper()
+        rosters = roster_scraper.fetch_all_rosters()
+        players_upserted = 0
+        entries_upserted = 0
+        current_season = get_current_nfl_season()
+        for team_abbr, players in rosters.items():
+            team = db.get_team_by_abbreviation(team_abbr)
+            if not team:
+                continue
+            team_id = team["team_id"]
+            for p in players:
+                player_id = db.upsert_player(p)
+                db.upsert_roster_entry({
+                    "player_id": player_id,
+                    "team_id": team_id,
+                    "season": current_season,
+                    "depth_position": p.get("depth_position"),
+                    "is_starter": p.get("is_starter", False),
+                    "roster_status": p.get("status", "Active"),
+                })
+                players_upserted += 1
+                entries_upserted += 1
+        logger.info(f"Roster update: {players_upserted} players, {entries_upserted} entries")
+    except Exception as e:
+        logger.error(f"Roster fetch failed (non-fatal): {e}")
 
     db.close()
     logger.info("Weekly scrape complete.")

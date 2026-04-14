@@ -8,6 +8,7 @@ import Compare from './pages/Compare';
 import Season from './pages/Season';
 import History from './pages/History';
 import Playoffs from './pages/Playoffs';
+import PlayerPage from './pages/PlayerPage';
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="/seasons/:year?" element={<Season />} />
           <Route path="/history" element={<History />} />
           <Route path="/playoffs" element={<Playoffs />} />
+          <Route path="/players/:id" element={<PlayerPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

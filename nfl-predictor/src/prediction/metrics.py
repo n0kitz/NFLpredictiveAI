@@ -72,6 +72,7 @@ class TeamMetrics:
     redzone_efficiency: float = 0.0
     yards_per_play: float = 0.0
     sack_rate_allowed: float = 0.0
+    qb_epa_per_play: float = 0.0
 
     # Data quality
     games_analyzed: int = 0
@@ -311,6 +312,11 @@ def calculate_team_metrics(
         metrics.redzone_efficiency = adv['redzone_efficiency']
         metrics.yards_per_play     = adv['yards_per_play']
         metrics.sack_rate_allowed  = adv['sack_rate_allowed']
+        # qb_epa_per_play is optional (added in migration)
+        try:
+            metrics.qb_epa_per_play = float(adv['qb_epa_per_play'] or 0.0)
+        except (IndexError, KeyError, TypeError):
+            metrics.qb_epa_per_play = 0.0
 
     return metrics
 

@@ -176,6 +176,73 @@ CREATE TABLE IF NOT EXISTS game_odds (
     UNIQUE(external_game_id)
 );
 
+-- Players (scraped from ESPN roster API)
+CREATE TABLE IF NOT EXISTS players (
+    player_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    espn_id TEXT UNIQUE,
+    full_name TEXT NOT NULL,
+    first_name TEXT,
+    last_name TEXT,
+    position TEXT,
+    jersey_number TEXT,
+    date_of_birth TEXT,
+    height_cm REAL,
+    weight_kg REAL,
+    college TEXT,
+    experience_years INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'Active',
+    headshot_url TEXT,
+    created_at TEXT,
+    updated_at TEXT
+);
+
+-- Roster entries (player <-> team <-> season)
+CREATE TABLE IF NOT EXISTS roster_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    season INTEGER NOT NULL,
+    depth_position TEXT,
+    is_starter INTEGER DEFAULT 0,
+    roster_status TEXT,
+    fetched_at TEXT,
+    UNIQUE(player_id, team_id, season),
+    FOREIGN KEY (player_id) REFERENCES players(player_id),
+    FOREIGN KEY (team_id) REFERENCES teams(team_id)
+);
+
+-- Player season stats (from nfl_data_py seasonal data)
+CREATE TABLE IF NOT EXISTS player_season_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    season INTEGER NOT NULL,
+    games_played INTEGER DEFAULT 0,
+    pass_attempts INTEGER DEFAULT 0,
+    pass_completions INTEGER DEFAULT 0,
+    pass_yards INTEGER DEFAULT 0,
+    pass_tds INTEGER DEFAULT 0,
+    interceptions INTEGER DEFAULT 0,
+    passer_rating REAL DEFAULT 0,
+    rush_attempts INTEGER DEFAULT 0,
+    rush_yards INTEGER DEFAULT 0,
+    rush_tds INTEGER DEFAULT 0,
+    yards_per_carry REAL DEFAULT 0,
+    targets INTEGER DEFAULT 0,
+    receptions INTEGER DEFAULT 0,
+    rec_yards INTEGER DEFAULT 0,
+    rec_tds INTEGER DEFAULT 0,
+    yards_per_reception REAL DEFAULT 0,
+    tackles INTEGER DEFAULT 0,
+    sacks REAL DEFAULT 0,
+    interceptions_def INTEGER DEFAULT 0,
+    fantasy_points_ppr REAL DEFAULT 0,
+    fantasy_points_standard REAL DEFAULT 0,
+    UNIQUE(player_id, team_id, season),
+    FOREIGN KEY (player_id) REFERENCES players(player_id),
+    FOREIGN KEY (team_id) REFERENCES teams(team_id)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_games_season ON games(season);
 CREATE INDEX IF NOT EXISTS idx_games_date ON games(date);

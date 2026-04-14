@@ -12,7 +12,10 @@ from .metrics import (
 )
 from .factors import apply_game_factors, FactorAdjuster
 from .feature_builder import build_feature_vector, feature_dict_to_array, _parse_week
-from .ml_model import load_model, predict_with_ml, MODEL_PATH
+from .ml_model import (
+    load_model, predict_with_ml, MODEL_PATH,
+    load_spread_model, predict_spread, SPREAD_MODEL_PATH,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +54,8 @@ class PredictionEngine:
         # Load ML model if available; fall back to weighted-sum silently
         self._ml_model, self._ml_features = load_model()
         self._use_ml = self._ml_model is not None
+        # Load spread model (regression) — optional, used alongside classifier
+        self._spread_model = load_spread_model()
         # Pre-warm SHAP explainer (cheap once created; None if ML unavailable)
         from .explainer import get_explainer
         self._explainer = get_explainer(self._ml_model)
@@ -105,6 +110,17 @@ class PredictionEngine:
             cutoff_date=cutoff_date,
         )
 
+        # Fetch Vegas odds for this matchup (date-agnostic lookup when cutoff absent)
+        _today = cutoff_date or __import__('datetime').date.today().isoformat()
+        _odds_row = None
+        try:
+            _odds_row = self.db.get_odds_for_teams(home_id, away_id, _today)
+        except Exception:
+            pass
+        vegas_implied_prob = float(_odds_row["home_implied_prob"]) if (
+            _odds_row and _odds_row["home_implied_prob"] is not None
+        ) else 0.5
+
         # Calculate base win probability.
         # ML is only used when explicitly requested AND the model is loaded.
         # Default: weighted-sum (always active).
@@ -112,11 +128,27 @@ class PredictionEngine:
             home_prob, away_prob, key_factors = self._calculate_ml_probability(
                 home_metrics, away_metrics, home_id, away_id,
                 is_playoff=is_playoff, week=week,
+                vegas_implied_prob=vegas_implied_prob,
             )
         else:
             home_prob, away_prob, key_factors = self._calculate_probability(
                 home_metrics, away_metrics, home_id, away_id
             )
+
+        # Spread prediction (regression model, always run when available)
+        predicted_spread: Optional[float] = None
+        if self._spread_model is not None:
+            try:
+                h2h_for_spread = calculate_head_to_head(self.db, home_id, away_id, limit=10)
+                feat_dict_spread = build_feature_vector(
+                    home_metrics, away_metrics, h2h_for_spread,
+                    is_playoff=is_playoff, week=week,
+                    vegas_implied_prob=vegas_implied_prob,
+                )
+                feat_arr_spread = feature_dict_to_array(feat_dict_spread)
+                predicted_spread = predict_spread(self._spread_model, feat_arr_spread)
+            except Exception as exc:
+                logger.debug("Spread prediction failed: %s", exc)
 
         # Determine confidence level
         confidence = self._determine_confidence(home_metrics, away_metrics)
@@ -130,7 +162,8 @@ class PredictionEngine:
             home_win_probability=home_prob,
             away_win_probability=away_prob,
             confidence=confidence,
-            key_factors=key_factors
+            key_factors=key_factors,
+            predicted_spread=predicted_spread,
         )
 
         # Apply game factors if available
@@ -155,6 +188,8 @@ class PredictionEngine:
             "ml_oos_accuracy":            0.668,
             "weighted_sum_oos_accuracy":  0.672,
             "recommendation":             "weighted_sum performs better on 2023-2024 OOS data",
+            "spread_model_loaded":        self._spread_model is not None,
+            "spread_model_mae":           None,  # updated after retrain
         }
 
     def explain_prediction(
@@ -206,6 +241,7 @@ class PredictionEngine:
         away_id: int,
         is_playoff: bool = False,
         week: Any = 0,
+        vegas_implied_prob: float = 0.5,
     ) -> Tuple[float, float, List[str]]:
         """Use the trained GBM to compute base win probabilities, then apply
         dynamic HFA and bye-week rest adjustments (same post-processing as the
@@ -216,7 +252,8 @@ class PredictionEngine:
         # --- Build feature vector ---
         h2h = calculate_head_to_head(self.db, home_id, away_id, limit=10)
         feat_dict = build_feature_vector(
-            home_metrics, away_metrics, h2h, is_playoff=is_playoff, week=week
+            home_metrics, away_metrics, h2h, is_playoff=is_playoff, week=week,
+            vegas_implied_prob=vegas_implied_prob,
         )
         feat_array = feature_dict_to_array(feat_dict)
         home_prob, away_prob = predict_with_ml(self._ml_model, feat_array)

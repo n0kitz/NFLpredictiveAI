@@ -31,6 +31,8 @@ nfl-predictor/
 │   ├── scraper/
 │   │   ├── pfr_scraper.py     # PFR scraper with resumable progress + --from-file
 │   │   ├── team_mappings.py   # 32 current + historical teams
+│   │   ├── roster_scraper.py  # ESPN roster API → players + roster_entries per team
+│   │   ├── nfl_data_importer.py # nfl_data_py: QB EPA PBP, team advanced stats, player season stats
 │   │   ├── injury_scraper.py  # ESPN public API — STADIUM_COORDS, ESPN_TEAM_MAP, InjuryScraper
 │   │   ├── weather_scraper.py # Open-Meteo API — dome check, WMO codes, is_adverse
 │   │   └── odds_scraper.py    # The Odds API — OddsScraper (ODDS_API_KEY required)
@@ -39,22 +41,27 @@ nfl-predictor/
 │   ├── src/
 │   │   ├── api/client.ts      # Typed fetch wrapper for all endpoints
 │   │   ├── api/types.ts       # TypeScript types matching Pydantic schemas
-│   │   ├── hooks/useApi.ts    # React hooks: useTeams, useTeamProfile, usePrediction, useH2H
+│   │   ├── hooks/useApi.ts    # React hooks: useTeams, useTeamProfile, usePrediction, useH2H, usePlayer
 │   │   ├── theme/teamColors.ts # All 32 team colors, gradient/tint helpers
-│   │   ├── components/        # Layout, PredictionCard, TeamSelector, Spinner, TrendChart, FactorPanel
-│   │   └── pages/             # Dashboard, Predict, Teams, TeamDetail, Compare, Season, History, Playoffs
+│   │   ├── components/        # Layout (+ PlayerSearch in navbar), PredictionCard, TeamSelector, Spinner, TrendChart, FactorPanel, PlayerModal, ExplanationPanel
+│   │   └── pages/             # Dashboard, Predict, Teams, TeamDetail, Compare, Season, History, Playoffs, PlayerPage
 │   ├── vite.config.ts         # Dev proxy /api → localhost:8000
 │   └── package.json
 ├── tests/
 │   ├── test_basic.py          # Team mappings, DB, metrics, helpers (14 tests)
-│   ├── test_api.py            # All API endpoints via TestClient (29 tests)
-│   ├── test_prediction.py     # Prediction engine, metrics, backtester (16 tests)
+│   ├── test_api.py            # All API endpoints via TestClient (33 tests, incl. roster/player/fantasy)
+│   ├── test_prediction.py     # Prediction engine, metrics, backtester, feature builder, SHAP (20 tests)
 │   ├── test_scraper.py        # HTML parsing, team mapping resolution (11 tests)
+│   ├── test_roster.py         # Player upsert, roster entry, season stats, starters ordering (4 tests)
 │   ├── test_injury_scraper.py # InjuryScraper, ESPN_TEAM_MAP, STADIUM_COORDS (10 tests)
 │   ├── test_weather_scraper.py# WeatherScraper dome logic, WMO mapping (12 tests)
 │   └── fixtures/              # Sample PFR HTML for scraper tests
-├── scripts/weekly_scrape.py   # Wednesday cron scrape + enrichment + odds + conditions
+├── scripts/weekly_scrape.py   # Wednesday cron scrape + enrichment + odds + conditions + roster update
 ├── scripts/fetch_conditions.py# One-off injury + weather fetch for upcoming games
+├── scripts/import_rosters.py  # Step1: ESPN rosters → players+roster_entries; Step2: nfl_data_py → player_season_stats
+├── scripts/import_advanced_stats.py # nfl_data_py PBP → team_advanced_stats + QB EPA
+├── scripts/train_model.py     # Train GradientBoostingClassifier (35 features) + spread regressor
+├── scripts/run_backtest.py    # Standalone backtest runner with report output
 ├── data/nfl.db                # SQLite database (9170+ games)
 ├── docker-compose.yml         # api + frontend + cron containers
 ├── Dockerfile.api             # Python API server
@@ -93,6 +100,7 @@ docker compose run scraper               # One-off data scrape
 - `GET  /api/teams/{id}/profile` — All-time + last season stats (used by TeamDetail page)
 - `GET  /api/teams/{id}/season/{year}` — Season stats
 - `GET  /api/teams/{id}/games` — Recent games
+- `GET  /api/teams/{id}/roster` — Current roster with player stats (`?season=`)
 - `GET  /api/games` — Games (filter by season/type, `?limit=` param, no limit when season is set)
 - `GET  /api/games/{game_id}/odds` — Vegas odds for a game (404 if none; display-only)
 - `GET  /api/games/{game_id}/conditions` — Injury reports + weather for a game
@@ -105,6 +113,9 @@ docker compose run scraper               # One-off data scrape
 - `POST /api/predictions/enrich` — Match unresolved predictions to completed game results
 - `GET  /api/model/info` — Model info (active model, ML availability, OOS accuracy)
 - `GET  /api/scrape/status` — Scraping progress
+- `GET  /api/players/{player_id}` — Player detail + season stats (404 if not found)
+- `GET  /api/players/search` — Search players by name (`?q=`)
+- `GET  /api/fantasy/top` — Fantasy leaderboard (`?position=QB&season=2024`)
 - `GET  /docs` — Swagger UI
 
 ## Data Scraping
@@ -134,11 +145,16 @@ Replace `YYYY` with the season year (e.g. 2025).
 | `/` | Dashboard | Featured matchups, model accuracy stats |
 | `/predict` | Predict | Team selectors + factor panel + prediction results + H2H |
 | `/teams` | Teams | Grid of all 32 teams |
-| `/teams/:abbr` | TeamDetail | Profile stats, SOS/HFA, 10-season trend charts (Recharts), recent games |
+| `/teams/:abbr` | TeamDetail | Profile stats, SOS/HFA, 10-season trend charts (Recharts), recent games, clickable roster → PlayerModal |
 | `/compare/:t1?/:t2?` | Compare | Side-by-side tug-of-war stat bars + H2H summary |
 | `/seasons/:year?` | Season | Standings by division + games-by-week accordion (1990-2025) |
 | `/history` | History | Auto-saved prediction log with accuracy tracking |
 | `/playoffs` | Playoffs | Seed 14 teams → simulate WC/Div/Conf/SB bracket |
+| `/players/:id` | PlayerPage | Full player detail: bio, position-specific stats, fantasy points |
+
+**PlayerModal**: overlay component on TeamDetail; shows headshot, position badge, jersey, bio, position-specific stats (QB/RB/WR/TE logic), fantasy points PPR+Standard.
+
+**PlayerSearch**: debounced navbar search (250ms), renders dropdown, navigates to `/players/:id` on selection.
 
 ## Architecture Notes
 - CLI uses singleton DB; API uses per-request DB via FastAPI Depends
@@ -154,9 +170,11 @@ Replace `YYYY` with the season year (e.g. 2025).
 - Scraper has cloudscraper fallback: if requests gets 403, it retries with cloudscraper automatically
 - Cron container runs weekly_scrape.py every Wednesday 06:00 UTC (enriches predictions + odds + conditions)
 - Frontend uses Recharts for trend charts on TeamDetail page
-- 96 pytest tests across 6 test files (API, prediction, scraper, basic, injury_scraper, weather_scraper)
-- ML model (GradientBoostingClassifier, 32 features, trained 2013-2022): 66.8% OOS accuracy
+- 104 pytest tests across 7 test files (API, prediction, scraper, basic, roster, injury_scraper, weather_scraper)
+- ML model (GradientBoostingClassifier, **35 features**, trained 2013-2022): needs retraining after feature vector expansion
+- Feature vector: 32 base + vegas_home_implied_prob + home_qb_epa_per_play + away_qb_epa_per_play = 35 total
 - Weighted-sum default: 67.2% OOS accuracy on 2023-2024. ML only activates with `?model=ml`
+- `sqlite3.Row` objects: use bracket access `r["col"]` not `.get()` — `.get()` is not supported
 
 ## Vegas Lines (The Odds API)
 - **Key constraint**: Vegas odds are NEVER used as a prediction input — display-only enrichment.
@@ -192,6 +210,9 @@ Replace `YYYY` with the season year (e.g. 2025).
 - `game_odds` — Vegas odds from The Odds API (spread, O/U, vig-adjusted implied probs, external_game_id)
 - `injury_reports` — ESPN injury data (team_id, player_name, position, injury_status, report_date)
 - `game_weather` — Open-Meteo weather (home_team_id, game_date, is_dome, temp, wind, precip, condition, is_adverse)
+- `players` — Player bio: espn_id, full_name, position, height/weight, college, experience, headshot_url
+- `roster_entries` — Player ↔ team ↔ season links: player_id, team_id, season, roster_status, fetched_at
+- `player_season_stats` — Per-player per-season: pass/rush/rec stats, passer_rating, fantasy_points_ppr/standard
 
 ## Recent Changes (2026-04)
 - Added `/api/teams/{id}/profile` endpoint with all-time + last season stats
@@ -203,14 +224,28 @@ Replace `YYYY` with the season year (e.g. 2025).
 - Full frontend UI redesign: sticky nav, hero dashboard, team badges, dual stat boxes, visual H2H bar
 - SOS, Dynamic HFA, rest_days exposed on `/stats` endpoint and TeamDetail page
 - Bye week rest advantage (+1.5%) added to prediction engine
-- Comprehensive test suite: 64 tests across test_api, test_prediction, test_scraper, test_basic
 - Recharts trend charts on TeamDetail (win%, PPG, home/away across 10 seasons)
 - Compare page with tug-of-war stat bars + H2H
 - Factor management UI on Predict page (inline factors, no game_id required)
 - Season browser with computed standings by division + games-by-week
 - Prediction history: auto-save on predict, enrichment in weekly cron, History page
 - Playoff bracket simulator: seed 14 teams, simulate through Super Bowl
-- ML model: GradientBoostingClassifier, 32-feature vector, trained 2013-2022; weighted-sum default (67.2% vs ML 66.8% OOS)
+- ML model: GradientBoostingClassifier, 32→35 feature vector; needs retraining (numpy mismatch on old model)
 - Injury + weather enrichment: ESPN + Open-Meteo, display-only, `GET /api/games/{id}/conditions`, weekly cron auto-fetch
 - `POST /api/predict` response now includes `conditions` (injuries + weather) and `vegas_context` fields
 - `GET /api/model/info` endpoint: reports active model, ML availability, OOS accuracy comparison
+- **Roster system (2026-04)**: players + roster_entries + player_season_stats tables; `RosterScraper` (ESPN API); `import_rosters.py` with 3-tier matching (exact/lastname/fuzzy); `/api/teams/{id}/roster`, `/api/players/{id}`, `/api/players/search`, `/api/fantasy/top` endpoints; PlayerModal overlay + PlayerPage + navbar PlayerSearch in frontend
+- Feature vector expanded to 35: added vegas_home_implied_prob (#33), home_qb_epa_per_play (#34), away_qb_epa_per_play (#35)
+- Fixed `import_player_season_stats`: now merges `import_seasonal_data` with `import_seasonal_rosters` (seasonal_data has no player names — merge on player_id+season to get names/positions)
+- Fixed `search_players` API: `sqlite3.Row` uses bracket access `r["col"]`, not `.get()`
+- Weekly cron now includes roster update step
+- 104 pytest tests across 7 files; test_injury_scraper + test_weather_scraper skip without network
+
+## Pending Data Operations (run after code changes)
+```bash
+cd nfl-predictor
+python scripts/import_advanced_stats.py   # Populate QB EPA + team advanced stats
+python scripts/train_model.py             # Retrain ML model with 35-feature vector
+python scripts/import_rosters.py          # Import rosters + player season stats (Step1: ESPN, Step2: nfl_data_py)
+# Review data/unmatched_players.txt after roster import to assess matching quality
+```

@@ -324,6 +324,7 @@ class Prediction:
     confidence: str  # 'low', 'medium', 'high'
     key_factors: List[str] = field(default_factory=list)
     factors_applied: List[GameFactor] = field(default_factory=list)
+    predicted_spread: Optional[float] = None
 
     @property
     def predicted_winner(self) -> str:

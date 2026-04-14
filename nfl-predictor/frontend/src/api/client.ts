@@ -9,6 +9,7 @@ import type {
   Team, TeamList, GameList, Prediction, PredictionExplanation,
   H2H, TeamMetrics, TeamSeasonStats, TeamProfile, HealthStatus,
   AccuracyStats, InlineFactor, PredictionHistory,
+  TeamRoster, PlayerProfile, PlayerSearchResult, FantasyLeaderboard,
 } from './types';
 
 const BASE = '/api';
@@ -87,4 +88,21 @@ export const api = {
   // Prediction history
   getPredictionHistory: (limit = 50, offset = 0) =>
     get<PredictionHistory>(`/predictions/history?limit=${limit}&offset=${offset}`),
+
+  // Roster
+  getTeamRoster: (id: string, season?: number) =>
+    get<TeamRoster>(`/teams/${encodeURIComponent(id)}/roster${season ? `?season=${season}` : ''}`),
+  getTeamStarters: (id: string, season?: number) =>
+    get<TeamRoster>(`/teams/${encodeURIComponent(id)}/starters${season ? `?season=${season}` : ''}`),
+
+  // Players
+  getPlayer: (playerId: number) => get<PlayerProfile>(`/players/${playerId}`),
+  searchPlayers: (query: string) =>
+    get<PlayerSearchResult[]>(`/players/search?q=${encodeURIComponent(query)}`),
+
+  // Fantasy
+  getFantasyTop: (position = 'QB', season = 2024, scoring = 'ppr', limit = 50) =>
+    get<FantasyLeaderboard>(
+      `/fantasy/top?position=${position}&season=${season}&scoring=${scoring}&limit=${limit}`
+    ),
 };

@@ -49,10 +49,18 @@ class Database:
                     redzone_efficiency REAL DEFAULT 0,
                     yards_per_play REAL DEFAULT 0,
                     sack_rate_allowed REAL DEFAULT 0,
+                    qb_epa_per_play REAL DEFAULT 0,
                     UNIQUE(team_id, season),
                     FOREIGN KEY (team_id) REFERENCES teams(team_id)
                 )
             """)
+            # Safe migration: add qb_epa_per_play if table already existed without it
+            try:
+                self._connection.execute(
+                    "ALTER TABLE team_advanced_stats ADD COLUMN qb_epa_per_play REAL DEFAULT 0"
+                )
+            except Exception:
+                pass  # column already exists
             self._connection.execute("""
                 CREATE TABLE IF NOT EXISTS game_odds (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,6 +107,74 @@ class Database:
                     UNIQUE(home_team_id, game_date),
                     FOREIGN KEY (game_id) REFERENCES games(game_id),
                     FOREIGN KEY (home_team_id) REFERENCES teams(team_id)
+                )
+            """)
+            # Roster tables
+            self._connection.execute("""
+                CREATE TABLE IF NOT EXISTS players (
+                    player_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    espn_id TEXT UNIQUE,
+                    full_name TEXT NOT NULL,
+                    first_name TEXT,
+                    last_name TEXT,
+                    position TEXT,
+                    jersey_number TEXT,
+                    date_of_birth TEXT,
+                    height_cm REAL,
+                    weight_kg REAL,
+                    college TEXT,
+                    experience_years INTEGER DEFAULT 0,
+                    status TEXT DEFAULT 'Active',
+                    headshot_url TEXT,
+                    created_at TEXT,
+                    updated_at TEXT
+                )
+            """)
+            self._connection.execute("""
+                CREATE TABLE IF NOT EXISTS roster_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    player_id INTEGER NOT NULL,
+                    team_id INTEGER NOT NULL,
+                    season INTEGER NOT NULL,
+                    depth_position TEXT,
+                    is_starter INTEGER DEFAULT 0,
+                    roster_status TEXT,
+                    fetched_at TEXT,
+                    UNIQUE(player_id, team_id, season),
+                    FOREIGN KEY (player_id) REFERENCES players(player_id),
+                    FOREIGN KEY (team_id) REFERENCES teams(team_id)
+                )
+            """)
+            self._connection.execute("""
+                CREATE TABLE IF NOT EXISTS player_season_stats (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    player_id INTEGER NOT NULL,
+                    team_id INTEGER NOT NULL,
+                    season INTEGER NOT NULL,
+                    games_played INTEGER DEFAULT 0,
+                    pass_attempts INTEGER DEFAULT 0,
+                    pass_completions INTEGER DEFAULT 0,
+                    pass_yards INTEGER DEFAULT 0,
+                    pass_tds INTEGER DEFAULT 0,
+                    interceptions INTEGER DEFAULT 0,
+                    passer_rating REAL DEFAULT 0,
+                    rush_attempts INTEGER DEFAULT 0,
+                    rush_yards INTEGER DEFAULT 0,
+                    rush_tds INTEGER DEFAULT 0,
+                    yards_per_carry REAL DEFAULT 0,
+                    targets INTEGER DEFAULT 0,
+                    receptions INTEGER DEFAULT 0,
+                    rec_yards INTEGER DEFAULT 0,
+                    rec_tds INTEGER DEFAULT 0,
+                    yards_per_reception REAL DEFAULT 0,
+                    tackles INTEGER DEFAULT 0,
+                    sacks REAL DEFAULT 0,
+                    interceptions_def INTEGER DEFAULT 0,
+                    fantasy_points_ppr REAL DEFAULT 0,
+                    fantasy_points_standard REAL DEFAULT 0,
+                    UNIQUE(player_id, team_id, season),
+                    FOREIGN KEY (player_id) REFERENCES players(player_id),
+                    FOREIGN KEY (team_id) REFERENCES teams(team_id)
                 )
             """)
             self._connection.commit()
@@ -594,8 +670,9 @@ class Database:
             """
             INSERT OR REPLACE INTO team_advanced_stats
                 (team_id, season, turnover_margin, third_down_pct,
-                 redzone_efficiency, yards_per_play, sack_rate_allowed)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                 redzone_efficiency, yards_per_play, sack_rate_allowed,
+                 qb_epa_per_play)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 team_id, season,
@@ -604,6 +681,7 @@ class Database:
                 stats.get('redzone_efficiency', 0.0),
                 stats.get('yards_per_play', 0.0),
                 stats.get('sack_rate_allowed', 0.0),
+                stats.get('qb_epa_per_play', 0.0),
             ),
         )
 
@@ -766,6 +844,279 @@ class Database:
         return self.fetchone(
             "SELECT * FROM game_weather WHERE home_team_id = ? AND game_date = ?",
             (home_team_id, game_date),
+        )
+
+
+    # ── Roster / Player operations ────────────────────────────────────────────
+
+    def upsert_player(self, player_data: Dict[str, Any]) -> int:
+        """Insert or update a player record. Returns player_id."""
+        from datetime import datetime as _dt
+        now = _dt.utcnow().isoformat()
+        existing = self.get_player_by_espn_id(str(player_data.get('espn_id', '')))
+        if existing:
+            self.execute(
+                """
+                UPDATE players SET
+                    full_name=?, first_name=?, last_name=?, position=?,
+                    jersey_number=?, date_of_birth=?, height_cm=?, weight_kg=?,
+                    college=?, experience_years=?, status=?, headshot_url=?,
+                    updated_at=?
+                WHERE espn_id=?
+                """,
+                (
+                    player_data.get('full_name', ''),
+                    player_data.get('first_name'),
+                    player_data.get('last_name'),
+                    player_data.get('position'),
+                    player_data.get('jersey_number'),
+                    player_data.get('date_of_birth'),
+                    player_data.get('height_cm'),
+                    player_data.get('weight_kg'),
+                    player_data.get('college'),
+                    player_data.get('experience_years', 0),
+                    player_data.get('status', 'Active'),
+                    player_data.get('headshot_url'),
+                    now,
+                    str(player_data.get('espn_id', '')),
+                ),
+            )
+            return existing['player_id']
+        else:
+            cursor = self.execute(
+                """
+                INSERT INTO players
+                    (espn_id, full_name, first_name, last_name, position,
+                     jersey_number, date_of_birth, height_cm, weight_kg,
+                     college, experience_years, status, headshot_url,
+                     created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(player_data.get('espn_id', '')),
+                    player_data.get('full_name', ''),
+                    player_data.get('first_name'),
+                    player_data.get('last_name'),
+                    player_data.get('position'),
+                    player_data.get('jersey_number'),
+                    player_data.get('date_of_birth'),
+                    player_data.get('height_cm'),
+                    player_data.get('weight_kg'),
+                    player_data.get('college'),
+                    player_data.get('experience_years', 0),
+                    player_data.get('status', 'Active'),
+                    player_data.get('headshot_url'),
+                    now, now,
+                ),
+            )
+            return cursor.lastrowid
+
+    def upsert_roster_entry(self, entry: Dict[str, Any]) -> None:
+        """Insert or update a roster entry."""
+        from datetime import datetime as _dt
+        self.execute(
+            """
+            INSERT INTO roster_entries
+                (player_id, team_id, season, depth_position, is_starter,
+                 roster_status, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(player_id, team_id, season) DO UPDATE SET
+                depth_position=excluded.depth_position,
+                is_starter=excluded.is_starter,
+                roster_status=excluded.roster_status,
+                fetched_at=excluded.fetched_at
+            """,
+            (
+                entry['player_id'],
+                entry['team_id'],
+                entry['season'],
+                entry.get('depth_position'),
+                1 if entry.get('is_starter') else 0,
+                entry.get('roster_status', 'Active'),
+                entry.get('fetched_at', _dt.utcnow().isoformat()),
+            ),
+        )
+
+    def upsert_player_season_stats(self, stats: Dict[str, Any]) -> None:
+        """Insert or update player season statistics."""
+        self.execute(
+            """
+            INSERT INTO player_season_stats
+                (player_id, team_id, season, games_played,
+                 pass_attempts, pass_completions, pass_yards, pass_tds,
+                 interceptions, passer_rating,
+                 rush_attempts, rush_yards, rush_tds, yards_per_carry,
+                 targets, receptions, rec_yards, rec_tds, yards_per_reception,
+                 tackles, sacks, interceptions_def,
+                 fantasy_points_ppr, fantasy_points_standard)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(player_id, team_id, season) DO UPDATE SET
+                games_played=excluded.games_played,
+                pass_attempts=excluded.pass_attempts,
+                pass_completions=excluded.pass_completions,
+                pass_yards=excluded.pass_yards,
+                pass_tds=excluded.pass_tds,
+                interceptions=excluded.interceptions,
+                passer_rating=excluded.passer_rating,
+                rush_attempts=excluded.rush_attempts,
+                rush_yards=excluded.rush_yards,
+                rush_tds=excluded.rush_tds,
+                yards_per_carry=excluded.yards_per_carry,
+                targets=excluded.targets,
+                receptions=excluded.receptions,
+                rec_yards=excluded.rec_yards,
+                rec_tds=excluded.rec_tds,
+                yards_per_reception=excluded.yards_per_reception,
+                tackles=excluded.tackles,
+                sacks=excluded.sacks,
+                interceptions_def=excluded.interceptions_def,
+                fantasy_points_ppr=excluded.fantasy_points_ppr,
+                fantasy_points_standard=excluded.fantasy_points_standard
+            """,
+            (
+                stats['player_id'], stats['team_id'], stats['season'],
+                stats.get('games_played', 0),
+                stats.get('pass_attempts', 0), stats.get('pass_completions', 0),
+                stats.get('pass_yards', 0), stats.get('pass_tds', 0),
+                stats.get('interceptions', 0), stats.get('passer_rating', 0.0),
+                stats.get('rush_attempts', 0), stats.get('rush_yards', 0),
+                stats.get('rush_tds', 0), stats.get('yards_per_carry', 0.0),
+                stats.get('targets', 0), stats.get('receptions', 0),
+                stats.get('rec_yards', 0), stats.get('rec_tds', 0),
+                stats.get('yards_per_reception', 0.0),
+                stats.get('tackles', 0), stats.get('sacks', 0.0),
+                stats.get('interceptions_def', 0),
+                stats.get('fantasy_points_ppr', 0.0),
+                stats.get('fantasy_points_standard', 0.0),
+            ),
+        )
+
+    def get_team_roster(self, team_id: int, season: Optional[int] = None) -> List[sqlite3.Row]:
+        """Get full roster for a team, joined with player info and stats."""
+        from datetime import date as _date
+        if season is None:
+            row = self.fetchone("SELECT MAX(season) as s FROM roster_entries WHERE team_id=?", (team_id,))
+            season = row['s'] if row and row['s'] else _date.today().year
+        return self.fetchall(
+            """
+            SELECT p.*, re.depth_position, re.is_starter, re.roster_status, re.season,
+                   pss.games_played, pss.pass_attempts, pss.pass_completions,
+                   pss.pass_yards, pss.pass_tds, pss.interceptions, pss.passer_rating,
+                   pss.rush_attempts, pss.rush_yards, pss.rush_tds, pss.yards_per_carry,
+                   pss.targets, pss.receptions, pss.rec_yards, pss.rec_tds,
+                   pss.yards_per_reception, pss.fantasy_points_ppr,
+                   pss.fantasy_points_standard
+            FROM roster_entries re
+            JOIN players p ON re.player_id = p.player_id
+            LEFT JOIN player_season_stats pss
+                ON pss.player_id = re.player_id AND pss.season = re.season
+            WHERE re.team_id = ? AND re.season = ?
+            ORDER BY p.position, re.depth_position, p.full_name
+            """,
+            (team_id, season),
+        )
+
+    def get_player_by_id(self, player_id: int) -> Optional[sqlite3.Row]:
+        """Get player by internal player_id."""
+        return self.fetchone("SELECT * FROM players WHERE player_id=?", (player_id,))
+
+    def get_player_by_espn_id(self, espn_id: str) -> Optional[sqlite3.Row]:
+        """Get player by ESPN ID."""
+        if not espn_id:
+            return None
+        return self.fetchone("SELECT * FROM players WHERE espn_id=?", (espn_id,))
+
+    def get_player_stats(self, player_id: int, season: Optional[int] = None) -> Optional[sqlite3.Row]:
+        """Get player season stats. Returns most recent season if season=None."""
+        if season:
+            return self.fetchone(
+                "SELECT * FROM player_season_stats WHERE player_id=? AND season=?",
+                (player_id, season),
+            )
+        return self.fetchone(
+            "SELECT * FROM player_season_stats WHERE player_id=? ORDER BY season DESC LIMIT 1",
+            (player_id,),
+        )
+
+    # Position group ordering for starters
+    _POSITION_ORDER = {
+        'QB': 0, 'RB': 1, 'FB': 2, 'WR': 3, 'TE': 4,
+        'LT': 5, 'LG': 6, 'C': 7, 'RG': 8, 'RT': 9, 'OL': 10,
+        'DE': 11, 'DT': 12, 'NT': 13, 'DL': 14,
+        'LB': 15, 'MLB': 16, 'OLB': 17, 'ILB': 18,
+        'CB': 19, 'S': 20, 'FS': 21, 'SS': 22, 'DB': 23,
+        'K': 24, 'P': 25, 'LS': 26,
+    }
+
+    def get_team_starters(self, team_id: int, season: Optional[int] = None) -> List[sqlite3.Row]:
+        """Get starters for a team, ordered by position group."""
+        from datetime import date as _date
+        if season is None:
+            row = self.fetchone("SELECT MAX(season) as s FROM roster_entries WHERE team_id=?", (team_id,))
+            season = row['s'] if row and row['s'] else _date.today().year
+        rows = self.fetchall(
+            """
+            SELECT p.*, re.depth_position, re.is_starter, re.roster_status, re.season,
+                   pss.games_played, pss.pass_attempts, pss.pass_completions,
+                   pss.pass_yards, pss.pass_tds, pss.interceptions, pss.passer_rating,
+                   pss.rush_attempts, pss.rush_yards, pss.rush_tds,
+                   pss.targets, pss.receptions, pss.rec_yards, pss.rec_tds,
+                   pss.fantasy_points_ppr, pss.fantasy_points_standard
+            FROM roster_entries re
+            JOIN players p ON re.player_id = p.player_id
+            LEFT JOIN player_season_stats pss
+                ON pss.player_id = re.player_id AND pss.season = re.season
+            WHERE re.team_id = ? AND re.season = ? AND re.is_starter = 1
+            ORDER BY p.position, p.full_name
+            """,
+            (team_id, season),
+        )
+        return sorted(rows, key=lambda r: self._POSITION_ORDER.get(r['position'] or '', 99))
+
+    def search_players(self, query: str) -> List[sqlite3.Row]:
+        """Search players by full_name (LIKE). Returns up to 20 results."""
+        like = f"%{query}%"
+        return self.fetchall(
+            """
+            SELECT p.*, re.team_id, t.abbreviation as team_abbr
+            FROM players p
+            LEFT JOIN roster_entries re ON re.player_id = p.player_id
+            LEFT JOIN teams t ON t.team_id = re.team_id
+            WHERE p.full_name LIKE ?
+            GROUP BY p.player_id
+            ORDER BY p.full_name
+            LIMIT 20
+            """,
+            (like,),
+        )
+
+    def get_fantasy_leaders(
+        self,
+        position: str,
+        season: int,
+        scoring: str = 'ppr',
+        limit: int = 50,
+    ) -> List[sqlite3.Row]:
+        """Get top fantasy players at a position for a season."""
+        pts_col = 'fantasy_points_ppr' if scoring == 'ppr' else 'fantasy_points_standard'
+        pos_filter = position.upper()
+        return self.fetchall(
+            f"""
+            SELECT p.player_id, p.full_name, p.position, p.headshot_url,
+                   t.abbreviation as team_abbr,
+                   pss.games_played, pss.fantasy_points_ppr, pss.fantasy_points_standard,
+                   CASE WHEN pss.games_played > 0
+                        THEN ROUND(pss.{pts_col} / pss.games_played, 2)
+                        ELSE 0 END as points_per_game_ppr
+            FROM player_season_stats pss
+            JOIN players p ON pss.player_id = p.player_id
+            LEFT JOIN roster_entries re ON re.player_id = p.player_id AND re.season = pss.season
+            LEFT JOIN teams t ON t.team_id = re.team_id
+            WHERE pss.season = ? AND p.position = ?
+            ORDER BY pss.{pts_col} DESC
+            LIMIT ?
+            """,
+            (season, pos_filter, limit),
         )
 
 

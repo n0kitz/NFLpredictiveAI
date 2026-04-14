@@ -1,14 +1,20 @@
+import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useTeamProfile, useTeamMetrics, useTeamGames } from '../hooks/useApi';
+import { useTeamProfile, useTeamMetrics, useTeamGames, useTeamRoster } from '../hooks/useApi';
 import Spinner from '../components/Spinner';
 import TrendChart from '../components/TrendChart';
+import PlayerModal from '../components/PlayerModal';
 import { getTeamColors, teamBgTint } from '../theme/teamColors';
+import type { PlayerEntry } from '../api/types';
 
 export default function TeamDetail() {
   const { abbr } = useParams<{ abbr: string }>();
+  const [activeTab, setActiveTab] = useState<'overview' | 'roster'>('overview');
+  const [selectedPlayer, setSelectedPlayer] = useState<PlayerEntry | null>(null);
   const { data: profile, loading: pLoading, error: pError } = useTeamProfile(abbr ?? '');
   const { data: metrics, loading: mLoading } = useTeamMetrics(abbr ?? '');
   const { data: games, loading: gLoading } = useTeamGames(abbr ?? '', 15);
+  const { data: roster, loading: rLoading } = useTeamRoster(abbr ?? '');
 
   if (pLoading || mLoading) return <Spinner text="Loading team..." />;
   if (pError || !profile) {
@@ -180,80 +186,205 @@ export default function TeamDetail() {
         )}
       </div>
 
-      {/* Trend charts */}
-      <div className="mb-8">
-        <TrendChart
-          teamAbbr={profile.team_abbr}
-          primaryColor={colors.primary}
-          secondaryColor={colors.secondary}
-        />
+      {/* Tab Navigation */}
+      <div className="flex gap-1 mb-6 border-b border-border animate-fade-up stagger-2">
+        {(['overview', 'roster'] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2.5 text-[11px] font-display font-semibold uppercase tracking-[0.15em] transition-all border-b-2 -mb-px ${
+              activeTab === tab
+                ? 'border-accent text-accent'
+                : 'border-transparent text-text-muted hover:text-text-secondary'
+            }`}
+          >
+            {tab === 'overview' ? 'Overview' : 'Roster'}
+          </button>
+        ))}
       </div>
 
-      {/* Recent games */}
-      <div className="rounded-xl border border-border bg-surface-850 overflow-hidden animate-fade-up stagger-2">
-        <div className="px-5 py-3 border-b border-border bg-surface-800/50">
-          <h2 className="font-display text-[11px] font-semibold text-text-muted uppercase tracking-[0.2em]">
-            Recent Games
-          </h2>
-        </div>
+      {activeTab === 'overview' && (
+        <>
+          {/* Trend charts */}
+          <div className="mb-8">
+            <TrendChart
+              teamAbbr={profile.team_abbr}
+              primaryColor={colors.primary}
+              secondaryColor={colors.secondary}
+            />
+          </div>
 
-        <div className="p-5">
-          {gLoading && <Spinner text="Loading games..." />}
+          {/* Recent games */}
+          <div className="rounded-xl border border-border bg-surface-850 overflow-hidden animate-fade-up stagger-3">
+            <div className="px-5 py-3 border-b border-border bg-surface-800/50">
+              <h2 className="font-display text-[11px] font-semibold text-text-muted uppercase tracking-[0.2em]">
+                Recent Games
+              </h2>
+            </div>
+            <div className="p-5">
+              {gLoading && <Spinner text="Loading games..." />}
+              {games && (
+                <div className="space-y-0">
+                  {games.games.map((g) => {
+                    const isHome = g.home_team_id === profile.team_id;
+                    const teamScore = isHome ? g.home_score : g.away_score;
+                    const oppScore = isHome ? g.away_score : g.home_score;
+                    const oppAbbr = isHome ? g.away_abbr : g.home_abbr;
+                    const won = g.winner_id === profile.team_id;
+                    const tie = g.winner_id === null && g.home_score !== null;
+                    return (
+                      <div
+                        key={g.game_id}
+                        className="flex items-center justify-between text-sm py-2.5 border-b border-border last:border-0 hover:bg-surface-700/30 -mx-2 px-2 rounded transition-colors"
+                      >
+                        <span className="text-text-muted w-24 text-xs tabular-nums">{g.date}</span>
+                        <span className="text-text-muted w-8 text-xs font-display uppercase tracking-wider">
+                          {isHome ? 'vs' : '@'}
+                        </span>
+                        <Link
+                          to={`/teams/${oppAbbr}`}
+                          className="text-text-secondary hover:text-accent flex-1 transition-colors font-medium"
+                        >
+                          {oppAbbr}
+                        </Link>
+                        <span className="text-text-primary w-16 text-right tabular-nums font-semibold">
+                          {teamScore}&ndash;{oppScore}
+                        </span>
+                        <span
+                          className="w-8 text-center font-display font-bold text-xs ml-2 rounded py-0.5"
+                          style={{
+                            color: won ? 'var(--color-win)' : tie ? 'var(--color-tie)' : 'var(--color-loss)',
+                            backgroundColor: won
+                              ? 'rgba(52, 211, 153, 0.1)'
+                              : tie ? 'rgba(251, 191, 36, 0.1)' : 'rgba(248, 113, 113, 0.1)',
+                          }}
+                        >
+                          {won ? 'W' : tie ? 'T' : 'L'}
+                        </span>
+                        {g.overtime && (
+                          <span className="text-text-muted text-[10px] ml-1.5 font-display font-medium tracking-wider">OT</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
-          {games && (
-            <div className="space-y-0">
-              {games.games.map((g) => {
-                const isHome = g.home_team_id === profile.team_id;
-                const teamScore = isHome ? g.home_score : g.away_score;
-                const oppScore = isHome ? g.away_score : g.home_score;
-                const oppAbbr = isHome ? g.away_abbr : g.home_abbr;
-                const won = g.winner_id === profile.team_id;
-                const tie = g.winner_id === null && g.home_score !== null;
-
-                return (
-                  <div
-                    key={g.game_id}
-                    className="flex items-center justify-between text-sm py-2.5 border-b border-border last:border-0 hover:bg-surface-700/30 -mx-2 px-2 rounded transition-colors"
-                  >
-                    <span className="text-text-muted w-24 text-xs tabular-nums">{g.date}</span>
-                    <span className="text-text-muted w-8 text-xs font-display uppercase tracking-wider">
-                      {isHome ? 'vs' : '@'}
-                    </span>
-                    <Link
-                      to={`/teams/${oppAbbr}`}
-                      className="text-text-secondary hover:text-accent flex-1 transition-colors font-medium"
-                    >
-                      {oppAbbr}
-                    </Link>
-                    <span className="text-text-primary w-16 text-right tabular-nums font-semibold">
-                      {teamScore}&ndash;{oppScore}
-                    </span>
-                    <span
-                      className="w-8 text-center font-display font-bold text-xs ml-2 rounded py-0.5"
-                      style={{
-                        color: won ? 'var(--color-win)' : tie ? 'var(--color-tie)' : 'var(--color-loss)',
-                        backgroundColor: won
-                          ? 'rgba(52, 211, 153, 0.1)'
-                          : tie
-                            ? 'rgba(251, 191, 36, 0.1)'
-                            : 'rgba(248, 113, 113, 0.1)',
-                      }}
-                    >
-                      {won ? 'W' : tie ? 'T' : 'L'}
-                    </span>
-                    {g.overtime && (
-                      <span className="text-text-muted text-[10px] ml-1.5 font-display font-medium tracking-wider">
-                        OT
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+      {activeTab === 'roster' && (
+        <div className="animate-fade-up">
+          {rLoading && <Spinner text="Loading roster..." />}
+          {roster && roster.players.length === 0 && (
+            <div className="text-center py-16 text-text-muted text-sm">
+              No roster data available. Run <code className="text-accent">python scripts/import_rosters.py</code> to fetch rosters.
+            </div>
+          )}
+          {roster && roster.players.length > 0 && (
+            <div className="rounded-xl border border-border bg-surface-850 overflow-hidden">
+              <div className="px-5 py-3 border-b border-border bg-surface-800/50 flex items-center justify-between">
+                <h2 className="font-display text-[11px] font-semibold text-text-muted uppercase tracking-[0.2em]">
+                  {roster.season} Roster — {roster.count} players
+                </h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-surface-800/30">
+                      {['#', 'Name', 'Pos', 'Status', 'Ht', 'Wt', 'College', 'Exp'].map((h) => (
+                        <th key={h} className="px-4 py-2.5 text-left text-[10px] font-display font-semibold uppercase tracking-[0.15em] text-text-muted">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {roster.players.map((p) => (
+                      <tr
+                        key={p.player_id}
+                        className="border-b border-border last:border-0 hover:bg-surface-700/40 cursor-pointer transition-colors"
+                        onClick={() => setSelectedPlayer(p)}
+                      >
+                        <td className="px-4 py-2.5 text-text-muted font-mono text-xs">{p.jersey_number ?? '—'}</td>
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-2.5">
+                            {p.headshot_url && (
+                              <img
+                                src={p.headshot_url}
+                                alt={p.full_name}
+                                className="w-7 h-7 rounded-full object-cover bg-surface-700 shrink-0"
+                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                              />
+                            )}
+                            <span className="font-medium text-text-primary hover:text-accent transition-colors">
+                              {p.full_name}
+                            </span>
+                            {p.is_starter && (
+                              <span className="text-[9px] font-display font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-accent/15 text-accent">
+                                Starter
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 font-display font-bold text-xs text-text-secondary">{p.position ?? '—'}</td>
+                        <td className="px-4 py-2.5">
+                          <StatusBadge status={p.roster_status} />
+                        </td>
+                        <td className="px-4 py-2.5 text-text-muted text-xs tabular-nums">
+                          {p.height_cm ? `${Math.floor(p.height_cm / 30.48)}'${Math.round((p.height_cm / 2.54) % 12)}"` : '—'}
+                        </td>
+                        <td className="px-4 py-2.5 text-text-muted text-xs tabular-nums">
+                          {p.weight_kg ? `${Math.round(p.weight_kg * 2.205)} lb` : '—'}
+                        </td>
+                        <td className="px-4 py-2.5 text-text-muted text-xs max-w-[140px] truncate">{p.college ?? '—'}</td>
+                        <td className="px-4 py-2.5 text-text-muted text-xs tabular-nums">
+                          {p.experience_years > 0 ? `${p.experience_years}yr` : 'R'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
-      </div>
+      )}
+
+      {/* Player detail modal */}
+      {selectedPlayer && (
+        <PlayerModal
+          player={selectedPlayer}
+          teamColors={colors}
+          onClose={() => setSelectedPlayer(null)}
+        />
+      )}
     </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string | null }) {
+  if (!status || status === 'Active') return null;
+  const color =
+    status === 'Out' || status === 'IR' || status === 'PUP'
+      ? 'rgba(248,113,113,0.15)'
+      : status === 'Doubtful'
+        ? 'rgba(251,146,60,0.15)'
+        : 'rgba(251,191,36,0.15)';
+  const textColor =
+    status === 'Out' || status === 'IR' || status === 'PUP'
+      ? 'var(--color-loss)'
+      : status === 'Doubtful'
+        ? '#fb923c'
+        : 'var(--color-tie)';
+  return (
+    <span
+      className="text-[9px] font-display font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+      style={{ backgroundColor: color, color: textColor }}
+    >
+      {status}
+    </span>
   );
 }
 

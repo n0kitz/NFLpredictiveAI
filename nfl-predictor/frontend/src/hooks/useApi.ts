@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
-import type { TeamList, Prediction, PredictionExplanation, H2H, TeamMetrics, TeamProfile, GameList, AccuracyStats, InlineFactor } from '../api/types';
+import type { TeamList, Prediction, PredictionExplanation, H2H, TeamMetrics, TeamProfile, GameList, AccuracyStats, InlineFactor, TeamRoster, PlayerProfile } from '../api/types';
 
 /** Generic hook for async data fetching with loading/error states. */
 function useAsync<T>(fetcher: () => Promise<T>, deps: unknown[] = []) {
@@ -106,4 +106,20 @@ export function useH2H(team1: string, team2: string, limit = 10) {
 /** Fetch model accuracy stats. */
 export function useAccuracy(seasons = '2024,2025') {
   return useAsync<AccuracyStats>(() => api.getAccuracy(seasons), [seasons]);
+}
+
+/** Fetch roster for a team. */
+export function useTeamRoster(identifier: string, season?: number) {
+  return useAsync<TeamRoster>(
+    () => api.getTeamRoster(identifier, season),
+    [identifier, season],
+  );
+}
+
+/** Fetch a single player's profile. */
+export function usePlayer(playerId: number | null) {
+  return useAsync<PlayerProfile>(
+    () => (playerId ? api.getPlayer(playerId) : Promise.reject(new Error('no id'))),
+    [playerId],
+  );
 }

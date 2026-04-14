@@ -122,6 +122,7 @@ class PredictionResponse(BaseModel):
     confidence: str
     key_factors: List[str]
     factors_applied: List[AppliedFactor]
+    predicted_spread: Optional[float] = None
     vegas_context: Optional["VegasContext"] = None
     conditions: Optional["ConditionsSummary"] = None
 
@@ -337,6 +338,8 @@ class ModelInfoResponse(BaseModel):
     ml_oos_accuracy: Optional[float] = None
     weighted_sum_oos_accuracy: Optional[float] = None
     recommendation: Optional[str] = None
+    spread_model_loaded: bool = False
+    spread_model_mae: Optional[float] = None
 
 
 # ── Injuries / Weather / Conditions ────────────────────
@@ -383,6 +386,104 @@ class ExplanationEntry(BaseModel):
 
 class ExplainPredictionResponse(PredictionResponse):
     explanation: List[ExplanationEntry] = []
+
+
+# ── Roster / Players ───────────────────────────────────
+
+class PlayerStatsEntry(BaseModel):
+    games_played: int = 0
+    pass_attempts: int = 0
+    pass_completions: int = 0
+    pass_yards: int = 0
+    pass_tds: int = 0
+    interceptions: int = 0
+    passer_rating: float = 0.0
+    rush_attempts: int = 0
+    rush_yards: int = 0
+    rush_tds: int = 0
+    yards_per_carry: float = 0.0
+    targets: int = 0
+    receptions: int = 0
+    rec_yards: int = 0
+    rec_tds: int = 0
+    yards_per_reception: float = 0.0
+    fantasy_points_ppr: float = 0.0
+    fantasy_points_standard: float = 0.0
+
+
+class PlayerEntry(BaseModel):
+    player_id: int
+    espn_id: Optional[str] = None
+    full_name: str
+    position: Optional[str] = None
+    jersey_number: Optional[str] = None
+    depth_position: Optional[str] = None
+    is_starter: bool = False
+    roster_status: Optional[str] = None
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+    college: Optional[str] = None
+    experience_years: int = 0
+    headshot_url: Optional[str] = None
+    stats: Optional[PlayerStatsEntry] = None
+
+
+class TeamRosterResponse(BaseModel):
+    team_id: int
+    team_abbr: str
+    season: int
+    players: List[PlayerEntry]
+    count: int
+
+
+class PlayerProfile(BaseModel):
+    player_id: int
+    espn_id: Optional[str] = None
+    full_name: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    position: Optional[str] = None
+    jersey_number: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+    college: Optional[str] = None
+    experience_years: int = 0
+    status: Optional[str] = None
+    headshot_url: Optional[str] = None
+    team_abbr: Optional[str] = None
+    current_stats: Optional[PlayerStatsEntry] = None
+
+
+class PlayerSearchResult(BaseModel):
+    player_id: int
+    full_name: str
+    position: Optional[str] = None
+    team_abbr: Optional[str] = None
+    jersey_number: Optional[str] = None
+    headshot_url: Optional[str] = None
+
+
+# ── Fantasy ────────────────────────────────────────────
+
+class FantasyPlayerEntry(BaseModel):
+    player_id: int
+    full_name: str
+    position: Optional[str] = None
+    team_abbr: Optional[str] = None
+    headshot_url: Optional[str] = None
+    games_played: int = 0
+    fantasy_points_ppr: float = 0.0
+    fantasy_points_standard: float = 0.0
+    points_per_game_ppr: float = 0.0
+
+
+class FantasyLeaderboardResponse(BaseModel):
+    position: str
+    season: int
+    scoring: str
+    players: List[FantasyPlayerEntry]
+    count: int
 
 
 # ── General ────────────────────────────────────────────

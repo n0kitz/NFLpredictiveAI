@@ -195,6 +195,100 @@ export interface PredictionExplanation extends Prediction {
   explanation: ExplanationEntry[];
 }
 
+export interface PlayerStatsEntry {
+  games_played: number;
+  pass_attempts: number;
+  pass_completions: number;
+  pass_yards: number;
+  pass_tds: number;
+  interceptions: number;
+  passer_rating: number;
+  rush_attempts: number;
+  rush_yards: number;
+  rush_tds: number;
+  yards_per_carry: number;
+  targets: number;
+  receptions: number;
+  rec_yards: number;
+  rec_tds: number;
+  yards_per_reception: number;
+  fantasy_points_ppr: number;
+  fantasy_points_standard: number;
+}
+
+export interface PlayerEntry {
+  player_id: number;
+  espn_id: string | null;
+  full_name: string;
+  position: string | null;
+  jersey_number: string | null;
+  depth_position: string | null;
+  is_starter: boolean;
+  roster_status: string | null;
+  height_cm: number | null;
+  weight_kg: number | null;
+  college: string | null;
+  experience_years: number;
+  headshot_url: string | null;
+  stats: PlayerStatsEntry | null;
+}
+
+export interface TeamRoster {
+  team_id: number;
+  team_abbr: string;
+  season: number;
+  players: PlayerEntry[];
+  count: number;
+}
+
+export interface PlayerProfile {
+  player_id: number;
+  espn_id: string | null;
+  full_name: string;
+  first_name: string | null;
+  last_name: string | null;
+  position: string | null;
+  jersey_number: string | null;
+  date_of_birth: string | null;
+  height_cm: number | null;
+  weight_kg: number | null;
+  college: string | null;
+  experience_years: number;
+  status: string | null;
+  headshot_url: string | null;
+  team_abbr: string | null;
+  current_stats: PlayerStatsEntry | null;
+}
+
+export interface PlayerSearchResult {
+  player_id: number;
+  full_name: string;
+  position: string | null;
+  team_abbr: string | null;
+  jersey_number: string | null;
+  headshot_url: string | null;
+}
+
+export interface FantasyPlayerEntry {
+  player_id: number;
+  full_name: string;
+  position: string | null;
+  team_abbr: string | null;
+  headshot_url: string | null;
+  games_played: number;
+  fantasy_points_ppr: number;
+  fantasy_points_standard: number;
+  points_per_game_ppr: number;
+}
+
+export interface FantasyLeaderboard {
+  position: string;
+  season: number;
+  scoring: string;
+  players: FantasyPlayerEntry[];
+  count: number;
+}
+
 export interface AccuracyStats {
   seasons: number[];
   total_games: number;

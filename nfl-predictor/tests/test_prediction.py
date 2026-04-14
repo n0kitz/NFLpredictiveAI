@@ -144,13 +144,13 @@ class TestFeatureBuilder:
         return calculate_team_metrics(db, team["team_id"])
 
     def test_feature_builder_shape(self, db):
-        """Feature array must have exactly 32 elements."""
+        """Feature array must have exactly 35 elements (32 base + vegas + 2x QB EPA)."""
         hm = self._make_metrics(db, "KC")
         am = self._make_metrics(db, "PHI")
         h2h = {"team1_wins": 3, "team2_wins": 2, "total_games": 5}
         feat = build_feature_vector(hm, am, h2h, is_playoff=False, week=10)
         arr = feature_dict_to_array(feat)
-        assert arr.shape == (32,), f"Expected shape (32,), got {arr.shape}"
+        assert arr.shape == (35,), f"Expected shape (35,), got {arr.shape}"
 
     def test_feature_builder_keys(self, db):
         """All FEATURE_NAMES must appear in the feature dict."""
@@ -162,15 +162,15 @@ class TestFeatureBuilder:
             assert name in feat, f"Missing feature key: {name}"
 
     def test_ml_model_fallback(self, db):
-        """If nfl_model.joblib is absent the engine falls back to weighted-sum."""
-        from src.prediction.ml_model import MODEL_PATH
+        """Engine._use_ml is consistent with whether the model actually loaded."""
+        from src.prediction.ml_model import MODEL_PATH, load_model
 
-        # The model may or may not exist; either way _use_ml must be consistent
         engine = PredictionEngine(db)
-        if not MODEL_PATH.exists():
-            assert not engine._use_ml, "Engine should use weighted-sum when .joblib absent"
+        model, _ = load_model()
+        if model is None:
+            # File absent OR failed to load (e.g. numpy mismatch) — must fall back
+            assert not engine._use_ml, "Engine should use weighted-sum when model unavailable"
         else:
-            # Model exists — just verify the engine loaded it without error
             assert engine._use_ml
             assert engine._ml_model is not None
 

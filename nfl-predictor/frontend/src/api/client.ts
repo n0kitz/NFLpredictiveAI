@@ -10,6 +10,8 @@ import type {
   H2H, TeamMetrics, TeamSeasonStats, TeamProfile, HealthStatus,
   AccuracyStats, InlineFactor, PredictionHistory,
   TeamRoster, PlayerProfile, PlayerSearchResult, FantasyLeaderboard,
+  FantasyProjection, StartSitResult, DraftRanking, TradeAnalysis,
+  PlayoffPicture, TeamUpcoming, PowerRankings, TradeValues, RosterImportResult,
 } from './types';
 
 const BASE = '/api';
@@ -100,9 +102,51 @@ export const api = {
   searchPlayers: (query: string) =>
     get<PlayerSearchResult[]>(`/players/search?q=${encodeURIComponent(query)}`),
 
-  // Fantasy
+  // Fantasy — leaderboard (existing)
   getFantasyTop: (position = 'QB', season = 2024, scoring = 'ppr', limit = 50) =>
     get<FantasyLeaderboard>(
       `/fantasy/top?position=${position}&season=${season}&scoring=${scoring}&limit=${limit}`
     ),
+
+  // Fantasy — extended
+  getFantasyProjections: (week: number, season = 2024, position = 'all', scoring = 'ppr') =>
+    get<FantasyProjection[]>(
+      `/fantasy/projections?week=${week}&season=${season}&position=${encodeURIComponent(position)}&scoring=${scoring}`
+    ),
+  getStartSit: (player1Id: number, player2Id: number, week: number, season = 2024) =>
+    get<StartSitResult>(
+      `/fantasy/start-sit?player1_id=${player1Id}&player2_id=${player2Id}&week=${week}&season=${season}`
+    ),
+  getWaiverWire: (week: number, season = 2024, scoring = 'ppr', position = 'all', limit = 30) =>
+    get<FantasyProjection[]>(
+      `/fantasy/waiver?week=${week}&season=${season}&scoring=${scoring}&position=${encodeURIComponent(position)}&limit=${limit}`
+    ),
+  getDraftRankings: (season = 2025, scoring = 'ppr', position = 'all') =>
+    get<DraftRanking[]>(
+      `/fantasy/draft-rankings?season=${season}&scoring=${scoring}&position=${encodeURIComponent(position)}`
+    ),
+  analyzeTrade: (body: {
+    give_player_ids: number[];
+    get_player_ids: number[];
+    week: number;
+    season: number;
+  }) => post<TradeAnalysis>('/fantasy/trade-analyze', body),
+
+  // Playoff Picture
+  getPlayoffPicture: (year: number) =>
+    get<PlayoffPicture>(`/seasons/${year}/playoff-picture`),
+
+  // Team upcoming schedule
+  getTeamUpcoming: (id: string, season = 2025, limit = 4) =>
+    get<TeamUpcoming>(`/teams/${encodeURIComponent(id)}/upcoming?season=${season}&limit=${limit}`),
+
+  // Fantasy extended
+  getFantasyPowerRankings: (week: number, season = 2024) =>
+    get<PowerRankings>(`/fantasy/power-rankings?week=${week}&season=${season}`),
+
+  getFantasyTradeValues: (week: number, season = 2024) =>
+    get<TradeValues>(`/fantasy/trade-values?week=${week}&season=${season}`),
+
+  importRosterByNames: (names: string[], season = 2024) =>
+    post<RosterImportResult>('/fantasy/roster/import-by-names', { names, season }),
 };

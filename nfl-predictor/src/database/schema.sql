@@ -243,6 +243,57 @@ CREATE TABLE IF NOT EXISTS player_season_stats (
     FOREIGN KEY (team_id) REFERENCES teams(team_id)
 );
 
+-- ── Fantasy module tables ──────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS fantasy_leagues (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    scoring_format TEXT NOT NULL DEFAULT 'ppr',
+    roster_slots TEXT NOT NULL DEFAULT '{"QB":1,"RB":2,"WR":2,"TE":1,"FLEX":1,"BN":6}',
+    waiver_type TEXT DEFAULT 'faab',
+    season INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS fantasy_rosters (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id),
+    player_id INTEGER NOT NULL REFERENCES players(player_id),
+    slot TEXT NOT NULL,
+    acquired_week INTEGER,
+    acquired_type TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS fantasy_projections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(player_id),
+    season INTEGER NOT NULL,
+    week INTEGER NOT NULL,
+    opponent_team_id INTEGER REFERENCES teams(team_id),
+    projected_points_ppr REAL,
+    projected_points_std REAL,
+    matchup_score REAL,
+    opportunity_score REAL,
+    confidence TEXT DEFAULT 'medium',
+    generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(player_id, season, week)
+);
+
+CREATE TABLE IF NOT EXISTS draft_rankings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    season INTEGER NOT NULL,
+    scoring_format TEXT NOT NULL,
+    player_id INTEGER NOT NULL REFERENCES players(player_id),
+    overall_rank INTEGER,
+    position_rank INTEGER,
+    tier INTEGER,
+    adp REAL,
+    projected_season_points REAL,
+    notes TEXT,
+    UNIQUE(season, scoring_format, player_id)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_games_season ON games(season);
 CREATE INDEX IF NOT EXISTS idx_games_date ON games(date);

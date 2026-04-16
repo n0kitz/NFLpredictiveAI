@@ -177,6 +177,60 @@ class Database:
                     FOREIGN KEY (team_id) REFERENCES teams(team_id)
                 )
             """)
+            # Fantasy module tables
+            self._connection.execute("""
+                CREATE TABLE IF NOT EXISTS fantasy_leagues (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    scoring_format TEXT NOT NULL DEFAULT 'ppr',
+                    roster_slots TEXT NOT NULL DEFAULT '{"QB":1,"RB":2,"WR":2,"TE":1,"FLEX":1,"BN":6}',
+                    waiver_type TEXT DEFAULT 'faab',
+                    season INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            self._connection.execute("""
+                CREATE TABLE IF NOT EXISTS fantasy_rosters (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id),
+                    player_id INTEGER NOT NULL REFERENCES players(player_id),
+                    slot TEXT NOT NULL,
+                    acquired_week INTEGER,
+                    acquired_type TEXT,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            self._connection.execute("""
+                CREATE TABLE IF NOT EXISTS fantasy_projections (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    player_id INTEGER NOT NULL REFERENCES players(player_id),
+                    season INTEGER NOT NULL,
+                    week INTEGER NOT NULL,
+                    opponent_team_id INTEGER REFERENCES teams(team_id),
+                    projected_points_ppr REAL,
+                    projected_points_std REAL,
+                    matchup_score REAL,
+                    opportunity_score REAL,
+                    confidence TEXT DEFAULT 'medium',
+                    generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(player_id, season, week)
+                )
+            """)
+            self._connection.execute("""
+                CREATE TABLE IF NOT EXISTS draft_rankings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    season INTEGER NOT NULL,
+                    scoring_format TEXT NOT NULL,
+                    player_id INTEGER NOT NULL REFERENCES players(player_id),
+                    overall_rank INTEGER,
+                    position_rank INTEGER,
+                    tier INTEGER,
+                    adp REAL,
+                    projected_season_points REAL,
+                    notes TEXT,
+                    UNIQUE(season, scoring_format, player_id)
+                )
+            """)
             self._connection.commit()
         return self._connection
 
@@ -1117,6 +1171,167 @@ class Database:
             LIMIT ?
             """,
             (season, pos_filter, limit),
+        )
+
+
+    # ── Fantasy module operations ──────────────────────────────────────────────
+
+    def get_current_week(self, season: Optional[int] = None) -> int:
+        """Return the most recently completed week number for a season (default: current)."""
+        if season is None:
+            from datetime import date as _date
+            now = _date.today()
+            season = now.year if now.month >= 9 else now.year - 1
+        row = self.fetchone(
+            "SELECT MAX(CAST(week AS INTEGER)) as max_week FROM games WHERE season=? AND home_score IS NOT NULL",
+            (season,),
+        )
+        if row and row['max_week']:
+            return int(row['max_week'])
+        return 1
+
+    def upsert_fantasy_projection(self, data: Dict[str, Any]) -> None:
+        """Insert or replace a fantasy projection (keyed on player_id+season+week)."""
+        self.execute(
+            """
+            INSERT OR REPLACE INTO fantasy_projections
+                (player_id, season, week, opponent_team_id,
+                 projected_points_ppr, projected_points_std,
+                 matchup_score, opportunity_score, confidence)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                data['player_id'], data['season'], data['week'],
+                data.get('opponent_team_id'),
+                data.get('projected_points_ppr', 0.0),
+                data.get('projected_points_std', 0.0),
+                data.get('matchup_score', 1.0),
+                data.get('opportunity_score', 0.0),
+                data.get('confidence', 'medium'),
+            ),
+        )
+
+    def get_fantasy_projections(
+        self,
+        season: int,
+        week: int,
+        position: str = 'all',
+        scoring: str = 'ppr',
+    ) -> List[sqlite3.Row]:
+        """Get fantasy projections with player + team info, ordered by projected points desc."""
+        pts_col = 'fp.projected_points_ppr' if scoring == 'ppr' else 'fp.projected_points_std'
+        pos_filter = position.upper()
+        if pos_filter == 'ALL':
+            return self.fetchall(
+                f"""
+                SELECT fp.*, p.full_name, p.position, p.headshot_url,
+                       t.abbreviation AS team_abbr
+                FROM fantasy_projections fp
+                JOIN players p ON fp.player_id = p.player_id
+                LEFT JOIN roster_entries re ON re.player_id = p.player_id AND re.season = fp.season
+                LEFT JOIN teams t ON t.team_id = re.team_id
+                WHERE fp.season=? AND fp.week=?
+                ORDER BY {pts_col} DESC
+                """,
+                (season, week),
+            )
+        return self.fetchall(
+            f"""
+            SELECT fp.*, p.full_name, p.position, p.headshot_url,
+                   t.abbreviation AS team_abbr
+            FROM fantasy_projections fp
+            JOIN players p ON fp.player_id = p.player_id
+            LEFT JOIN roster_entries re ON re.player_id = p.player_id AND re.season = fp.season
+            LEFT JOIN teams t ON t.team_id = re.team_id
+            WHERE fp.season=? AND fp.week=? AND p.position=?
+            ORDER BY {pts_col} DESC
+            """,
+            (season, week, pos_filter),
+        )
+
+    def upsert_draft_ranking(self, data: Dict[str, Any]) -> None:
+        """Insert or replace a draft ranking entry (keyed on season+scoring_format+player_id)."""
+        self.execute(
+            """
+            INSERT OR REPLACE INTO draft_rankings
+                (season, scoring_format, player_id, overall_rank, position_rank,
+                 tier, adp, projected_season_points)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                data['season'], data['scoring_format'], data['player_id'],
+                data.get('overall_rank'), data.get('position_rank'),
+                data.get('tier'), data.get('adp'),
+                data.get('projected_season_points', 0.0),
+            ),
+        )
+
+    def get_draft_rankings(
+        self,
+        season: int,
+        scoring: str = 'ppr',
+        position: str = 'all',
+    ) -> List[sqlite3.Row]:
+        """Get draft rankings with player + team info, ordered by overall_rank."""
+        pos_filter = position.upper()
+        if pos_filter == 'ALL':
+            return self.fetchall(
+                """
+                SELECT dr.*, p.full_name, p.position, p.headshot_url,
+                       t.abbreviation AS team_abbr
+                FROM draft_rankings dr
+                JOIN players p ON dr.player_id = p.player_id
+                LEFT JOIN roster_entries re ON re.player_id = p.player_id AND re.season = dr.season
+                LEFT JOIN teams t ON t.team_id = re.team_id
+                WHERE dr.season=? AND dr.scoring_format=?
+                ORDER BY dr.overall_rank ASC
+                """,
+                (season, scoring),
+            )
+        return self.fetchall(
+            """
+            SELECT dr.*, p.full_name, p.position, p.headshot_url,
+                   t.abbreviation AS team_abbr
+            FROM draft_rankings dr
+            JOIN players p ON dr.player_id = p.player_id
+            LEFT JOIN roster_entries re ON re.player_id = p.player_id AND re.season = dr.season
+            LEFT JOIN teams t ON t.team_id = re.team_id
+            WHERE dr.season=? AND dr.scoring_format=? AND p.position=?
+            ORDER BY dr.overall_rank ASC
+            """,
+            (season, scoring, pos_filter),
+        )
+
+    def upsert_fantasy_roster(self, data: Dict[str, Any]) -> None:
+        """Insert or replace a fantasy roster entry."""
+        from datetime import datetime as _dt
+        self.execute(
+            """
+            INSERT OR REPLACE INTO fantasy_rosters
+                (league_id, player_id, slot, acquired_week, acquired_type, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                data['league_id'], data['player_id'], data['slot'],
+                data.get('acquired_week'), data.get('acquired_type'),
+                _dt.utcnow().isoformat(),
+            ),
+        )
+
+    def get_fantasy_roster(self, league_id: int) -> List[sqlite3.Row]:
+        """Get all players on a fantasy roster with player + team info."""
+        return self.fetchall(
+            """
+            SELECT fr.*, p.full_name, p.position, p.headshot_url,
+                   t.abbreviation AS team_abbr
+            FROM fantasy_rosters fr
+            JOIN players p ON fr.player_id = p.player_id
+            LEFT JOIN roster_entries re ON re.player_id = p.player_id
+            LEFT JOIN teams t ON t.team_id = re.team_id
+            WHERE fr.league_id=?
+            ORDER BY fr.slot, p.full_name
+            """,
+            (league_id,),
         )
 
 

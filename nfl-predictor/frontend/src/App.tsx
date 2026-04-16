@@ -9,6 +9,7 @@ import Season from './pages/Season';
 import History from './pages/History';
 import Playoffs from './pages/Playoffs';
 import PlayerPage from './pages/PlayerPage';
+import FantasyPage from './pages/FantasyPage';
 
 export default function App() {
   return (
@@ -24,6 +25,7 @@ export default function App() {
           <Route path="/history" element={<History />} />
           <Route path="/playoffs" element={<Playoffs />} />
           <Route path="/players/:id" element={<PlayerPage />} />
+          <Route path="/fantasy" element={<FantasyPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

@@ -486,6 +486,93 @@ class FantasyLeaderboardResponse(BaseModel):
     count: int
 
 
+# ── Fantasy (extended) ─────────────────────────────────
+
+class FantasyProjectionEntry(BaseModel):
+    player_id: int
+    full_name: str
+    position: Optional[str] = None
+    team_abbr: Optional[str] = None
+    headshot_url: Optional[str] = None
+    week: int
+    season: int
+    projected_points_ppr: float = 0.0
+    projected_points_std: float = 0.0
+    matchup_score: float = 1.0
+    opportunity_score: float = 0.0
+    confidence: str = 'medium'
+    injury_status: Optional[str] = None
+    weather_impact: bool = False
+
+
+class StartSitPlayerEntry(BaseModel):
+    player_id: int
+    full_name: str
+    position: Optional[str] = None
+    team_abbr: Optional[str] = None
+    headshot_url: Optional[str] = None
+    projected_points_ppr: float
+    matchup_score: float
+    reasoning: str
+
+
+class StartSitResponse(BaseModel):
+    start: StartSitPlayerEntry
+    sit: StartSitPlayerEntry
+    confidence: str
+
+
+class DraftRankingEntry(BaseModel):
+    player_id: int
+    full_name: str
+    position: Optional[str] = None
+    team_abbr: Optional[str] = None
+    headshot_url: Optional[str] = None
+    overall_rank: int
+    position_rank: int
+    tier: int
+    adp: float
+    projected_season_points: float
+    season: int
+    scoring_format: str
+
+
+class TradePlayerEntry(BaseModel):
+    player_id: int
+    full_name: str
+    position: Optional[str] = None
+    team_abbr: Optional[str] = None
+    headshot_url: Optional[str] = None
+    ros_projected: float
+
+
+class TradeAnalysisResponse(BaseModel):
+    give: List[TradePlayerEntry]
+    get: List[TradePlayerEntry]
+    give_total: float
+    get_total: float
+    verdict: str  # 'WIN', 'LOSE', or 'FAIR'
+    delta: float
+
+
+class FantasyRosterRequest(BaseModel):
+    league_id: int
+    player_ids: List[int]
+    slots: List[str]
+
+
+class TradeAnalyzeRequest(BaseModel):
+    give_player_ids: List[int]
+    get_player_ids: List[int]
+    week: int
+    season: int = 2024
+
+
+class ImportByNamesRequest(BaseModel):
+    names: List[str]
+    season: int = 2024
+
+
 # ── General ────────────────────────────────────────────
 
 class ErrorResponse(BaseModel):

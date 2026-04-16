@@ -1,5 +1,7 @@
 # NFL Game Prediction System
 
+Respond like a caveman. No articles, no filler words. Short. Direct. Code speaks for itself. If me ask for code, give code. No explain unless me ask.
+
 ## Project Overview
 Full-stack NFL game prediction application. Python FastAPI backend with 35 years of historical data (1990-2025) from Pro Football Reference. React + TypeScript frontend with dark-mode UI, team colors, and dual all-time/last-season stats. Dockerized with automated weekly data updates.
 
@@ -27,7 +29,11 @@ nfl-predictor/
 │   │   ├── engine.py          # Core prediction (weighted probability calc + bye week rest)
 │   │   ├── metrics.py         # TeamMetrics, exponential decay, strength/form, SOS, dynamic HFA, rest_days
 │   │   ├── factors.py         # GameFactor adjustments (-5 to +5 impact)
-│   │   └── backtester.py      # Replay historical games to measure accuracy
+│   │   ├── backtester.py      # Replay historical games to measure accuracy
+│   │   ├── fantasy_scorer.py  # FantasyScorer: projections, start-sit, trade analysis, draft rankings, power rankings, trade values
+│   │   ├── feature_builder.py # Feature vector builder (35 features)
+│   │   ├── ml_model.py        # ML wrapper (GradientBoostingClassifier + spread regressor)
+│   │   └── explainer.py       # SHAP explainer for PredictionExplanation
 │   ├── scraper/
 │   │   ├── pfr_scraper.py     # PFR scraper with resumable progress + --from-file
 │   │   ├── team_mappings.py   # 32 current + historical teams
@@ -43,8 +49,8 @@ nfl-predictor/
 │   │   ├── api/types.ts       # TypeScript types matching Pydantic schemas
 │   │   ├── hooks/useApi.ts    # React hooks: useTeams, useTeamProfile, usePrediction, useH2H, usePlayer
 │   │   ├── theme/teamColors.ts # All 32 team colors, gradient/tint helpers
-│   │   ├── components/        # Layout (+ PlayerSearch in navbar), PredictionCard, TeamSelector, Spinner, TrendChart, FactorPanel, PlayerModal, ExplanationPanel
-│   │   └── pages/             # Dashboard, Predict, Teams, TeamDetail, Compare, Season, History, Playoffs, PlayerPage
+│   │   ├── components/        # Layout (+ PlayerSearch in navbar), PredictionCard, TeamSelector, Spinner, TrendChart, FactorPanel, PlayerModal, ExplanationPanel, DataBadge
+│   │   └── pages/             # Dashboard, Predict, Teams, TeamDetail, Compare, Season, History, Playoffs, PlayerPage, FantasyPage
 │   ├── vite.config.ts         # Dev proxy /api → localhost:8000
 │   └── package.json
 ├── tests/
@@ -55,6 +61,7 @@ nfl-predictor/
 │   ├── test_roster.py         # Player upsert, roster entry, season stats, starters ordering (4 tests)
 │   ├── test_injury_scraper.py # InjuryScraper, ESPN_TEAM_MAP, STADIUM_COORDS (10 tests)
 │   ├── test_weather_scraper.py# WeatherScraper dome logic, WMO mapping (12 tests)
+│   ├── test_fantasy.py        # FantasyScorer: matchup, projections, start-sit, trade, draft (18 tests)
 │   └── fixtures/              # Sample PFR HTML for scraper tests
 ├── scripts/weekly_scrape.py   # Wednesday cron scrape + enrichment + odds + conditions + roster update
 ├── scripts/fetch_conditions.py# One-off injury + weather fetch for upcoming games
@@ -116,6 +123,16 @@ docker compose run scraper               # One-off data scrape
 - `GET  /api/players/{player_id}` — Player detail + season stats (404 if not found)
 - `GET  /api/players/search` — Search players by name (`?q=`)
 - `GET  /api/fantasy/top` — Fantasy leaderboard (`?position=QB&season=2024`)
+- `GET  /api/fantasy/projections` — Weekly projections (`?week=&season=&position=&scoring=`)
+- `GET  /api/fantasy/start-sit` — Start/sit recommendation (`?player1_id=&player2_id=&week=&season=`)
+- `GET  /api/fantasy/waiver` — Waiver wire suggestions (`?week=&season=&scoring=&position=&limit=`)
+- `GET  /api/fantasy/draft-rankings` — Draft rankings (`?season=&scoring=&position=`)
+- `POST /api/fantasy/trade-analyze` — Trade analysis (body: `{give_player_ids, get_player_ids, week, season}`)
+- `GET  /api/fantasy/power-rankings` — Team power rankings (`?week=&season=`)
+- `GET  /api/fantasy/trade-values` — ROS trade value board (`?week=&season=`)
+- `POST /api/fantasy/roster/import-by-names` — Match roster names to DB players (body: `{names, season}`)
+- `GET  /api/seasons/{year}/playoff-picture` — Playoff seeding by conference/division/wildcard
+- `GET  /api/teams/{id}/upcoming` — Next N scheduled games with difficulty rating (`?season=&limit=`)
 - `GET  /docs` — Swagger UI
 
 ## Data Scraping
@@ -146,15 +163,26 @@ Replace `YYYY` with the season year (e.g. 2025).
 | `/predict` | Predict | Team selectors + factor panel + prediction results + H2H |
 | `/teams` | Teams | Grid of all 32 teams |
 | `/teams/:abbr` | TeamDetail | Profile stats, SOS/HFA, 10-season trend charts (Recharts), recent games, clickable roster → PlayerModal |
-| `/compare/:t1?/:t2?` | Compare | Side-by-side tug-of-war stat bars + H2H summary |
-| `/seasons/:year?` | Season | Standings by division + games-by-week accordion (1990-2025) |
+| `/compare/:t1?/:t2?` | Compare | RadarChart (6 dims) + H2H Timeline BarChart + QuickPredict inline + ScheduleColumn (next 4 games difficulty) |
+| `/seasons/:year?` | Season | 3 tabs: Standings (by division), Games (by week accordion), Playoff Picture (AFC/NFC seeding) |
 | `/history` | History | Auto-saved prediction log with accuracy tracking |
 | `/playoffs` | Playoffs | Seed 14 teams → simulate WC/Div/Conf/SB bracket |
 | `/players/:id` | PlayerPage | Full player detail: bio, position-specific stats, fantasy points |
+| `/fantasy` | FantasyPage | 6 tabs: Dashboard, Leaderboards, Waiver Wire, Draft, Trade Analyzer, Power Rankings |
 
 **PlayerModal**: overlay component on TeamDetail; shows headshot, position badge, jersey, bio, position-specific stats (QB/RB/WR/TE logic), fantasy points PPR+Standard.
 
 **PlayerSearch**: debounced navbar search (250ms), renders dropdown, navigates to `/players/:id` on selection.
+
+**DataBadge**: pill badge component (7 source types: espn, pfr, nfl-data-py, open-meteo, odds-api, calculated, ml-model) with inline hover tooltip. Used in FantasyPage to label data origins.
+
+**FantasyPage tabs detail:**
+- Dashboard: weekly projections list + DataBadge sources + confidence badges + matchup tooltips + RosterImportHelper
+- Leaderboards: PPR/Standard top players by position + season
+- Waiver Wire: low-ownership projections with matchup score tooltip
+- Draft: draft rankings by ADP/tier with scoring format selector
+- Trade Analyzer: PlayerSearchPanel give/get + TradeValueBoard sidebar (ROS value accordion, controlled by outer week selector via `externalWeek` prop)
+- Power Rankings: composite score table (recent form 40% + pt diff 20% + opp strength 20% + adv stats 20%) with trend arrows
 
 ## Architecture Notes
 - CLI uses singleton DB; API uses per-request DB via FastAPI Depends
@@ -170,7 +198,7 @@ Replace `YYYY` with the season year (e.g. 2025).
 - Scraper has cloudscraper fallback: if requests gets 403, it retries with cloudscraper automatically
 - Cron container runs weekly_scrape.py every Wednesday 06:00 UTC (enriches predictions + odds + conditions)
 - Frontend uses Recharts for trend charts on TeamDetail page
-- 104 pytest tests across 7 test files (API, prediction, scraper, basic, roster, injury_scraper, weather_scraper)
+- 128 pytest tests across 8 test files (API, prediction, scraper, basic, roster, injury_scraper, weather_scraper, fantasy)
 - ML model (GradientBoostingClassifier, **35 features**, trained 2013-2022): needs retraining after feature vector expansion
 - Feature vector: 32 base + vegas_home_implied_prob + home_qb_epa_per_play + away_qb_epa_per_play = 35 total
 - Weighted-sum default: 67.2% OOS accuracy on 2023-2024. ML only activates with `?model=ml`
@@ -215,6 +243,8 @@ Replace `YYYY` with the season year (e.g. 2025).
 - `player_season_stats` — Per-player per-season: pass/rush/rec stats, passer_rating, fantasy_points_ppr/standard
 
 ## Recent Changes (2026-04)
+
+### Wave 1 — Core platform
 - Added `/api/teams/{id}/profile` endpoint with all-time + last season stats
 - Fixed TeamDetail page: stats now consistent (home+away = overall record)
 - H2H in predictions shows 10 games instead of 5
@@ -225,7 +255,6 @@ Replace `YYYY` with the season year (e.g. 2025).
 - SOS, Dynamic HFA, rest_days exposed on `/stats` endpoint and TeamDetail page
 - Bye week rest advantage (+1.5%) added to prediction engine
 - Recharts trend charts on TeamDetail (win%, PPG, home/away across 10 seasons)
-- Compare page with tug-of-war stat bars + H2H
 - Factor management UI on Predict page (inline factors, no game_id required)
 - Season browser with computed standings by division + games-by-week
 - Prediction history: auto-save on predict, enrichment in weekly cron, History page
@@ -234,12 +263,33 @@ Replace `YYYY` with the season year (e.g. 2025).
 - Injury + weather enrichment: ESPN + Open-Meteo, display-only, `GET /api/games/{id}/conditions`, weekly cron auto-fetch
 - `POST /api/predict` response now includes `conditions` (injuries + weather) and `vegas_context` fields
 - `GET /api/model/info` endpoint: reports active model, ML availability, OOS accuracy comparison
-- **Roster system (2026-04)**: players + roster_entries + player_season_stats tables; `RosterScraper` (ESPN API); `import_rosters.py` with 3-tier matching (exact/lastname/fuzzy); `/api/teams/{id}/roster`, `/api/players/{id}`, `/api/players/search`, `/api/fantasy/top` endpoints; PlayerModal overlay + PlayerPage + navbar PlayerSearch in frontend
+
+### Wave 2 — Roster system
+- players + roster_entries + player_season_stats tables added
+- `RosterScraper` (ESPN API); `import_rosters.py` with 3-tier matching (exact/lastname/fuzzy)
+- `/api/teams/{id}/roster`, `/api/players/{id}`, `/api/players/search`, `/api/fantasy/top` endpoints
+- PlayerModal overlay + PlayerPage + navbar PlayerSearch in frontend
 - Feature vector expanded to 35: added vegas_home_implied_prob (#33), home_qb_epa_per_play (#34), away_qb_epa_per_play (#35)
-- Fixed `import_player_season_stats`: now merges `import_seasonal_data` with `import_seasonal_rosters` (seasonal_data has no player names — merge on player_id+season to get names/positions)
+- Fixed `import_player_season_stats`: merges `import_seasonal_data` with `import_seasonal_rosters` on player_id+season
 - Fixed `search_players` API: `sqlite3.Row` uses bracket access `r["col"]`, not `.get()`
 - Weekly cron now includes roster update step
-- 104 pytest tests across 7 files; test_injury_scraper + test_weather_scraper skip without network
+
+### Wave 3 — Fantasy module + enhancements (last session, 2026-04-17)
+- **`src/prediction/fantasy_scorer.py`** — `FantasyScorer` class: `generate_weekly_projections`, `start_sit_recommendation`, `analyze_trade`, `generate_draft_rankings`, `get_power_rankings`, `get_trade_values`
+- **`tests/test_fantasy.py`** — 18 tests (MagicMock unit tests + real-DB integration); 128 total tests now
+- **`weekly_scrape.py`** — added fantasy projection generation step before `db.close()`
+- **`schemas.py`** — added `ImportByNamesRequest(names: List[str], season: int)`
+- **New API endpoints** (all appended to `app.py`): fantasy projections, start-sit, waiver, draft-rankings, trade-analyze, power-rankings, trade-values, roster/import-by-names, playoff-picture, teams/{id}/upcoming
+- **`DataBadge.tsx`** — new component: pill + inline hover tooltip for 7 data source labels
+- **`Compare.tsx`** — full rewrite: RadarChart (6 dims), H2H Timeline BarChart, QuickPredict inline panel, ScheduleColumn (next 4 games with easy/medium/hard difficulty badge)
+- **`Season.tsx`** — added 3rd tab "Playoff Picture": AFC/NFC conference blocks, division leaders, wildcard, bubble rows; fetches `/api/seasons/{year}/playoff-picture`
+- **`FantasyPage.tsx`** — full fantasy hub: 6 tabs, RosterImportHelper (paste names → match → confirm), TradeValueBoard sidebar (collapsible ROS ranked list), DataBadge source labels, confidence badges, matchup tooltips
+- **`TradeTab` fix** — now accepts `externalWeek?: number` prop; internal week selector hidden when prop provided; controlled by `TradeTabWithValues` wrapper
+- **`RosterImportHelper` fix** — removed invalid `api.post && null` no-op; `handleConfirm` calls `onImported(ids)` directly
+- **Bug fix** — `fantasy_scorer.py` line 365: `r.get('team_abbr')` → `r['team_abbr']` (sqlite3.Row doesn't support `.get()`)
+- **Bug fix** — `get_fantasy_top` endpoint in `app.py`: all `r.get()` calls replaced with `r["field"] or default`
+- **TypeScript types** — appended: `PlayoffTeamEntry`, `PlayoffConference`, `PlayoffPicture`, `UpcomingGame`, `TeamUpcoming`, `PowerRanking`, `PowerRankings`, `TradeValue`, `TradeValues`, `RosterMatchEntry`, `RosterImportResult`
+- **`client.ts`** — added: `getPlayoffPicture`, `getTeamUpcoming`, `getFantasyPowerRankings`, `getFantasyTradeValues`, `importRosterByNames`, plus all other fantasy extended methods
 
 ## Pending Data Operations (run after code changes)
 ```bash

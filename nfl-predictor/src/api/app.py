@@ -1,7 +1,7 @@
 """FastAPI application for NFL Prediction System."""
 
 import logging
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +32,9 @@ from .schemas import (
     PlayerEntry, PlayerStatsEntry, TeamRosterResponse,
     PlayerProfile, PlayerSearchResult,
     FantasyPlayerEntry, FantasyLeaderboardResponse,
+    FantasyProjectionEntry, StartSitPlayerEntry, StartSitResponse,
+    DraftRankingEntry, TradePlayerEntry, TradeAnalysisResponse,
+    FantasyRosterRequest, TradeAnalyzeRequest, ImportByNamesRequest,
     ErrorResponse,
 )
 
@@ -1100,13 +1103,13 @@ def get_fantasy_top(
         FantasyPlayerEntry(
             player_id=r["player_id"],
             full_name=r["full_name"],
-            position=r.get("position"),
-            team_abbr=r.get("team_abbr"),
-            headshot_url=r.get("headshot_url"),
-            games_played=r.get("games_played", 0),
-            fantasy_points_ppr=r.get("fantasy_points_ppr", 0.0),
-            fantasy_points_standard=r.get("fantasy_points_standard", 0.0),
-            points_per_game_ppr=r.get("points_per_game_ppr", 0.0),
+            position=r["position"],
+            team_abbr=r["team_abbr"],
+            headshot_url=r["headshot_url"],
+            games_played=r["games_played"] or 0,
+            fantasy_points_ppr=r["fantasy_points_ppr"] or 0.0,
+            fantasy_points_standard=r["fantasy_points_standard"] or 0.0,
+            points_per_game_ppr=r["points_per_game_ppr"] or 0.0,
         )
         for r in rows
     ]
@@ -1117,6 +1120,585 @@ def get_fantasy_top(
         players=players,
         count=len(players),
     )
+
+
+# ── Fantasy (extended) ──────────────────────────────────
+
+def _proj_row_to_entry(r, week: int, season: int) -> FantasyProjectionEntry:
+    """Convert a fantasy_projections DB row to FantasyProjectionEntry."""
+    d = dict(r)
+    return FantasyProjectionEntry(
+        player_id=d['player_id'],
+        full_name=d.get('full_name', ''),
+        position=d.get('position'),
+        team_abbr=d.get('team_abbr'),
+        headshot_url=d.get('headshot_url'),
+        week=d.get('week', week),
+        season=d.get('season', season),
+        projected_points_ppr=d.get('projected_points_ppr') or 0.0,
+        projected_points_std=d.get('projected_points_std') or 0.0,
+        matchup_score=d.get('matchup_score') or 1.0,
+        opportunity_score=d.get('opportunity_score') or 0.0,
+        confidence=d.get('confidence') or 'medium',
+        injury_status=None,
+        weather_impact=False,
+    )
+
+
+@app.get(
+    "/api/fantasy/projections",
+    response_model=List[FantasyProjectionEntry],
+    tags=["fantasy"],
+)
+def get_fantasy_projections(
+    week: int = Query(..., description="NFL week number"),
+    season: int = Query(2024),
+    position: str = Query("all"),
+    scoring: str = Query("ppr"),
+    db: Database = Depends(get_db),
+):
+    """Get weekly fantasy projections, generating them on-demand if not yet cached."""
+    from ..prediction.fantasy_scorer import FantasyScorer
+    rows = db.get_fantasy_projections(season, week, position, scoring)
+    if not rows:
+        scorer = FantasyScorer(db)
+        scorer.generate_weekly_projections(season, week)
+        rows = db.get_fantasy_projections(season, week, position, scoring)
+    return [_proj_row_to_entry(r, week, season) for r in rows]
+
+
+@app.get("/api/fantasy/start-sit", response_model=StartSitResponse, tags=["fantasy"])
+def get_start_sit(
+    player1_id: int = Query(...),
+    player2_id: int = Query(...),
+    week: int = Query(...),
+    season: int = Query(2024),
+    db: Database = Depends(get_db),
+):
+    """Compare two players and recommend which to start for the given week."""
+    from ..prediction.fantasy_scorer import FantasyScorer
+    scorer = FantasyScorer(db)
+    result = scorer.start_sit_recommendation(player1_id, player2_id, week, season)
+    if not result:
+        raise HTTPException(status_code=404, detail="Could not generate recommendation")
+
+    def _entry(d: dict) -> StartSitPlayerEntry:
+        return StartSitPlayerEntry(
+            player_id=d['player_id'],
+            full_name=d['full_name'],
+            position=d.get('position'),
+            team_abbr=d.get('team_abbr'),
+            headshot_url=d.get('headshot_url'),
+            projected_points_ppr=d['projected_points_ppr'],
+            matchup_score=d['matchup_score'],
+            reasoning=d['reasoning'],
+        )
+
+    return StartSitResponse(
+        start=_entry(result['start']),
+        sit=_entry(result['sit']),
+        confidence=result['confidence'],
+    )
+
+
+@app.get(
+    "/api/fantasy/waiver",
+    response_model=List[FantasyProjectionEntry],
+    tags=["fantasy"],
+)
+def get_waiver_wire(
+    week: int = Query(...),
+    season: int = Query(2024),
+    scoring: str = Query("ppr"),
+    position: str = Query("all"),
+    limit: int = Query(30, ge=1, le=100),
+    db: Database = Depends(get_db),
+):
+    """Return waiver-wire targets sorted by opportunity score for the given week."""
+    from ..prediction.fantasy_scorer import FantasyScorer
+    rows = db.get_fantasy_projections(season, week, position, scoring)
+    if not rows:
+        scorer = FantasyScorer(db)
+        scorer.generate_weekly_projections(season, week)
+        rows = db.get_fantasy_projections(season, week, position, scoring)
+
+    # Sort by opportunity_score descending
+    sorted_rows = sorted(rows, key=lambda r: float(r['opportunity_score'] or 0), reverse=True)
+    return [_proj_row_to_entry(r, week, season) for r in sorted_rows[:limit]]
+
+
+@app.get(
+    "/api/fantasy/draft-rankings",
+    response_model=List[DraftRankingEntry],
+    tags=["fantasy"],
+)
+def get_draft_rankings(
+    season: int = Query(2025),
+    scoring: str = Query("ppr"),
+    position: str = Query("all"),
+    db: Database = Depends(get_db),
+):
+    """Return draft rankings, generating them on-demand if not yet cached."""
+    from ..prediction.fantasy_scorer import FantasyScorer
+    rows = db.get_draft_rankings(season, scoring, position)
+    if not rows:
+        scorer = FantasyScorer(db)
+        scorer.generate_draft_rankings(season, scoring)
+        rows = db.get_draft_rankings(season, scoring, position)
+
+    return [
+        DraftRankingEntry(
+            player_id=r['player_id'],
+            full_name=r.get('full_name', ''),
+            position=r.get('position'),
+            team_abbr=r.get('team_abbr'),
+            headshot_url=r.get('headshot_url'),
+            overall_rank=r['overall_rank'],
+            position_rank=r['position_rank'],
+            tier=r['tier'],
+            adp=r['adp'],
+            projected_season_points=r['projected_season_points'],
+            season=r['season'],
+            scoring_format=r['scoring_format'],
+        )
+        for r in rows
+    ]
+
+
+@app.post("/api/fantasy/roster", tags=["fantasy"])
+def set_fantasy_roster(
+    req: FantasyRosterRequest,
+    db: Database = Depends(get_db),
+):
+    """Upsert a set of players into a fantasy roster by league_id."""
+    if len(req.player_ids) != len(req.slots):
+        raise HTTPException(
+            status_code=400,
+            detail="player_ids and slots must have the same length",
+        )
+    for pid, slot in zip(req.player_ids, req.slots):
+        db.upsert_fantasy_roster({'league_id': req.league_id, 'player_id': pid, 'slot': slot})
+    db.commit()
+    roster = db.get_fantasy_roster(req.league_id)
+    return {"league_id": req.league_id, "count": len(roster)}
+
+
+@app.post("/api/fantasy/trade-analyze", response_model=TradeAnalysisResponse, tags=["fantasy"])
+def analyze_trade(
+    req: TradeAnalyzeRequest,
+    db: Database = Depends(get_db),
+):
+    """Analyze a trade by comparing rest-of-season projected points."""
+    from ..prediction.fantasy_scorer import FantasyScorer
+    scorer = FantasyScorer(db)
+    result = scorer.analyze_trade(
+        req.give_player_ids, req.get_player_ids, req.season, req.week
+    )
+
+    def _entry(d: dict) -> TradePlayerEntry:
+        return TradePlayerEntry(
+            player_id=d['player_id'],
+            full_name=d['full_name'],
+            position=d.get('position'),
+            team_abbr=d.get('team_abbr'),
+            headshot_url=d.get('headshot_url'),
+            ros_projected=d['ros_projected'],
+        )
+
+    return TradeAnalysisResponse(
+        give=[_entry(e) for e in result['give']],
+        get=[_entry(e) for e in result['get']],
+        give_total=result['give_total'],
+        get_total=result['get_total'],
+        verdict=result['verdict'],
+        delta=result['delta'],
+    )
+
+
+# ── Playoff Picture ─────────────────────────────────────
+
+@app.get("/api/seasons/{year}/playoff-picture", tags=["seasons"])
+def get_playoff_picture(year: int, db: Database = Depends(get_db)):
+    """Compute playoff standings for a season (pure DB computation, no scraping)."""
+    from collections import defaultdict
+
+    teams_rows = db.fetchall(
+        """
+        SELECT team_id, name, city, abbreviation, conference, division
+        FROM teams
+        WHERE (active_from IS NULL OR active_from <= ?)
+          AND (active_until IS NULL OR active_until >= ?)
+        ORDER BY conference, division, name
+        """,
+        (year, year),
+    )
+    if not teams_rows:
+        raise HTTPException(status_code=404, detail=f"No teams found for season {year}")
+
+    games_rows = db.fetchall(
+        """
+        SELECT home_team_id, away_team_id, home_score, away_score, winner_id, week
+        FROM games WHERE season = ? AND game_type = 'regular'
+        """,
+        (year,),
+    )
+
+    stats: dict = {}
+    for t in teams_rows:
+        stats[t["team_id"]] = {
+            "team_id": t["team_id"], "team_abbr": t["abbreviation"],
+            "team_name": f"{t['city']} {t['name']}",
+            "conference": t["conference"],
+            "division": f"{t['conference']} {t['division']}",
+            "wins": 0, "losses": 0, "ties": 0,
+            "conf_wins": 0, "conf_losses": 0,
+            "div_wins": 0, "div_losses": 0,
+            "points_for": 0, "points_against": 0, "games_played": 0,
+        }
+
+    team_conf = {t["team_id"]: t["conference"] for t in teams_rows}
+    team_div  = {t["team_id"]: f"{t['conference']} {t['division']}" for t in teams_rows}
+    max_week = 0
+
+    for g in games_rows:
+        if g["home_score"] is None:
+            continue
+        h_id, a_id = g["home_team_id"], g["away_team_id"]
+        if h_id not in stats or a_id not in stats:
+            continue
+
+        hs, aws = stats[h_id], stats[a_id]
+        hs["points_for"]  += g["home_score"]; hs["points_against"] += g["away_score"]; hs["games_played"] += 1
+        aws["points_for"] += g["away_score"]; aws["points_against"] += g["home_score"]; aws["games_played"] += 1
+
+        if g["winner_id"] == h_id:
+            hs["wins"] += 1; aws["losses"] += 1
+        elif g["winner_id"] == a_id:
+            aws["wins"] += 1; hs["losses"] += 1
+        else:
+            hs["ties"] += 1; aws["ties"] += 1
+
+        same_conf = team_conf.get(h_id) == team_conf.get(a_id)
+        same_div  = team_div.get(h_id)  == team_div.get(a_id)
+        if same_conf:
+            if g["winner_id"] == h_id:   hs["conf_wins"] += 1;  aws["conf_losses"] += 1
+            elif g["winner_id"] == a_id: aws["conf_wins"] += 1; hs["conf_losses"] += 1
+            if same_div:
+                if g["winner_id"] == h_id:   hs["div_wins"] += 1;  aws["div_losses"] += 1
+                elif g["winner_id"] == a_id: aws["div_wins"] += 1; hs["div_losses"] += 1
+
+        try:
+            max_week = max(max_week, int(g["week"]))
+        except (TypeError, ValueError):
+            pass
+
+    for s in stats.values():
+        total = s["wins"] + s["losses"] + s["ties"]
+        s["win_pct"]     = (s["wins"] + s["ties"] * 0.5) / total if total > 0 else 0.0
+        s["conf_record"] = f"{s['conf_wins']}-{s['conf_losses']}"
+        s["div_record"]  = f"{s['div_wins']}-{s['div_losses']}"
+        s["point_diff"]  = s["points_for"] - s["points_against"]
+
+    def sort_key(t: dict):
+        return (t["win_pct"], t["conf_wins"] - t["conf_losses"], t["point_diff"])
+
+    def make_row(t: dict) -> dict:
+        return {
+            "team_abbr": t["team_abbr"], "team_name": t["team_name"],
+            "wins": t["wins"], "losses": t["losses"], "ties": t["ties"],
+            "win_pct": round(t["win_pct"], 3),
+            "conf_record": t["conf_record"], "div_record": t["div_record"],
+            "points_for": t["points_for"], "points_against": t["points_against"],
+            "point_diff": t["point_diff"],
+            "clinched": t.get("clinched"), "is_division_leader": t.get("is_division_leader", False),
+            "seed": t.get("seed"),
+        }
+
+    conf_data = {}
+    for conf in ("AFC", "NFC"):
+        conf_teams = [s for s in stats.values() if s["conference"] == conf and s["games_played"] > 0]
+        div_map: dict = defaultdict(list)
+        for t in conf_teams:
+            div_map[t["division"]].append(t)
+        for v in div_map.values():
+            v.sort(key=sort_key, reverse=True)
+
+        div_leaders = {div: teams[0] for div, teams in div_map.items() if teams}
+        for i, leader in enumerate(sorted(div_leaders.values(), key=sort_key, reverse=True), start=1):
+            leader["seed"] = i
+            leader["is_division_leader"] = True
+            leader["clinched"] = "division" if max_week >= 17 else None
+
+        leader_ids  = {l["team_id"] for l in div_leaders.values()}
+        non_leaders = sorted([t for t in conf_teams if t["team_id"] not in leader_ids], key=sort_key, reverse=True)
+        for i, t in enumerate(non_leaders):
+            t["is_division_leader"] = False
+            if i < 3:   t["seed"] = 5 + i; t["clinched"] = "wildcard"  if max_week >= 17 else None
+            else:        t["seed"] = 8 + (i - 3); t["clinched"] = "eliminated" if max_week >= 17 else None
+
+        conf_data[conf.lower()] = {
+            "divisions": {div: [make_row(t) for t in sorted(teams, key=sort_key, reverse=True)]
+                          for div, teams in sorted(div_map.items())},
+            "wildcard":  [make_row(t) for t in non_leaders[:3]],
+            "bubble":    [make_row(t) for t in non_leaders[3:6]],
+        }
+
+    return {"season": year, "weeks_played": max_week, "has_playoff_picture": max_week >= 10, **conf_data}
+
+
+# ── Team Upcoming Games ──────────────────────────────────
+
+@app.get("/api/teams/{identifier}/upcoming", tags=["teams"])
+def get_team_upcoming(
+    identifier: str,
+    season: int = Query(2025),
+    limit: int = Query(4),
+    db: Database = Depends(get_db),
+):
+    """Return the next N unplayed games for a team with opponent difficulty."""
+    team = db.find_team(identifier)
+    if not team:
+        raise HTTPException(status_code=404, detail=f"Team '{identifier}' not found")
+
+    tid = team["team_id"]
+    rows = db.fetchall(
+        """
+        SELECT g.game_id, g.date, g.season, g.week,
+               g.home_team_id, g.away_team_id,
+               ht.abbreviation AS home_abbr, at.abbreviation AS away_abbr
+        FROM games g
+        JOIN teams ht ON ht.team_id = g.home_team_id
+        JOIN teams at ON at.team_id = g.away_team_id
+        WHERE g.season = ? AND (g.home_team_id = ? OR g.away_team_id = ?)
+          AND g.home_score IS NULL
+        ORDER BY g.date ASC LIMIT ?
+        """,
+        (season, tid, tid, limit),
+    )
+
+    games = []
+    for r in rows:
+        is_home  = r["home_team_id"] == tid
+        opp_abbr = r["away_abbr"] if is_home else r["home_abbr"]
+        opp_id   = r["away_team_id"] if is_home else r["home_team_id"]
+
+        opp_stats = db.fetchone(
+            """
+            SELECT
+              SUM(CASE WHEN winner_id=? THEN 1 ELSE 0 END) AS wins,
+              SUM(CASE WHEN home_score IS NOT NULL AND winner_id!=? AND winner_id IS NOT NULL THEN 1 ELSE 0 END) AS losses,
+              AVG(CASE WHEN home_team_id=? THEN home_score-away_score ELSE away_score-home_score END) AS avg_diff
+            FROM games
+            WHERE season=? AND game_type='regular'
+              AND (home_team_id=? OR away_team_id=?) AND home_score IS NOT NULL
+            """,
+            (opp_id, opp_id, opp_id, season, opp_id, opp_id),
+        )
+        opp_w = int(opp_stats["wins"] or 0)   if opp_stats else 0
+        opp_l = int(opp_stats["losses"] or 0) if opp_stats else 0
+        diff  = float(opp_stats["avg_diff"] or 0) if opp_stats else 0.0
+        difficulty = "hard" if diff >= 7 else "easy" if diff <= -3 else "medium"
+
+        games.append({
+            "game_id": r["game_id"], "date": str(r["date"]),
+            "week": str(r["week"]), "is_home": is_home,
+            "opp_abbr": opp_abbr, "opp_team_id": opp_id,
+            "opp_record": f"{opp_w}-{opp_l}", "opp_diff": round(diff, 1),
+            "difficulty": difficulty,
+        })
+
+    return {"team_abbr": team["abbreviation"], "season": season, "games": games}
+
+
+# ── Fantasy Power Rankings ─────────────────────────────────
+
+@app.get("/api/fantasy/power-rankings", tags=["fantasy"])
+def get_power_rankings(
+    week: int = Query(...),
+    season: int = Query(2024),
+    db: Database = Depends(get_db),
+):
+    """Weekly team power rankings for fantasy context."""
+
+    def _compute(target_week: int) -> dict:
+        teams = db.fetchall(
+            """
+            SELECT team_id, name, city, abbreviation, conference
+            FROM teams WHERE (active_from IS NULL OR active_from <= ?)
+              AND (active_until IS NULL OR active_until >= ?)
+            """,
+            (season, season),
+        )
+        scored = []
+        for t in teams:
+            tid = t["team_id"]
+            recent = db.fetchall(
+                """
+                SELECT home_team_id, away_team_id, home_score, away_score, winner_id
+                FROM games WHERE season=? AND game_type='regular'
+                  AND (home_team_id=? OR away_team_id=?) AND home_score IS NOT NULL
+                  AND CAST(week AS INTEGER) < ?
+                ORDER BY date DESC LIMIT 4
+                """,
+                (season, tid, tid, target_week),
+            )
+            wins = sum(1 for g in recent if g["winner_id"] == tid)
+            form = wins / max(len(recent), 1) if recent else 0.5
+            pt_diff = sum(
+                (g["home_score"] or 0) - (g["away_score"] or 0) if g["home_team_id"] == tid
+                else (g["away_score"] or 0) - (g["home_score"] or 0)
+                for g in recent
+            )
+            pt_norm = max(-1.0, min(1.0, pt_diff / 60.0))
+
+            adv = db.fetchone(
+                "SELECT yards_per_play FROM team_advanced_stats WHERE team_id=? AND season=?",
+                (tid, season),
+            ) or db.fetchone(
+                "SELECT yards_per_play FROM team_advanced_stats WHERE team_id=? ORDER BY season DESC LIMIT 1",
+                (tid,),
+            )
+            adv_score = 0.5
+            if adv and adv["yards_per_play"]:
+                adv_score = min(1.0, max(0.0, (float(adv["yards_per_play"]) - 3.5) / 3.5))
+
+            nxt = db.fetchone(
+                """
+                SELECT home_team_id, away_team_id FROM games
+                WHERE season=? AND (home_team_id=? OR away_team_id=?)
+                  AND CAST(week AS INTEGER) >= ? AND home_score IS NULL
+                ORDER BY date ASC LIMIT 1
+                """,
+                (season, tid, tid, target_week),
+            )
+            opp_str = 0.5
+            if nxt:
+                opp_id = nxt["away_team_id"] if nxt["home_team_id"] == tid else nxt["home_team_id"]
+                opp_r  = db.fetchall(
+                    """
+                    SELECT winner_id FROM games WHERE season=? AND game_type='regular'
+                      AND (home_team_id=? OR away_team_id=?) AND home_score IS NOT NULL
+                    ORDER BY date DESC LIMIT 4
+                    """,
+                    (season, opp_id, opp_id),
+                )
+                if opp_r:
+                    opp_str = sum(1 for g in opp_r if g["winner_id"] == opp_id) / len(opp_r)
+
+            composite = 0.40 * form + 0.20 * ((pt_norm + 1) / 2) + 0.20 * (1.0 - opp_str) + 0.20 * adv_score
+            scored.append({
+                "team_id": tid, "team_abbr": t["abbreviation"],
+                "team_name": f"{t['city']} {t['name']}",
+                "conference": t["conference"], "composite": composite,
+                "recent_wins": wins, "recent_games": len(recent), "pt_diff_4g": pt_diff,
+            })
+
+        scored.sort(key=lambda x: x["composite"], reverse=True)
+        return {s["team_id"]: {**s, "rank": i + 1} for i, s in enumerate(scored)}
+
+    current = _compute(week)
+    prev    = _compute(max(1, week - 1)) if week > 1 else {}
+
+    result = []
+    for tid, data in sorted(current.items(), key=lambda x: x[1]["rank"]):
+        rank        = data["rank"]
+        rank_change = (prev[tid]["rank"] - rank) if (prev and tid in prev) else 0
+        trend       = "rising" if rank_change > 3 else "falling" if rank_change < -3 else "neutral"
+        if rank <= 5:               implication = "Strong offense — start their skill players"
+        elif rank >= 28:            implication = "Weak defense — target opposing players"
+        elif trend == "rising":     implication = "Trending up — matchup-based starts"
+        elif trend == "falling":    implication = "Struggling recently — proceed with caution"
+        else:                       implication = "Mid-tier team — rely on matchup"
+
+        result.append({
+            "rank": rank, "rank_change": rank_change, "trend": trend,
+            "team_abbr": data["team_abbr"], "team_name": data["team_name"],
+            "conference": data["conference"],
+            "composite_score": round(data["composite"], 3),
+            "recent_wins": data["recent_wins"], "recent_games": data["recent_games"],
+            "pt_diff_4g": data["pt_diff_4g"], "implication": implication,
+        })
+
+    return {"week": week, "season": season, "rankings": result}
+
+
+# ── Fantasy Roster Import by Names ──────────────────────────
+
+@app.post("/api/fantasy/roster/import-by-names", tags=["fantasy"])
+def import_roster_by_names(req: ImportByNamesRequest, db: Database = Depends(get_db)):
+    """Fuzzy-match player names and return matched/unmatched lists for confirmation."""
+    matched, unmatched = [], []
+    for raw in req.names:
+        name = raw.strip()
+        if not name:
+            continue
+        rows = db.fetchall(
+            """
+            SELECT p.player_id, p.full_name, p.position, t.abbreviation AS team_abbr
+            FROM players p
+            LEFT JOIN roster_entries re ON re.player_id = p.player_id AND re.season = ?
+            LEFT JOIN teams t ON t.team_id = re.team_id
+            WHERE LOWER(p.full_name) LIKE LOWER(?) ORDER BY re.season DESC LIMIT 1
+            """,
+            (req.season, f"%{name}%"),
+        )
+        if not rows:
+            last = name.split()[-1]
+            rows = db.fetchall(
+                """
+                SELECT p.player_id, p.full_name, p.position, t.abbreviation AS team_abbr
+                FROM players p
+                LEFT JOIN roster_entries re ON re.player_id = p.player_id AND re.season = ?
+                LEFT JOIN teams t ON t.team_id = re.team_id
+                WHERE LOWER(p.full_name) LIKE LOWER(?) ORDER BY re.season DESC LIMIT 1
+                """,
+                (req.season, f"%{last}%"),
+            )
+        if rows:
+            r = rows[0]
+            matched.append({
+                "input_name": name, "player_id": r["player_id"],
+                "full_name": r["full_name"], "position": r["position"], "team_abbr": r["team_abbr"],
+            })
+        else:
+            unmatched.append(name)
+    return {"matched": matched, "unmatched": unmatched}
+
+
+# ── Fantasy Trade Values ─────────────────────────────────────
+
+@app.get("/api/fantasy/trade-values", tags=["fantasy"])
+def get_trade_values(week: int = Query(...), season: int = Query(2024), db: Database = Depends(get_db)):
+    """ROS trade values: sum projected_points_ppr for weeks >= current_week."""
+    rows = db.fetchall(
+        """
+        SELECT fp.player_id, p.full_name, p.position, p.headshot_url,
+               t.abbreviation AS team_abbr,
+               SUM(fp.projected_points_ppr) AS ros_projected,
+               AVG(fp.matchup_score)        AS avg_matchup_score,
+               COUNT(*)                     AS weeks_remaining
+        FROM fantasy_projections fp
+        JOIN players p ON p.player_id = fp.player_id
+        LEFT JOIN roster_entries re ON re.player_id = fp.player_id AND re.season = fp.season
+        LEFT JOIN teams t ON t.team_id = re.team_id
+        WHERE fp.season = ? AND fp.week >= ?
+        GROUP BY fp.player_id, p.full_name, p.position, p.headshot_url, t.abbreviation
+        ORDER BY ros_projected DESC LIMIT 100
+        """,
+        (season, week),
+    )
+    result = []
+    for i, r in enumerate(rows, start=1):
+        avg_ms = float(r["avg_matchup_score"] or 1.0)
+        result.append({
+            "rank": i, "player_id": r["player_id"], "full_name": r["full_name"],
+            "position": r["position"], "team_abbr": r["team_abbr"], "headshot_url": r["headshot_url"],
+            "ros_projected": round(float(r["ros_projected"] or 0), 1),
+            "avg_matchup_score": round(avg_ms, 3),
+            "weeks_remaining": r["weeks_remaining"],
+            "schedule_difficulty": "easy" if avg_ms >= 1.1 else "hard" if avg_ms <= 0.9 else "neutral",
+        })
+    return {"week": week, "season": season, "players": result, "count": len(result)}
 
 
 # ── Helpers ────────────────────────────────────────────

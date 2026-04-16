@@ -298,3 +298,184 @@ export interface AccuracyStats {
   calibration: Record<string, { total: number; correct: number }>;
   season_accuracy: Record<string, { total: number; correct: number; accuracy: number }>;
 }
+
+// ── Fantasy (extended) ───────────────────────────────────────────────
+
+export interface FantasyProjection {
+  player_id: number;
+  full_name: string;
+  position: string | null;
+  team_abbr: string | null;
+  headshot_url: string | null;
+  week: number;
+  season: number;
+  projected_points_ppr: number;
+  projected_points_std: number;
+  matchup_score: number;
+  opportunity_score: number;
+  confidence: string;
+  injury_status: string | null;
+  weather_impact: boolean;
+}
+
+export interface StartSitPlayer {
+  player_id: number;
+  full_name: string;
+  position: string | null;
+  team_abbr: string | null;
+  headshot_url: string | null;
+  projected_points_ppr: number;
+  matchup_score: number;
+  reasoning: string;
+}
+
+export interface StartSitResult {
+  start: StartSitPlayer;
+  sit: StartSitPlayer;
+  confidence: string;
+}
+
+export interface DraftRanking {
+  player_id: number;
+  full_name: string;
+  position: string | null;
+  team_abbr: string | null;
+  headshot_url: string | null;
+  overall_rank: number;
+  position_rank: number;
+  tier: number;
+  adp: number;
+  projected_season_points: number;
+  season: number;
+  scoring_format: string;
+}
+
+export interface TradePlayer {
+  player_id: number;
+  full_name: string;
+  position: string | null;
+  team_abbr: string | null;
+  headshot_url: string | null;
+  ros_projected: number;
+}
+
+export interface TradeAnalysis {
+  give: TradePlayer[];
+  get: TradePlayer[];
+  give_total: number;
+  get_total: number;
+  verdict: 'WIN' | 'LOSE' | 'FAIR';
+  delta: number;
+}
+
+// ── Playoff Picture ───────────────────────────────────────────────────────────
+
+export interface PlayoffTeamEntry {
+  team_abbr: string;
+  team_name: string;
+  wins: number;
+  losses: number;
+  ties: number;
+  win_pct: number;
+  conf_record: string;
+  div_record: string;
+  points_for: number;
+  points_against: number;
+  point_diff: number;
+  clinched: 'division' | 'wildcard' | 'eliminated' | null;
+  is_division_leader: boolean;
+  seed: number | null;
+}
+
+export interface PlayoffConference {
+  divisions: Record<string, PlayoffTeamEntry[]>;
+  wildcard: PlayoffTeamEntry[];
+  bubble: PlayoffTeamEntry[];
+}
+
+export interface PlayoffPicture {
+  season: number;
+  weeks_played: number;
+  has_playoff_picture: boolean;
+  afc: PlayoffConference;
+  nfc: PlayoffConference;
+}
+
+// ── Team Upcoming Games ───────────────────────────────────────────────────────
+
+export interface UpcomingGame {
+  game_id: number;
+  date: string;
+  week: string;
+  is_home: boolean;
+  opp_abbr: string;
+  opp_team_id: number;
+  opp_record: string;
+  opp_diff: number;
+  difficulty: 'easy' | 'medium' | 'hard';
+}
+
+export interface TeamUpcoming {
+  team_abbr: string;
+  season: number;
+  games: UpcomingGame[];
+}
+
+// ── Power Rankings ────────────────────────────────────────────────────────────
+
+export interface PowerRanking {
+  rank: number;
+  rank_change: number;
+  trend: 'rising' | 'falling' | 'neutral';
+  team_abbr: string;
+  team_name: string;
+  conference: string;
+  composite_score: number;
+  recent_wins: number;
+  recent_games: number;
+  pt_diff_4g: number;
+  implication: string;
+}
+
+export interface PowerRankings {
+  week: number;
+  season: number;
+  rankings: PowerRanking[];
+}
+
+// ── Trade Values ──────────────────────────────────────────────────────────────
+
+export interface TradeValue {
+  rank: number;
+  player_id: number;
+  full_name: string;
+  position: string | null;
+  team_abbr: string | null;
+  headshot_url: string | null;
+  ros_projected: number;
+  avg_matchup_score: number;
+  weeks_remaining: number;
+  schedule_difficulty: 'easy' | 'neutral' | 'hard';
+}
+
+export interface TradeValues {
+  week: number;
+  season: number;
+  players: TradeValue[];
+  count: number;
+}
+
+// ── Roster Import ─────────────────────────────────────────────────────────────
+
+export interface RosterMatchEntry {
+  input_name: string;
+  player_id: number;
+  full_name: string;
+  position: string | null;
+  team_abbr: string | null;
+}
+
+export interface RosterImportResult {
+  matched: RosterMatchEntry[];
+  unmatched: string[];
+}

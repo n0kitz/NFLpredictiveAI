@@ -199,6 +199,16 @@ def main():
     except Exception as e:
         logger.error(f"Roster fetch failed (non-fatal): {e}")
 
+    # Generate fantasy projections for the current week
+    try:
+        from src.prediction.fantasy_scorer import FantasyScorer
+        scorer = FantasyScorer(db)
+        current_week = db.get_current_week(current_season)
+        projections = scorer.generate_weekly_projections(season=current_season, week=current_week)
+        logger.info(f"Fantasy projections generated for week {current_week} ({len(projections)} players)")
+    except Exception as e:
+        logger.error(f"Fantasy projection generation failed (non-fatal): {e}")
+
     db.close()
     logger.info("Weekly scrape complete.")
 

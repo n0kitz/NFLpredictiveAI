@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Game } from '../api/types';
+import type { Game, PlayoffPicture, PlayoffTeamEntry } from '../api/types';
 import Spinner from '../components/Spinner';
 import { getTeamColors } from '../theme/teamColors';
 
@@ -27,7 +27,7 @@ export default function Season() {
   const [games, setGames] = useState<Game[]>([]);
   const [standings, setStandings] = useState<Standing[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'standings' | 'games'>('standings');
+  const [tab, setTab] = useState<'standings' | 'games' | 'playoff'>('standings');
 
   useEffect(() => {
     if (paramYear) setYear(Number(paramYear));
@@ -52,7 +52,6 @@ export default function Season() {
         const gs = gameData.games;
         setGames(gs);
 
-        // Compute standings from games
         const teamMap = new Map<number, Standing>();
         for (const t of teamData.teams) {
           teamMap.set(t.team_id, {
@@ -78,14 +77,11 @@ export default function Season() {
           away.pa += g.home_score;
 
           if (g.winner_id === g.home_team_id) {
-            home.wins++;
-            away.losses++;
+            home.wins++; away.losses++;
           } else if (g.winner_id === g.away_team_id) {
-            away.wins++;
-            home.losses++;
+            away.wins++; home.losses++;
           } else {
-            home.ties++;
-            away.ties++;
+            home.ties++; away.ties++;
           }
         }
 
@@ -107,27 +103,22 @@ export default function Season() {
     return () => { cancelled = true; };
   }, [year]);
 
-  // Group games by week
   const weeks = new Map<string, Game[]>();
   for (const g of games) {
-    const key = g.week;
-    if (!weeks.has(key)) weeks.set(key, []);
-    weeks.get(key)!.push(g);
+    if (!weeks.has(g.week)) weeks.set(g.week, []);
+    weeks.get(g.week)!.push(g);
   }
 
-  // Group standings by division
   const divisions = new Map<string, Standing[]>();
   for (const s of standings) {
     const key = `${s.conference} ${s.division}`;
     if (!divisions.has(key)) divisions.set(key, []);
     divisions.get(key)!.push(s);
   }
-  // Sort divisions alphabetically
   const sortedDivisions = Array.from(divisions.entries()).sort(([a], [b]) => a.localeCompare(b));
 
   return (
     <div>
-      {/* Header */}
       <div className="flex items-center gap-5 mb-8 animate-fade-up">
         <div>
           <div className="flex items-center gap-3 mb-3">
@@ -145,15 +136,12 @@ export default function Season() {
           onChange={(e) => setYear(Number(e.target.value))}
           className="bg-surface-700 border border-border rounded-md px-4 py-2 text-sm text-text-primary font-display ml-auto"
         >
-          {YEARS.map((y) => (
-            <option key={y} value={y}>{y}</option>
-          ))}
+          {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
         </select>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-1 mb-6 border-b border-border animate-fade-up stagger-1">
-        {(['standings', 'games'] as const).map((t) => (
+        {(['standings', 'games', 'playoff'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -161,7 +149,7 @@ export default function Season() {
               tab === t ? 'text-accent' : 'text-text-muted hover:text-text-secondary'
             }`}
           >
-            {t}
+            {t === 'playoff' ? 'Playoff Picture' : t}
             {tab === t && <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-accent rounded-full" />}
           </button>
         ))}
@@ -169,7 +157,6 @@ export default function Season() {
 
       {loading && <Spinner text="Loading season data..." />}
 
-      {/* Standings */}
       {!loading && tab === 'standings' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-up stagger-2">
           {sortedDivisions.map(([divName, teams]) => (
@@ -227,7 +214,6 @@ export default function Season() {
         </div>
       )}
 
-      {/* Games by week */}
       {!loading && tab === 'games' && (
         <div className="space-y-4 animate-fade-up stagger-2">
           {Array.from(weeks.entries()).map(([week, weekGames]) => (
@@ -235,9 +221,140 @@ export default function Season() {
           ))}
         </div>
       )}
+
+      {!loading && tab === 'playoff' && (
+        <PlayoffPictureTab year={year} />
+      )}
     </div>
   );
 }
+
+// ── Playoff Picture Tab ───────────────────────────────────────────────────────
+
+function PlayoffPictureTab({ year }: { year: number }) {
+  const [data, setData] = useState<PlayoffPicture | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    api.getPlayoffPicture(year)
+      .then(setData)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [year]);
+
+  if (loading) return <Spinner text="Loading playoff picture…" />;
+  if (error) return <p className="text-loss text-sm py-4">{error}</p>;
+  if (!data) return null;
+
+  if (!data.has_playoff_picture) {
+    return (
+      <div className="rounded-xl border border-border bg-surface-850 p-8 text-center">
+        <p className="text-text-muted text-sm">
+          Playoff picture not yet available — needs at least 10 weeks of data.
+        </p>
+        <p className="text-text-muted text-xs mt-1">
+          {data.weeks_played} week{data.weeks_played !== 1 ? 's' : ''} completed so far.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 animate-fade-up">
+      <p className="text-xs text-text-muted">
+        Based on {data.weeks_played} completed weeks of {year} regular season.
+        {data.weeks_played >= 17 && <span className="ml-2 text-accent font-semibold">Season complete.</span>}
+      </p>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {(['afc', 'nfc'] as const).map((conf) => (
+          <ConferenceBlock key={conf} conf={conf.toUpperCase()} data={data[conf]} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function clinchBadge(t: PlayoffTeamEntry) {
+  if (t.clinched === 'division') return <span className="text-[9px] font-display font-bold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 uppercase">DIV</span>;
+  if (t.clinched === 'wildcard') return <span className="text-[9px] font-display font-bold px-1.5 py-0.5 rounded bg-win/15 text-win uppercase">WC</span>;
+  if (t.clinched === 'eliminated') return <span className="text-[9px] font-display font-bold px-1.5 py-0.5 rounded bg-loss/15 text-loss uppercase">x</span>;
+  return null;
+}
+
+function PlayoffTeamRow({ t, showSeed }: { t: PlayoffTeamEntry; showSeed?: boolean }) {
+  const tc = getTeamColors(t.team_abbr);
+  const isIn = t.clinched === 'division' || t.clinched === 'wildcard' || (t.seed !== null && t.seed <= 7 && t.clinched !== 'eliminated');
+  return (
+    <div className={`flex items-center gap-3 px-4 py-2.5 border-b border-border/50 last:border-0 hover:bg-surface-700/30 transition-colors ${isIn && t.clinched !== null ? 'bg-win/3' : ''}`}>
+      {showSeed && t.seed !== null && (
+        <span className="text-[10px] text-text-muted font-display font-bold w-5 text-center shrink-0">{t.seed}</span>
+      )}
+      <Link to={`/teams/${t.team_abbr}`} className="flex items-center gap-2 flex-1 min-w-0">
+        <span className="w-6 h-6 rounded-sm flex items-center justify-center text-[9px] font-display font-bold text-white shrink-0"
+          style={{ backgroundColor: tc.primary }}>
+          {t.team_abbr}
+        </span>
+        <span className="text-xs font-medium text-text-primary truncate">{t.team_abbr}</span>
+      </Link>
+      <span className="text-xs tabular-nums font-bold text-text-primary">{t.wins}-{t.losses}{t.ties > 0 ? `-${t.ties}` : ''}</span>
+      <span className="text-[10px] text-text-muted w-10 text-right">{t.conf_record}</span>
+      <span className={`text-[10px] tabular-nums w-8 text-right ${t.point_diff > 0 ? 'text-win' : t.point_diff < 0 ? 'text-loss' : 'text-text-muted'}`}>
+        {t.point_diff > 0 ? '+' : ''}{t.point_diff}
+      </span>
+      <span className="w-8 flex justify-end">{clinchBadge(t)}</span>
+    </div>
+  );
+}
+
+function ConferenceBlock({ conf, data }: { conf: string; data: PlayoffPicture['afc'] }) {
+  return (
+    <div className="space-y-4">
+      <h2 className="font-display text-sm font-bold uppercase tracking-[0.2em] text-accent">{conf}</h2>
+
+      {/* Division standings */}
+      {Object.entries(data.divisions).map(([divName, teams]) => (
+        <div key={divName} className="rounded-xl border border-border bg-surface-850 overflow-hidden">
+          <div className="px-4 py-2 bg-surface-800/40 border-b border-border flex items-center justify-between">
+            <span className="text-[10px] font-display font-bold uppercase tracking-widest text-text-muted">{divName}</span>
+            <div className="flex items-center gap-4 text-[9px] text-text-muted font-display uppercase tracking-wider">
+              <span className="w-16 text-right">W-L</span>
+              <span className="w-10 text-right">Conf</span>
+              <span className="w-8 text-right">Diff</span>
+              <span className="w-8" />
+            </div>
+          </div>
+          {teams.map((t) => <PlayoffTeamRow key={t.team_abbr} t={t} showSeed />)}
+        </div>
+      ))}
+
+      {/* Wildcard */}
+      {data.wildcard.length > 0 && (
+        <div className="rounded-xl border border-border bg-surface-850 overflow-hidden">
+          <div className="px-4 py-2 bg-win/5 border-b border-border">
+            <span className="text-[10px] font-display font-bold uppercase tracking-widest text-win">Wildcard Spots</span>
+          </div>
+          {data.wildcard.map((t) => <PlayoffTeamRow key={t.team_abbr} t={t} showSeed />)}
+        </div>
+      )}
+
+      {/* Bubble */}
+      {data.bubble.length > 0 && (
+        <div className="rounded-xl border border-border bg-surface-850 overflow-hidden">
+          <div className="px-4 py-2 bg-surface-800/40 border-b border-border">
+            <span className="text-[10px] font-display font-bold uppercase tracking-widest text-text-muted">In The Hunt</span>
+          </div>
+          {data.bubble.map((t) => <PlayoffTeamRow key={t.team_abbr} t={t} showSeed />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Week accordion ─────────────────────────────────────────────────────────────
 
 function WeekAccordion({ week, games }: { week: string; games: Game[] }) {
   const [open, setOpen] = useState(false);

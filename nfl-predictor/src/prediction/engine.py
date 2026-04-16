@@ -1,7 +1,7 @@
 """Core prediction engine for NFL game predictions."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional, List, Tuple, Dict, Any
 
 from ..database.db import Database, get_database
@@ -11,7 +11,7 @@ from .metrics import (
     calculate_form_rating, calculate_strength_rating
 )
 from .factors import apply_game_factors, FactorAdjuster
-from .feature_builder import build_feature_vector, feature_dict_to_array, _parse_week
+from .feature_builder import build_feature_vector, feature_dict_to_array, _parse_week, FEATURE_NAMES
 from .ml_model import (
     load_model, predict_with_ml, MODEL_PATH,
     load_spread_model, predict_spread, SPREAD_MODEL_PATH,
@@ -98,6 +98,9 @@ class PredictionEngine:
         home_name = f"{home['city']} {home['name']}"
         away_name = f"{away['city']} {away['name']}"
 
+        # Compute H2H once — reused by both probability paths and spread model
+        h2h_data = calculate_head_to_head(self.db, home_id, away_id, limit=10)
+
         # Calculate metrics for both teams
         home_metrics = calculate_team_metrics(
             self.db, home_id,
@@ -111,7 +114,7 @@ class PredictionEngine:
         )
 
         # Fetch Vegas odds for this matchup (date-agnostic lookup when cutoff absent)
-        _today = cutoff_date or __import__('datetime').date.today().isoformat()
+        _today = cutoff_date or date.today().isoformat()
         _odds_row = None
         try:
             _odds_row = self.db.get_odds_for_teams(home_id, away_id, _today)
@@ -129,19 +132,19 @@ class PredictionEngine:
                 home_metrics, away_metrics, home_id, away_id,
                 is_playoff=is_playoff, week=week,
                 vegas_implied_prob=vegas_implied_prob,
+                h2h_data=h2h_data,
             )
         else:
             home_prob, away_prob, key_factors = self._calculate_probability(
-                home_metrics, away_metrics, home_id, away_id
+                home_metrics, away_metrics, h2h_data
             )
 
         # Spread prediction (regression model, always run when available)
         predicted_spread: Optional[float] = None
         if self._spread_model is not None:
             try:
-                h2h_for_spread = calculate_head_to_head(self.db, home_id, away_id, limit=10)
                 feat_dict_spread = build_feature_vector(
-                    home_metrics, away_metrics, h2h_for_spread,
+                    home_metrics, away_metrics, h2h_data,
                     is_playoff=is_playoff, week=week,
                     vegas_implied_prob=vegas_implied_prob,
                 )
@@ -183,13 +186,15 @@ class PredictionEngine:
             "active_model":               "weighted_sum",
             "ml_model_loaded":            self._use_ml,
             "ml_available":               self._ml_model is not None,
-            "feature_count":              len(self._ml_features) if self._ml_features else None,
+            # Use FEATURE_NAMES as the canonical source (34 after vegas removal)
+            "feature_count":              len(FEATURE_NAMES),
             "model_file_exists":          MODEL_PATH.exists(),
             "ml_oos_accuracy":            0.668,
             "weighted_sum_oos_accuracy":  0.672,
             "recommendation":             "weighted_sum performs better on 2023-2024 OOS data",
             "spread_model_loaded":        self._spread_model is not None,
             "spread_model_mae":           None,  # updated after retrain
+            "vegas_feature_removed":      True,
         }
 
     def explain_prediction(
@@ -242,6 +247,7 @@ class PredictionEngine:
         is_playoff: bool = False,
         week: Any = 0,
         vegas_implied_prob: float = 0.5,
+        h2h_data: Optional[Dict] = None,
     ) -> Tuple[float, float, List[str]]:
         """Use the trained GBM to compute base win probabilities, then apply
         dynamic HFA and bye-week rest adjustments (same post-processing as the
@@ -249,10 +255,10 @@ class PredictionEngine:
         """
         key_factors: List[str] = []
 
-        # --- Build feature vector ---
-        h2h = calculate_head_to_head(self.db, home_id, away_id, limit=10)
+        # --- Build feature vector (use pre-computed h2h_data from predict()) ---
         feat_dict = build_feature_vector(
-            home_metrics, away_metrics, h2h, is_playoff=is_playoff, week=week,
+            home_metrics, away_metrics, h2h_data or {},
+            is_playoff=is_playoff, week=week,
             vegas_implied_prob=vegas_implied_prob,
         )
         feat_array = feature_dict_to_array(feat_dict)
@@ -317,8 +323,7 @@ class PredictionEngine:
         self,
         home_metrics: TeamMetrics,
         away_metrics: TeamMetrics,
-        home_id: int,
-        away_id: int
+        h2h_data: Dict,
     ) -> Tuple[float, float, List[str]]:
         """
         Calculate win probability based on team metrics.
@@ -454,7 +459,7 @@ class PredictionEngine:
             ]
 
         # 7. Head-to-head record (10%)
-        h2h = calculate_head_to_head(self.db, home_id, away_id, limit=10)
+        h2h = h2h_data
         if h2h['total_games'] >= 2:
             if h2h['total_games'] > 0:
                 h2h_home_pct = h2h['team1_wins'] / h2h['total_games']

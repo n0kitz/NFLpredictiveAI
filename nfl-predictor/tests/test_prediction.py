@@ -144,13 +144,13 @@ class TestFeatureBuilder:
         return calculate_team_metrics(db, team["team_id"])
 
     def test_feature_builder_shape(self, db):
-        """Feature array must have exactly 35 elements (32 base + vegas + 2x QB EPA)."""
+        """Feature array must have exactly 34 elements (32 base + 2x QB EPA; vegas removed)."""
         hm = self._make_metrics(db, "KC")
         am = self._make_metrics(db, "PHI")
         h2h = {"team1_wins": 3, "team2_wins": 2, "total_games": 5}
         feat = build_feature_vector(hm, am, h2h, is_playoff=False, week=10)
         arr = feature_dict_to_array(feat)
-        assert arr.shape == (35,), f"Expected shape (35,), got {arr.shape}"
+        assert arr.shape == (34,), f"Expected shape (34,), got {arr.shape}"
 
     def test_feature_builder_keys(self, db):
         """All FEATURE_NAMES must appear in the feature dict."""

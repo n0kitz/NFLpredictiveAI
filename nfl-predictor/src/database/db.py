@@ -12,6 +12,13 @@ logger = logging.getLogger(__name__)
 DEFAULT_DB_PATH = Path(__file__).parent.parent.parent / "data" / "nfl.db"
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
+# Ordered list of schema migrations.  Each entry is run exactly once (tracked by db_version).
+# To add a new migration: append to this list — do NOT reorder or remove existing entries.
+MIGRATIONS: List[str] = [
+    # v1: add qb_epa_per_play column to team_advanced_stats (backfill for pre-existing DBs)
+    "ALTER TABLE team_advanced_stats ADD COLUMN qb_epa_per_play REAL DEFAULT 0",
+]
+
 
 class Database:
     """SQLite database connection manager for NFL data."""
@@ -33,7 +40,8 @@ class Database:
         if self._connection is None:
             self._connection = sqlite3.connect(
                 self.db_path,
-                detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES
+                detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
+                check_same_thread=False,
             )
             self._connection.row_factory = sqlite3.Row
             # Enable foreign keys
@@ -54,13 +62,6 @@ class Database:
                     FOREIGN KEY (team_id) REFERENCES teams(team_id)
                 )
             """)
-            # Safe migration: add qb_epa_per_play if table already existed without it
-            try:
-                self._connection.execute(
-                    "ALTER TABLE team_advanced_stats ADD COLUMN qb_epa_per_play REAL DEFAULT 0"
-                )
-            except Exception:
-                pass  # column already exists
             self._connection.execute("""
                 CREATE TABLE IF NOT EXISTS game_odds (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -232,7 +233,47 @@ class Database:
                 )
             """)
             self._connection.commit()
+            self.run_migrations(self._connection)
         return self._connection
+
+    def run_migrations(self, conn: sqlite3.Connection) -> None:
+        """
+        Apply any pending schema migrations tracked by the db_version table.
+
+        Each migration in MIGRATIONS runs exactly once.  Version numbers are
+        1-based and correspond to list indices.  Any failure raises — except
+        for ALTER TABLE ADD COLUMN when the column already exists (idempotent
+        upgrade of a pre-existing database that had the column applied outside
+        this system).
+        """
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS db_version "
+            "(version INTEGER PRIMARY KEY, "
+            "applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        )
+        row = conn.execute("SELECT MAX(version) FROM db_version").fetchone()
+        current = row[0] or 0
+        for i, sql in enumerate(MIGRATIONS):
+            version = i + 1
+            if version > current:
+                try:
+                    conn.execute(sql)
+                    conn.execute(
+                        "INSERT INTO db_version (version) VALUES (?)", (version,)
+                    )
+                    conn.commit()
+                except sqlite3.OperationalError as exc:
+                    # Treat "duplicate column name" as idempotent success:
+                    # existing DBs may have had this column applied via the old
+                    # try/except pattern before the migration system existed.
+                    if "duplicate column name" in str(exc):
+                        conn.execute(
+                            "INSERT INTO db_version (version) VALUES (?)", (version,)
+                        )
+                        conn.commit()
+                    else:
+                        logger.error("Migration %d failed: %s", version, exc)
+                        raise
 
     def close(self) -> None:
         """Close database connection."""

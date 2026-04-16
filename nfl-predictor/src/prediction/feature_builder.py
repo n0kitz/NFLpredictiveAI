@@ -8,7 +8,11 @@ from .metrics import TeamMetrics, calculate_form_rating, calculate_strength_rati
 
 # Fixed feature order — used for both training and inference.
 # Any change to this list invalidates existing saved models.
-# 32 features total.
+# 34 features total.
+# NOTE: vegas_home_implied_prob was removed (feature #33) — it was 0.5 for ~95% of
+# training data (2013-2022 have no odds in DB), so the GBM learned nothing from it.
+# Using real odds at inference on a model trained with 0.5 is silent data leakage.
+# IMPORTANT: Delete data/nfl_model.joblib and retrain with: python scripts/train_model.py
 FEATURE_NAMES: list[str] = [
     "home_win_pct",
     "away_win_pct",
@@ -41,13 +45,12 @@ FEATURE_NAMES: list[str] = [
     "away_redzone_efficiency",
     "is_playoff",
     "week_of_season",
-    "home_dynamic_hfa",          # 32nd: team-specific home field advantage
-    "vegas_home_implied_prob",   # 33rd: Vegas market implied prob (0.5 = no data)
-    "home_qb_epa_per_play",      # 34th: home QB EPA per pass play
-    "away_qb_epa_per_play",      # 35th: away QB EPA per pass play
+    "home_dynamic_hfa",       # 32nd: team-specific home field advantage
+    "home_qb_epa_per_play",   # 33rd: home QB EPA per pass play
+    "away_qb_epa_per_play",   # 34th: away QB EPA per pass play
 ]
 
-assert len(FEATURE_NAMES) == 35, f"Expected 35 features, got {len(FEATURE_NAMES)}"
+assert len(FEATURE_NAMES) == 34, f"Expected 34 features, got {len(FEATURE_NAMES)}"
 
 
 def _safe_div(a: float, b: float, default: float = 0.0) -> float:
@@ -119,10 +122,9 @@ def build_feature_vector(
         "away_redzone_efficiency":   away_metrics.redzone_efficiency,
         "is_playoff":                float(int(is_playoff)),
         "week_of_season":            float(week_int),
-        "home_dynamic_hfa":          home_metrics.dynamic_hfa,
-        "vegas_home_implied_prob":   float(vegas_implied_prob),
-        "home_qb_epa_per_play":      home_metrics.qb_epa_per_play,
-        "away_qb_epa_per_play":      away_metrics.qb_epa_per_play,
+        "home_dynamic_hfa":        home_metrics.dynamic_hfa,
+        "home_qb_epa_per_play":    home_metrics.qb_epa_per_play,
+        "away_qb_epa_per_play":    away_metrics.qb_epa_per_play,
     }
 
 

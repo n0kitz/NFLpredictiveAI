@@ -376,7 +376,7 @@ def predict_with_ml(model, feature_array: np.ndarray) -> Tuple[float, float]:
 
     Args:
         model: Fitted GradientBoostingClassifier (or any sklearn classifier).
-        feature_array: 1-D float64 array of shape (32,).
+        feature_array: 1-D float64 array of shape (34,).
 
     Returns:
         (home_prob, away_prob)

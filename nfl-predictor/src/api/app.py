@@ -6,7 +6,7 @@ from typing import List, Optional
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from ..database.db import Database
+from ..database.db import Database, DEFAULT_DB_PATH
 from ..prediction.engine import PredictionEngine
 from ..prediction.metrics import calculate_team_metrics, calculate_head_to_head
 from ..prediction.factors import FactorAdjuster
@@ -39,6 +39,20 @@ from .schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ── PredictionEngine singleton ─────────────────────────
+# Load the ML model and SHAP explainer once at startup, not per request.
+# The engine's internal DB is used for reads only; writes (e.g. insert_prediction)
+# still go through the per-request DB provided by get_db().
+_prediction_engine: PredictionEngine | None = None
+
+
+def get_engine() -> PredictionEngine:
+    global _prediction_engine
+    if _prediction_engine is None:
+        _prediction_engine = PredictionEngine(Database(DEFAULT_DB_PATH))
+    return _prediction_engine
+
 
 app = FastAPI(
     title="NFL Prediction API",
@@ -415,7 +429,7 @@ def predict_game(
     from .schemas import InlineFactor
     from ..prediction.factors import apply_game_factors as _apply_factors
 
-    engine = PredictionEngine(db)
+    engine = get_engine()
     use_ml = (model == "ml")
     try:
         prediction = engine.predict(
@@ -587,7 +601,7 @@ def predict_game_get(
     db: Database = Depends(get_db),
 ):
     """Predict via GET: /api/predict/{away_team}/{home_team}. Add ?model=ml for ML model."""
-    engine = PredictionEngine(db)
+    engine = get_engine()
     use_ml = (model == "ml")
     try:
         prediction = engine.predict(home_team=home_team, away_team=away_team, use_ml=use_ml)
@@ -626,7 +640,7 @@ def explain_prediction_endpoint(
     from .schemas import InlineFactor
     from ..prediction.factors import apply_game_factors as _apply_factors
 
-    engine = PredictionEngine(db)
+    engine = get_engine()
     try:
         prediction = engine.predict(
             home_team=req.home_team,
@@ -899,7 +913,7 @@ def scrape_status(db: Database = Depends(get_db)):
 @app.get("/api/model/info", response_model=ModelInfoResponse, tags=["system"])
 def model_info(db: Database = Depends(get_db)):
     """Return which prediction model is active (ML or weighted-sum fallback)."""
-    engine = PredictionEngine(db)
+    engine = get_engine()
     info = engine.get_model_info()
     return ModelInfoResponse(**info)
 

@@ -1,7 +1,6 @@
 """Fantasy Football scorer: projections, matchup scoring, draft rankings, trade analysis."""
 
 import logging
-import random
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -383,7 +382,7 @@ class FantasyScorer:
                     tier = i
                     break
 
-            adp = round(max(1.0, overall_rank + random.gauss(0, 2)), 1)
+            adp = float(overall_rank)
 
             ranking: Dict[str, Any] = {
                 'player_id':               entry['player_id'],

@@ -340,6 +340,7 @@ class ModelInfoResponse(BaseModel):
     recommendation: Optional[str] = None
     spread_model_loaded: bool = False
     spread_model_mae: Optional[float] = None
+    vegas_feature_removed: bool = True
 
 
 # ── Injuries / Weather / Conditions ────────────────────

@@ -11,7 +11,10 @@ from .metrics import (
     calculate_form_rating, calculate_strength_rating
 )
 from .factors import apply_game_factors, FactorAdjuster
-from .feature_builder import build_feature_vector, feature_dict_to_array, _parse_week, FEATURE_NAMES
+from .feature_builder import (
+    build_feature_vector, feature_dict_to_array, _parse_week, FEATURE_NAMES,
+    get_rolling_starter_qb_epa,
+)
 from .ml_model import (
     load_model, predict_with_ml, MODEL_PATH,
     load_spread_model, predict_spread, SPREAD_MODEL_PATH,
@@ -127,12 +130,19 @@ class PredictionEngine:
         # Calculate base win probability.
         # ML is only used when explicitly requested AND the model is loaded.
         # Default: weighted-sum (always active).
-        if self._use_ml and use_ml:
+        if use_ml:
+            if not self._use_ml:
+                raise RuntimeError(
+                    "ML model requested but not loaded. "
+                    "Run scripts/train_model.py first or check for "
+                    "numpy/pickle compatibility errors."
+                )
             home_prob, away_prob, key_factors = self._calculate_ml_probability(
                 home_metrics, away_metrics, home_id, away_id,
                 is_playoff=is_playoff, week=week,
                 vegas_implied_prob=vegas_implied_prob,
                 h2h_data=h2h_data,
+                season=current_season,
             )
         else:
             home_prob, away_prob, key_factors = self._calculate_probability(
@@ -143,10 +153,22 @@ class PredictionEngine:
         predicted_spread: Optional[float] = None
         if self._spread_model is not None:
             try:
+                _week_int = _parse_week(week)
+                _season = current_season or 0
+                _home_roll = get_rolling_starter_qb_epa(
+                    self.db, home_id, before_week=_week_int, season=_season,
+                    fallback=home_metrics.qb_epa_per_play,
+                )
+                _away_roll = get_rolling_starter_qb_epa(
+                    self.db, away_id, before_week=_week_int, season=_season,
+                    fallback=away_metrics.qb_epa_per_play,
+                )
                 feat_dict_spread = build_feature_vector(
                     home_metrics, away_metrics, h2h_data,
                     is_playoff=is_playoff, week=week,
                     vegas_implied_prob=vegas_implied_prob,
+                    home_starter_qb_epa=_home_roll,
+                    away_starter_qb_epa=_away_roll,
                 )
                 feat_arr_spread = feature_dict_to_array(feat_dict_spread)
                 predicted_spread = predict_spread(self._spread_model, feat_arr_spread)
@@ -189,7 +211,7 @@ class PredictionEngine:
             # Use FEATURE_NAMES as the canonical source (34 after vegas removal)
             "feature_count":              len(FEATURE_NAMES),
             "model_file_exists":          MODEL_PATH.exists(),
-            "ml_oos_accuracy":            0.668,
+            "ml_oos_accuracy":            0.668 if self._use_ml else None,
             "weighted_sum_oos_accuracy":  0.672,
             "recommendation":             "weighted_sum performs better on 2023-2024 OOS data",
             "spread_model_loaded":        self._spread_model is not None,
@@ -248,18 +270,35 @@ class PredictionEngine:
         week: Any = 0,
         vegas_implied_prob: float = 0.5,
         h2h_data: Optional[Dict] = None,
+        season: Optional[int] = None,
     ) -> Tuple[float, float, List[str]]:
         """Use the trained GBM to compute base win probabilities, then apply
-        dynamic HFA and bye-week rest adjustments (same post-processing as the
-        weighted-sum path).  Game factors are applied separately in predict().
+        bye-week rest adjustment.  Dynamic HFA is NOT added here — it is already
+        encoded as feature home_dynamic_hfa (#32) in the feature vector; adding
+        it again post-prediction would double-count it.  Game factors are applied
+        separately in predict().
         """
         key_factors: List[str] = []
+
+        # --- Rolling 4-game starter QB EPA (falls back to season avg when no data) ---
+        week_int = _parse_week(week)
+        _season = season or 0
+        home_roll_epa = get_rolling_starter_qb_epa(
+            self.db, home_id, before_week=week_int, season=_season,
+            fallback=home_metrics.qb_epa_per_play,
+        )
+        away_roll_epa = get_rolling_starter_qb_epa(
+            self.db, away_id, before_week=week_int, season=_season,
+            fallback=away_metrics.qb_epa_per_play,
+        )
 
         # --- Build feature vector (use pre-computed h2h_data from predict()) ---
         feat_dict = build_feature_vector(
             home_metrics, away_metrics, h2h_data or {},
             is_playoff=is_playoff, week=week,
             vegas_implied_prob=vegas_implied_prob,
+            home_starter_qb_epa=home_roll_epa,
+            away_starter_qb_epa=away_roll_epa,
         )
         feat_array = feature_dict_to_array(feat_dict)
         home_prob, away_prob = predict_with_ml(self._ml_model, feat_array)
@@ -299,14 +338,11 @@ class PredictionEngine:
                 f"{away_metrics.team_abbr} {away_metrics.turnover_margin:+.1f}"
             )
 
-        # --- Post-processing: dynamic HFA ---
-        hfa = home_metrics.dynamic_hfa
-        home_prob = max(0.02, min(0.98, home_prob + hfa))
-        key_factors.append(
-            f"Home field advantage: +{hfa:.1%} to {home_metrics.team_abbr}"
-        )
-
         # --- Post-processing: bye-week rest ---
+        # NOTE: dynamic HFA is intentionally NOT added here — it is already a
+        # feature in the ML model (home_dynamic_hfa, index 32).  Adding it again
+        # would double-count it.  The weighted-sum path adds HFA separately
+        # because that formula has no feature representation of it.
         home_rest = home_metrics.rest_days
         away_rest = away_metrics.rest_days
         if home_rest >= 10 and away_rest <= 8:

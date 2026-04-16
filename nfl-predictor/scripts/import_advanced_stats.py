@@ -27,7 +27,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from src.database.db import Database
-from src.scraper.nfl_data_importer import fetch_team_advanced_stats, import_qb_epa
+from src.scraper.nfl_data_importer import (
+    fetch_team_advanced_stats,
+    import_qb_epa,
+    import_weekly_qb_starts,
+)
 
 YEARS = list(range(2010, 2025))   # 2010 – 2024 inclusive
 
@@ -38,10 +42,10 @@ def main() -> None:
     print("=" * 60)
     print("  NFL Advanced Stats Importer (nfl_data_py)")
     print(f"  Seasons: {min(YEARS)} – {max(YEARS)}")
-    print("  Includes: team advanced stats + QB EPA per play")
+    print("  Includes: team advanced stats + QB EPA per play + weekly QB starts")
     print("=" * 60)
     print()
-    print("[1/2] Importing team advanced stats...")
+    print("[1/3] Importing team advanced stats...")
 
     try:
         stats = fetch_team_advanced_stats(YEARS)
@@ -72,7 +76,7 @@ def main() -> None:
     db.commit()
 
     # ── QB EPA import ─────────────────────────────────────────────────────────
-    print("\n[2/2] Importing QB EPA per play...")
+    print("\n[2/3] Importing QB EPA per play...")
     try:
         qb_epa_rows = import_qb_epa(YEARS)
         qb_inserted = 0
@@ -120,6 +124,22 @@ def main() -> None:
         print("\n  Latest seasons in DB:")
         for row in sample:
             print(f"    {row['season']}: {row['n']} teams")
+
+    # ── Weekly QB starts ───────────────────────────────────────────────────────
+    print("\n[3/3] Importing weekly QB starts (rolling EPA)...")
+    try:
+        wqb_inserted = import_weekly_qb_starts(db, YEARS)
+        print(f"  weekly_qb_starts rows inserted / updated: {wqb_inserted}")
+
+        wqb_sample = db.fetchall(
+            "SELECT season, COUNT(*) AS n FROM weekly_qb_starts GROUP BY season ORDER BY season DESC LIMIT 5"
+        )
+        if wqb_sample:
+            print("\n  Latest seasons in weekly_qb_starts:")
+            for row in wqb_sample:
+                print(f"    {row['season']}: {row['n']} game-team rows")
+    except Exception as exc:
+        print(f"  Weekly QB starts import failed (non-fatal): {exc}")
 
     db.close()
 

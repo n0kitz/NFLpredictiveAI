@@ -51,6 +51,22 @@ _explainer_cache: Optional[Any] = None
 _explainer_model_id: Optional[int] = None
 
 
+def _unwrap_tree_model(model: Any) -> Any:
+    """
+    Extract the underlying tree estimator from a CalibratedClassifierCV wrapper.
+
+    shap.TreeExplainer only works on tree models directly, not on sklearn's
+    calibration wrapper.  For cv='prefit' there is exactly one inner classifier.
+    """
+    try:
+        from sklearn.calibration import CalibratedClassifierCV
+        if isinstance(model, CalibratedClassifierCV):
+            return model.calibrated_classifiers_[0].estimator
+    except Exception:
+        pass
+    return model
+
+
 def get_explainer(model: Optional[Any]) -> Optional[Any]:
     """
     Return a cached shap.TreeExplainer for *model*.
@@ -58,6 +74,9 @@ def get_explainer(model: Optional[Any]) -> Optional[Any]:
     Creates the explainer on first call; reuses it for subsequent calls
     with the same model object.  Returns None if model is None or shap
     is unavailable.
+
+    If *model* is a CalibratedClassifierCV the inner tree estimator is used
+    so that TreeExplainer can still produce SHAP values.
     """
     global _explainer_cache, _explainer_model_id
 
@@ -70,7 +89,8 @@ def get_explainer(model: Optional[Any]) -> Optional[Any]:
 
     try:
         import shap  # lazy import — shap is optional
-        _explainer_cache = shap.TreeExplainer(model)
+        tree_model = _unwrap_tree_model(model)
+        _explainer_cache = shap.TreeExplainer(tree_model)
         _explainer_model_id = model_id
         logger.info("SHAP TreeExplainer created for model id=%d", model_id)
         return _explainer_cache

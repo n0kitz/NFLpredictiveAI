@@ -18,6 +18,7 @@ from .feature_builder import (
     FEATURE_NAMES,
     build_feature_vector,
     feature_dict_to_array,
+    get_rolling_starter_qb_epa,
     _parse_week,
 )
 from .metrics import calculate_team_metrics
@@ -79,15 +80,19 @@ def _vegas_prob_before(db, home_id: int, away_id: int, game_date: str) -> float:
     return 0.5
 
 
-def build_training_dataset(db) -> Tuple[np.ndarray, np.ndarray]:
+def build_training_dataset(
+    db,
+    start_season: int = 2013,
+    end_season: int = 2022,
+) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Build (X, y) for the training window (seasons 2013-2022).
+    Build (X, y) for the given season window.
 
     Each game uses only data available before that game's date (cutoff_date).
     Tied games are excluded (target is binary: 1=home win, 0=away win).
 
     Returns:
-        X: float64 array of shape (n_samples, 35)
+        X: float64 array of shape (n_samples, n_features)
         y: int array of shape (n_samples,)
     """
     games = db.fetchall(
@@ -95,15 +100,16 @@ def build_training_dataset(db) -> Tuple[np.ndarray, np.ndarray]:
         SELECT g.game_id, g.date, g.season, g.week, g.game_type,
                g.home_team_id, g.away_team_id, g.winner_id
         FROM games g
-        WHERE g.season BETWEEN 2013 AND 2022
+        WHERE g.season BETWEEN ? AND ?
           AND g.winner_id IS NOT NULL
           AND g.home_score IS NOT NULL
         ORDER BY g.date ASC
         """,
+        (start_season, end_season),
     )
 
     total = len(games)
-    print(f"  Building dataset from {total} games (2013-2022)…")
+    print(f"  Building dataset from {total} games ({start_season}-{end_season})…")
 
     X_rows, y_rows = [], []
 
@@ -130,9 +136,21 @@ def build_training_dataset(db) -> Tuple[np.ndarray, np.ndarray]:
         h2h = _h2h_before(db, home_id, away_id, game_date, limit=10)
         vegas_prob = _vegas_prob_before(db, home_id, away_id, game_date)
 
+        week_int = _parse_week(game["week"])
+        home_roll_epa = get_rolling_starter_qb_epa(
+            db, home_id, before_week=week_int, season=season,
+            fallback=home_m.qb_epa_per_play,
+        )
+        away_roll_epa = get_rolling_starter_qb_epa(
+            db, away_id, before_week=week_int, season=season,
+            fallback=away_m.qb_epa_per_play,
+        )
+
         feat_dict = build_feature_vector(
             home_m, away_m, h2h, is_playoff, week,
             vegas_implied_prob=vegas_prob,
+            home_starter_qb_epa=home_roll_epa,
+            away_starter_qb_epa=away_roll_epa,
         )
         X_rows.append(feature_dict_to_array(feat_dict))
         y_rows.append(1 if winner_id == home_id else 0)
@@ -199,9 +217,21 @@ def build_training_dataset_with_spread(db) -> Tuple[np.ndarray, np.ndarray]:
         h2h = _h2h_before(db, home_id, away_id, game_date, limit=10)
         vegas_prob = _vegas_prob_before(db, home_id, away_id, game_date)
 
+        week_int = _parse_week(game["week"])
+        home_roll_epa = get_rolling_starter_qb_epa(
+            db, home_id, before_week=week_int, season=season,
+            fallback=home_m.qb_epa_per_play,
+        )
+        away_roll_epa = get_rolling_starter_qb_epa(
+            db, away_id, before_week=week_int, season=season,
+            fallback=away_m.qb_epa_per_play,
+        )
+
         feat_dict = build_feature_vector(
             home_m, away_m, h2h, is_playoff, week,
             vegas_implied_prob=vegas_prob,
+            home_starter_qb_epa=home_roll_epa,
+            away_starter_qb_epa=away_roll_epa,
         )
         X_rows.append(feature_dict_to_array(feat_dict))
         y_rows.append(float(diff))
@@ -217,21 +247,26 @@ def build_training_dataset_with_spread(db) -> Tuple[np.ndarray, np.ndarray]:
 
 def train_model(db) -> dict:
     """
-    Train a GradientBoostingClassifier on 2013-2022 data and save it.
+    Train a GradientBoostingClassifier on 2013-2021, then calibrate it with
+    isotonic regression on the 2022 holdout season, and save the calibrated
+    pipeline.
 
-    Uses TimeSeriesSplit(n_splits=5) for cross-validation (no future leakage).
-    The final model is re-trained on the full dataset before saving.
+    Calibration with cv='prefit' requires the base model to NOT have seen the
+    calibration data, so we deliberately split 2013-2021 (train) / 2022 (cal).
 
     Returns dict with cv_accuracy, cv_std, fold_accuracies, n_training_samples,
-    training_seasons.
+    n_cal_samples, training_seasons.
     """
+    from sklearn.calibration import CalibratedClassifierCV, calibration_curve
     from sklearn.ensemble import GradientBoostingClassifier
     from sklearn.model_selection import TimeSeriesSplit, cross_val_score
     import joblib
 
-    X, y = build_training_dataset(db)
+    # ── 1. Build train (2013-2021) and calibration holdout (2022) ────────────
+    X_train, y_train = build_training_dataset(db, start_season=2013, end_season=2021)
+    X_val,   y_val   = build_training_dataset(db, start_season=2022, end_season=2022)
 
-    print(f"\n  Training GradientBoostingClassifier on {len(X)} samples…")
+    print(f"\n  Training GradientBoostingClassifier on {len(X_train)} samples (2013-2021)…")
 
     clf = GradientBoostingClassifier(
         n_estimators=300,
@@ -243,29 +278,45 @@ def train_model(db) -> dict:
     )
 
     tscv = TimeSeriesSplit(n_splits=5)
-    cv_scores = cross_val_score(clf, X, y, cv=tscv, scoring="accuracy")
+    cv_scores = cross_val_score(clf, X_train, y_train, cv=tscv, scoring="accuracy")
     fold_accs = [round(float(s), 4) for s in cv_scores]
 
     print(f"  CV fold accuracies: {fold_accs}")
     print(f"  CV mean: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
 
-    print("  Fitting on full training set…")
-    clf.fit(X, y)
+    print("  Fitting base model on 2013-2021 training set…")
+    clf.fit(X_train, y_train)
 
-    # Persist
+    # ── 2. Isotonic calibration on 2022 holdout ───────────────────────────────
+    print(f"  Calibrating with isotonic regression on {len(X_val)} 2022 games…")
+    calibrated_model = CalibratedClassifierCV(estimator=clf, method="isotonic", cv="prefit")
+    calibrated_model.fit(X_val, y_val)
+
+    # ── 3. Calibration curve (5pp buckets on 2022 holdout) ───────────────────
+    print("\n  ── Calibration Curve (2022 holdout, 10 uniform bins) ──")
+    val_probs = calibrated_model.predict_proba(X_val)[:, 1]
+    frac_pos, mean_pred = calibration_curve(y_val, val_probs, n_bins=10, strategy="uniform")
+    print(f"  {'Predicted':>12}  {'Actual':>10}  {'Delta':>8}")
+    for pred, actual in zip(mean_pred, frac_pos):
+        delta = actual - pred
+        sign = "+" if delta >= 0 else ""
+        print(f"  {pred:>11.1%}  {actual:>9.1%}  {sign}{delta:.1%}")
+
+    # ── 4. Persist calibrated model ───────────────────────────────────────────
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
-    joblib.dump(clf, MODEL_PATH)
+    joblib.dump(calibrated_model, MODEL_PATH)
     FEATURES_PATH.write_text(json.dumps(FEATURE_NAMES, indent=2))
 
-    print(f"  Model saved to {MODEL_PATH}")
+    print(f"\n  Calibrated model saved to {MODEL_PATH}")
     print(f"  Feature list saved to {FEATURES_PATH}")
 
     return {
         "cv_accuracy":        round(float(cv_scores.mean()), 4),
         "cv_std":             round(float(cv_scores.std()), 4),
         "fold_accuracies":    fold_accs,
-        "n_training_samples": len(X),
-        "training_seasons":   "2013-2022",
+        "n_training_samples": len(X_train),
+        "n_cal_samples":      len(X_val),
+        "training_seasons":   "2013-2021 (base) + 2022 (calibration holdout)",
     }
 
 

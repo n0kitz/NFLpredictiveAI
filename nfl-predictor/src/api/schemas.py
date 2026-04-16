@@ -102,6 +102,9 @@ class PredictionRequest(BaseModel):
     game_id: Optional[int] = Field(None, description="Game ID for factor lookup")
     apply_factors: bool = Field(True, description="Whether to apply game factors")
     factors: Optional[List[InlineFactor]] = Field(None, description="Inline factors to apply")
+    current_season: Optional[int] = None
+    is_playoff: bool = False
+    week: int = 0
 
 
 class AppliedFactor(BaseModel):

@@ -438,9 +438,14 @@ def predict_game(
             game_id=req.game_id,
             apply_factors=req.apply_factors,
             use_ml=use_ml,
+            current_season=req.current_season,
+            is_playoff=req.is_playoff,
+            week=req.week,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
     # Apply inline factors if provided
     if req.factors:
@@ -604,9 +609,18 @@ def predict_game_get(
     engine = get_engine()
     use_ml = (model == "ml")
     try:
-        prediction = engine.predict(home_team=home_team, away_team=away_team, use_ml=use_ml)
+        prediction = engine.predict(
+            home_team=home_team,
+            away_team=away_team,
+            use_ml=use_ml,
+            current_season=None,
+            is_playoff=False,
+            week=0,
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
     return PredictionResponse(
         home_team=prediction.home_team,

@@ -196,6 +196,110 @@ def import_player_season_stats(years: List[int]) -> List[Dict[str, Any]]:
     return results
 
 
+def import_weekly_qb_starts(db, seasons: List[int]) -> int:
+    """
+    Populate weekly_qb_starts with per-game starter QB EPA.
+
+    For each (season, week, team) the starting QB is identified as the player
+    with the most pass attempts in that game.  Mean qb_epa per play (pass plays
+    + sacks) is computed for that QB and upserted into weekly_qb_starts.
+
+    Args:
+        db:      Database instance (execute / commit / find_team methods).
+        seasons: List of season years to import.
+
+    Returns:
+        Total rows inserted / updated across all seasons.
+    """
+    try:
+        import nfl_data_py as nfl
+    except ImportError as exc:
+        raise ImportError(
+            "nfl_data_py is not installed. Run: pip install nfl-data-py"
+        ) from exc
+
+    _WEEKLY_COLS = [
+        'game_id', 'season', 'week', 'season_type',
+        'posteam', 'passer_player_name',
+        'play_type', 'qb_epa', 'pass_attempt', 'sack',
+    ]
+
+    total_inserted = 0
+
+    for year in seasons:
+        logger.info("Fetching weekly QB starts PBP for %s …", year)
+        try:
+            pbp = nfl.import_pbp_data([year], columns=_WEEKLY_COLS)
+        except Exception as exc:
+            logger.warning("Failed to fetch PBP for weekly QB starts %s: %s", year, exc)
+            continue
+
+        # REG season plays where a passer is identified
+        reg = pbp[
+            (pbp['season_type'] == 'REG') &
+            pbp['posteam'].notna() &
+            (pbp['posteam'] != '') &
+            pbp['passer_player_name'].notna() &
+            (pbp['passer_player_name'] != '')
+        ].copy()
+
+        if reg.empty:
+            logger.warning("No REG passer plays for %s", year)
+            continue
+
+        rows_this_year = 0
+
+        for (week, team_abbr), game_plays in reg.groupby(['week', 'posteam']):
+            # Starter = QB with most pass attempts in this game
+            attempt_counts = (
+                game_plays[game_plays['pass_attempt'] == 1]
+                .groupby('passer_player_name')['pass_attempt']
+                .count()
+            )
+            if attempt_counts.empty:
+                continue
+
+            starter_name = str(attempt_counts.idxmax())
+            snap_count   = int(attempt_counts.max())
+
+            # EPA per play for starter (all plays where qb_epa is available)
+            starter_plays = game_plays[
+                (game_plays['passer_player_name'] == starter_name) &
+                game_plays['qb_epa'].notna()
+            ]
+            if starter_plays.empty:
+                continue
+
+            epa_per_play = round(float(starter_plays['qb_epa'].mean()), 4)
+
+            our_abbr = _to_our_abbr(str(team_abbr))
+            team_row = db.find_team(our_abbr) or db.find_team(str(team_abbr))
+            if not team_row:
+                logger.debug("Team not found: %s/%s", year, team_abbr)
+                continue
+
+            db.execute(
+                """
+                INSERT INTO weekly_qb_starts
+                    (team_id, season, week, qb_name, epa_per_play, snap_count)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(team_id, season, week) DO UPDATE SET
+                    qb_name      = excluded.qb_name,
+                    epa_per_play = excluded.epa_per_play,
+                    snap_count   = excluded.snap_count
+                """,
+                (team_row['team_id'], int(year), int(week),
+                 starter_name, epa_per_play, snap_count),
+            )
+            rows_this_year += 1
+
+        db.commit()
+        total_inserted += rows_this_year
+        logger.info("  → weekly_qb_starts: %d rows for %s", rows_this_year, year)
+
+    return total_inserted
+
+
 def fetch_team_advanced_stats(years: List[int]) -> List[Dict[str, Any]]:
     """
     Fetch and aggregate team-level advanced stats from nflverse PBP data.

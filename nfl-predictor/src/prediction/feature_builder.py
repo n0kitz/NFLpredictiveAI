@@ -1,6 +1,6 @@
 """Convert TeamMetrics + H2H + game metadata into a fixed-length feature vector."""
 
-from typing import Any, Dict, Union
+from typing import Any, Dict, Optional, Union
 
 import numpy as np
 
@@ -12,6 +12,7 @@ from .metrics import TeamMetrics, calculate_form_rating, calculate_strength_rati
 # NOTE: vegas_home_implied_prob was removed (feature #33) — it was 0.5 for ~95% of
 # training data (2013-2022 have no odds in DB), so the GBM learned nothing from it.
 # Using real odds at inference on a model trained with 0.5 is silent data leakage.
+# Features #33-34 are rolling 4-game starter QB EPA (replaced season aggregate).
 # IMPORTANT: Delete data/nfl_model.joblib and retrain with: python scripts/train_model.py
 FEATURE_NAMES: list[str] = [
     "home_win_pct",
@@ -45,9 +46,9 @@ FEATURE_NAMES: list[str] = [
     "away_redzone_efficiency",
     "is_playoff",
     "week_of_season",
-    "home_dynamic_hfa",       # 32nd: team-specific home field advantage
-    "home_qb_epa_per_play",   # 33rd: home QB EPA per pass play
-    "away_qb_epa_per_play",   # 34th: away QB EPA per pass play
+    "home_dynamic_hfa",          # 32nd: team-specific home field advantage
+    "home_starter_qb_epa_l4",   # 33rd: rolling 4-game starter QB EPA (home)
+    "away_starter_qb_epa_l4",   # 34th: rolling 4-game starter QB EPA (away)
 ]
 
 assert len(FEATURE_NAMES) == 34, f"Expected 34 features, got {len(FEATURE_NAMES)}"
@@ -57,6 +58,52 @@ def _safe_div(a: float, b: float, default: float = 0.0) -> float:
     return a / b if b != 0 else default
 
 
+def get_rolling_starter_qb_epa(
+    db,
+    team_id: int,
+    before_week: int,
+    season: int,
+    window: int = 4,
+    fallback: float = 0.0,
+) -> float:
+    """
+    Return average EPA per play for the starting QB over the last *window* games
+    played before *before_week* in *season*.
+
+    Falls back to *fallback* (typically the season-aggregate from TeamMetrics)
+    when fewer than 2 games are available in weekly_qb_starts.
+
+    Args:
+        db:          Database instance.
+        team_id:     Team to look up.
+        before_week: Current game week — only prior weeks are included.
+        season:      NFL season year.
+        window:      Number of prior games to average (default 4).
+        fallback:    Value to return when insufficient data exists.
+
+    Returns:
+        Rolling mean epa_per_play (float), or *fallback*.
+    """
+    try:
+        rows = db.fetchall(
+            """
+            SELECT epa_per_play FROM weekly_qb_starts
+            WHERE team_id = ? AND season = ? AND week < ?
+              AND epa_per_play IS NOT NULL
+            ORDER BY week DESC
+            LIMIT ?
+            """,
+            (team_id, season, before_week, window),
+        )
+    except Exception:
+        return fallback
+
+    if len(rows) < 2:
+        return fallback
+
+    return float(sum(r["epa_per_play"] for r in rows) / len(rows))
+
+
 def build_feature_vector(
     home_metrics: TeamMetrics,
     away_metrics: TeamMetrics,
@@ -64,17 +111,22 @@ def build_feature_vector(
     is_playoff: Union[bool, int] = False,
     week: Union[str, int] = 0,
     vegas_implied_prob: float = 0.5,
+    home_starter_qb_epa: Optional[float] = None,
+    away_starter_qb_epa: Optional[float] = None,
 ) -> Dict[str, float]:
     """
     Build a feature dict from two TeamMetrics objects plus game context.
 
     Args:
-        home_metrics: Metrics for the home team (computed with cutoff_date).
-        away_metrics: Metrics for the away team (computed with cutoff_date).
-        h2h: Dict with keys team1_wins, team2_wins, total_games (home perspective).
-        is_playoff: 1/True for playoff game, 0/False for regular season.
-        week: Integer week of season (1-22), or string ('Wild Card', etc.).
-        vegas_implied_prob: Vegas market home-win implied probability (0.5 = no data).
+        home_metrics:        Metrics for the home team (computed with cutoff_date).
+        away_metrics:        Metrics for the away team (computed with cutoff_date).
+        h2h:                 Dict with keys team1_wins, team2_wins, total_games.
+        is_playoff:          1/True for playoff game, 0/False for regular season.
+        week:                Integer week of season (1-22), or string ('Wild Card').
+        vegas_implied_prob:  Unused — kept for interface compatibility.
+        home_starter_qb_epa: Pre-computed rolling QB EPA for home team.  When None,
+                             falls back to home_metrics.qb_epa_per_play (season avg).
+        away_starter_qb_epa: Pre-computed rolling QB EPA for away team.  Same fallback.
 
     Returns:
         Dict mapping each FEATURE_NAME to a float value.
@@ -89,6 +141,10 @@ def build_feature_vector(
         h2h_home_pct = 0.5
 
     week_int = _parse_week(week)
+
+    # Rolling starter QB EPA — fall back to season aggregate when not supplied
+    home_qb_epa = home_starter_qb_epa if home_starter_qb_epa is not None else home_metrics.qb_epa_per_play
+    away_qb_epa = away_starter_qb_epa if away_starter_qb_epa is not None else away_metrics.qb_epa_per_play
 
     return {
         "home_win_pct":              home_metrics.win_percentage,
@@ -122,9 +178,9 @@ def build_feature_vector(
         "away_redzone_efficiency":   away_metrics.redzone_efficiency,
         "is_playoff":                float(int(is_playoff)),
         "week_of_season":            float(week_int),
-        "home_dynamic_hfa":        home_metrics.dynamic_hfa,
-        "home_qb_epa_per_play":    home_metrics.qb_epa_per_play,
-        "away_qb_epa_per_play":    away_metrics.qb_epa_per_play,
+        "home_dynamic_hfa":          home_metrics.dynamic_hfa,
+        "home_starter_qb_epa_l4":   home_qb_epa,
+        "away_starter_qb_epa_l4":   away_qb_epa,
     }
 
 

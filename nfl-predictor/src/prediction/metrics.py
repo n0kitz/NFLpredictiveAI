@@ -291,11 +291,11 @@ def calculate_team_metrics(
 
     metrics.seasons_analyzed = seasons_to_analyze
 
-    # Strength of schedule: average win% of opponents
-    metrics.strength_of_schedule = _calculate_sos(db, team_id, current_season, seasons_to_analyze)
+    # Strength of schedule: average win% of opponents (cutoff-aware)
+    metrics.strength_of_schedule = _calculate_sos(db, team_id, current_season, seasons_to_analyze, cutoff_date)
 
-    # Dynamic home field advantage from historical data
-    metrics.dynamic_hfa = _calculate_dynamic_hfa(db, team_id, current_season, seasons_to_analyze)
+    # Dynamic home field advantage from historical data (cutoff-aware)
+    metrics.dynamic_hfa = _calculate_dynamic_hfa(db, team_id, current_season, seasons_to_analyze, cutoff_date)
 
     # Rest days since last game (pass cutoff_date as reference in backtest mode)
     metrics.rest_days = _calculate_rest_days(db, team_id, current_season, reference_date=cutoff_date)
@@ -321,35 +321,73 @@ def calculate_team_metrics(
     return metrics
 
 
-def _calculate_sos(db: Database, team_id: int, current_season: int, seasons: int) -> float:
-    """Calculate strength of schedule: average win% of all opponents faced."""
+def _calculate_sos(
+    db: Database,
+    team_id: int,
+    current_season: int,
+    seasons: int,
+    cutoff_date: Optional[str] = None,
+) -> float:
+    """Calculate strength of schedule: average win% of all opponents faced.
+
+    Uses only games played before cutoff_date so backtest predictions don't
+    leak future results. Falls back to today when cutoff_date is None.
+    """
     start_season = current_season - seasons + 1
+    cutoff = cutoff_date or date.today().isoformat()
     row = db.fetchone(
         """
         SELECT AVG(opp_win_pct) as sos FROM (
             SELECT
-                CASE WHEN g.home_team_id = ? THEN g.away_team_id ELSE g.home_team_id END as opp_id,
-                tss.win_percentage as opp_win_pct
-            FROM games g
-            JOIN team_season_stats tss ON tss.team_id = CASE WHEN g.home_team_id = ? THEN g.away_team_id ELSE g.home_team_id END
-                AND tss.season = g.season
-            WHERE (g.home_team_id = ? OR g.away_team_id = ?)
-              AND g.season BETWEEN ? AND ?
-              AND g.home_score IS NOT NULL
+                opponents.opp_id,
+                CASE WHEN COUNT(*) > 0
+                     THEN CAST(SUM(CASE WHEN g2.winner_id = opponents.opp_id THEN 1 ELSE 0 END) AS REAL) / COUNT(*)
+                     ELSE 0.5
+                END as opp_win_pct
+            FROM (
+                SELECT DISTINCT
+                    CASE WHEN g.home_team_id = ? THEN g.away_team_id ELSE g.home_team_id END as opp_id
+                FROM games g
+                WHERE (g.home_team_id = ? OR g.away_team_id = ?)
+                  AND g.home_score IS NOT NULL
+                  AND g.season BETWEEN ? AND ?
+                  AND g.date < ?
+            ) opponents
+            JOIN games g2
+              ON (g2.home_team_id = opponents.opp_id OR g2.away_team_id = opponents.opp_id)
+             AND g2.home_score IS NOT NULL
+             AND g2.date < ?
+            GROUP BY opponents.opp_id
         )
         """,
-        (team_id, team_id, team_id, team_id, start_season, current_season),
+        (team_id, team_id, team_id, start_season, current_season, cutoff, cutoff),
     )
     if row and row['sos'] is not None:
         return row['sos']
     return 0.5
 
 
-def _calculate_dynamic_hfa(db: Database, team_id: int, current_season: int, seasons: int) -> float:
-    """Calculate team-specific home field advantage from historical home/away win rates."""
+def _calculate_dynamic_hfa(
+    db: Database,
+    team_id: int,
+    current_season: int,
+    seasons: int,
+    cutoff_date: Optional[str] = None,
+) -> float:
+    """Calculate team-specific home field advantage from historical home/away win rates.
+
+    Respects cutoff_date so backtest predictions only see games before that date.
+    """
     start_season = current_season - seasons + 1
+    date_filter = "AND g.date < ?" if cutoff_date else ""
+    params: list = [
+        team_id, team_id, team_id, team_id, team_id, team_id,
+        team_id, team_id, start_season, current_season,
+    ]
+    if cutoff_date:
+        params.append(cutoff_date)
     row = db.fetchone(
-        """
+        f"""
         SELECT
             SUM(CASE WHEN g.home_team_id = ? AND g.winner_id = ? THEN 1 ELSE 0 END) as home_wins,
             SUM(CASE WHEN g.home_team_id = ? THEN 1 ELSE 0 END) as home_games,
@@ -359,8 +397,9 @@ def _calculate_dynamic_hfa(db: Database, team_id: int, current_season: int, seas
         WHERE (g.home_team_id = ? OR g.away_team_id = ?)
           AND g.season BETWEEN ? AND ?
           AND g.home_score IS NOT NULL
+          {date_filter}
         """,
-        (team_id, team_id, team_id, team_id, team_id, team_id, team_id, team_id, start_season, current_season),
+        tuple(params),
     )
     if not row or not row['home_games'] or not row['away_games']:
         return 0.032

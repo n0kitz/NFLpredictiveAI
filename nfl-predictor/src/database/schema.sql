@@ -294,6 +294,19 @@ CREATE TABLE IF NOT EXISTS draft_rankings (
     UNIQUE(season, scoring_format, player_id)
 );
 
+-- Weekly QB starts (per-game starter EPA, used for rolling 4-game feature)
+CREATE TABLE IF NOT EXISTS weekly_qb_starts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_id INTEGER NOT NULL REFERENCES teams(team_id),
+    season INTEGER NOT NULL,
+    week INTEGER NOT NULL,
+    player_id INTEGER REFERENCES players(player_id),
+    qb_name TEXT,
+    epa_per_play REAL,
+    snap_count INTEGER,
+    UNIQUE(team_id, season, week)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_games_season ON games(season);
 CREATE INDEX IF NOT EXISTS idx_games_date ON games(date);
@@ -305,6 +318,12 @@ CREATE INDEX IF NOT EXISTS idx_team_stats_season ON team_season_stats(team_id, s
 CREATE INDEX IF NOT EXISTS idx_teams_abbr ON teams(abbreviation);
 CREATE INDEX IF NOT EXISTS idx_teams_franchise ON teams(franchise_id);
 CREATE INDEX IF NOT EXISTS idx_prediction_history_date ON prediction_history(predicted_at);
+CREATE INDEX IF NOT EXISTS idx_games_home_date ON games(home_team_id, date);
+CREATE INDEX IF NOT EXISTS idx_games_away_date ON games(away_team_id, date);
+CREATE INDEX IF NOT EXISTS idx_odds_teams ON game_odds(home_team_id, away_team_id, game_date);
+CREATE INDEX IF NOT EXISTS idx_weekly_qb ON weekly_qb_starts(team_id, season, week DESC);
+CREATE INDEX IF NOT EXISTS idx_inj_team ON injury_reports(team_id, report_date DESC);
+CREATE INDEX IF NOT EXISTS idx_pred_hist_teams ON prediction_history(home_team_id, away_team_id);
 
 -- Views for common queries
 

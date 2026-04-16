@@ -31,7 +31,6 @@
   "is_playoff",
   "week_of_season",
   "home_dynamic_hfa",
-  "vegas_home_implied_prob",
-  "home_qb_epa_per_play",
-  "away_qb_epa_per_play"
+  "home_starter_qb_epa_l4",
+  "away_starter_qb_epa_l4"
 ]

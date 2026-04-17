@@ -41,7 +41,7 @@ def main():
     print("=" * 60)
     print("  NFL ML Model — Training & OOS Evaluation")
     print(f"  Run at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("  Training window: 2013-2021 (base) + 2022 (calibration holdout)")
+    print("  Training window: 2013-2022 (CalibratedClassifierCV isotonic, cv=5)")
     print("  OOS test window:  2023-2024")
     print("  Features: 34 (win%, form, strength, SOS, H2H, advanced, QB EPA)")
     print("  This may take 5-10 minutes.")
@@ -64,7 +64,6 @@ def main():
     print("\n  ── Training Results ──")
     print(f"  Seasons:         {result['training_seasons']}")
     print(f"  Train samples:   {result['n_training_samples']:,}")
-    print(f"  Cal samples:     {result['n_cal_samples']:,}")
     print(f"  CV accuracy:     {result['cv_accuracy']:.4f} ± {result['cv_std']:.4f}")
     print(f"  Fold accuracies: {result['fold_accuracies']}")
 
@@ -138,9 +137,9 @@ def main():
 
 > Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 >
-> **Training**: GradientBoostingClassifier on seasons 2013-2021 ({result['n_training_samples']:,} games).
-> **Calibration**: Isotonic regression on 2022 holdout ({result['n_cal_samples']:,} games, cv='prefit').
-> **CV accuracy**: {result['cv_accuracy']:.1%} ± {result['cv_std']:.1%} (TimeSeriesSplit, 5 folds on 2013-2021).
+> **Training**: CalibratedClassifierCV(isotonic, cv=5) on seasons 2013-2022 ({result['n_training_samples']:,} games).
+> **Calibration**: Internal 5-fold (~{result['n_training_samples'] // 5:,} games/fold) — no separate holdout.
+> **CV accuracy**: {result['cv_accuracy']:.1%} ± {result['cv_std']:.1%} (TimeSeriesSplit, 5 folds on 2013-2022).
 > **OOS test seasons**: 2023, 2024 (never seen during training).
 
 ### Accuracy Comparison

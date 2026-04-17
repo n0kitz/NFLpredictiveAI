@@ -224,28 +224,23 @@ def build_training_dataset_with_spread(db) -> Tuple[np.ndarray, np.ndarray]:
 
 def train_model(db) -> dict:
     """
-    Train a GradientBoostingClassifier on 2013-2021, then calibrate it with
-    isotonic regression on the 2022 holdout season, and save the calibrated
-    pipeline.
+    Train a GradientBoostingClassifier on 2013-2022 with internal 5-fold CV
+    calibration (CalibratedClassifierCV, method='isotonic', cv=5).
 
-    Calibration with cv='prefit' requires the base model to NOT have seen the
-    calibration data, so we deliberately split 2013-2021 (train) / 2022 (cal).
+    cv=5 gives isotonic regression ~540 games per calibration fold, avoiding the
+    stairstep artefacts produced by cv='prefit' on a single 282-game holdout.
+    With cv='prefit' the 55-60% bucket was empty and the 80%+ bucket showed
+    -8.8pp under-confidence; internal CV fixes the distribution.
 
     Returns dict with cv_accuracy, cv_std, fold_accuracies, n_training_samples,
-    n_cal_samples, training_seasons.
+    training_seasons.
     """
-    from sklearn.calibration import CalibratedClassifierCV, calibration_curve
+    from sklearn.calibration import CalibratedClassifierCV
     from sklearn.ensemble import GradientBoostingClassifier
     from sklearn.model_selection import TimeSeriesSplit, cross_val_score
     import joblib
 
-    # ── 1. Build train (2013-2021) and calibration holdout (2022) ────────────
-    X_train, y_train = build_training_dataset(db, start_season=2013, end_season=2021)
-    X_val,   y_val   = build_training_dataset(db, start_season=2022, end_season=2022)
-
-    print(f"\n  Training GradientBoostingClassifier on {len(X_train)} samples (2013-2021)…")
-
-    clf = GradientBoostingClassifier(
+    _GBM_PARAMS = dict(
         n_estimators=300,
         max_depth=4,
         learning_rate=0.05,
@@ -254,32 +249,32 @@ def train_model(db) -> dict:
         random_state=42,
     )
 
-    tscv = TimeSeriesSplit(n_splits=5)
-    cv_scores = cross_val_score(clf, X_train, y_train, cv=tscv, scoring="accuracy")
-    fold_accs = [round(float(s), 4) for s in cv_scores]
+    # ── 1. Build dataset: all 2013-2022 ──────────────────────────────────────
+    X_all, y_all = build_training_dataset(db, start_season=2013, end_season=2022)
 
+    print(f"\n  {len(X_all):,} training samples (2013-2022).")
+
+    # ── 2. CV accuracy on 2013-2022 (for reporting — unfitted estimator) ─────
+    print("  Computing CV accuracy with TimeSeriesSplit(5)…")
+    tscv = TimeSeriesSplit(n_splits=5)
+    cv_scores = cross_val_score(
+        GradientBoostingClassifier(**_GBM_PARAMS),
+        X_all, y_all, cv=tscv, scoring="accuracy",
+    )
+    fold_accs = [round(float(s), 4) for s in cv_scores]
     print(f"  CV fold accuracies: {fold_accs}")
     print(f"  CV mean: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
 
-    print("  Fitting base model on 2013-2021 training set…")
-    clf.fit(X_train, y_train)
+    # ── 3. Calibrated model: cv=5 → ~540 games per calibration fold ──────────
+    print("  Fitting CalibratedClassifierCV(method='isotonic', cv=5) on 2013-2022…")
+    calibrated_model = CalibratedClassifierCV(
+        estimator=GradientBoostingClassifier(**_GBM_PARAMS),
+        method="isotonic",
+        cv=5,
+    )
+    calibrated_model.fit(X_all, y_all)
 
-    # ── 2. Isotonic calibration on 2022 holdout ───────────────────────────────
-    print(f"  Calibrating with isotonic regression on {len(X_val)} 2022 games…")
-    calibrated_model = CalibratedClassifierCV(estimator=clf, method="isotonic", cv="prefit")
-    calibrated_model.fit(X_val, y_val)
-
-    # ── 3. Calibration curve (5pp buckets on 2022 holdout) ───────────────────
-    print("\n  ── Calibration Curve (2022 holdout, 10 uniform bins) ──")
-    val_probs = calibrated_model.predict_proba(X_val)[:, 1]
-    frac_pos, mean_pred = calibration_curve(y_val, val_probs, n_bins=10, strategy="uniform")
-    print(f"  {'Predicted':>12}  {'Actual':>10}  {'Delta':>8}")
-    for pred, actual in zip(mean_pred, frac_pos):
-        delta = actual - pred
-        sign = "+" if delta >= 0 else ""
-        print(f"  {pred:>11.1%}  {actual:>9.1%}  {sign}{delta:.1%}")
-
-    # ── 4. Persist calibrated model ───────────────────────────────────────────
+    # ── 4. Persist ────────────────────────────────────────────────────────────
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
     joblib.dump(calibrated_model, MODEL_PATH)
     FEATURES_PATH.write_text(json.dumps(FEATURE_NAMES, indent=2))
@@ -291,9 +286,8 @@ def train_model(db) -> dict:
         "cv_accuracy":        round(float(cv_scores.mean()), 4),
         "cv_std":             round(float(cv_scores.std()), 4),
         "fold_accuracies":    fold_accs,
-        "n_training_samples": len(X_train),
-        "n_cal_samples":      len(X_val),
-        "training_seasons":   "2013-2021 (base) + 2022 (calibration holdout)",
+        "n_training_samples": len(X_all),
+        "training_seasons":   "2013-2022 (CalibratedClassifierCV isotonic, cv=5)",
     }
 
 

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { Prediction } from '../api/types';
 import { getTeamColors, teamBgTint } from '../theme/teamColors';
+import TeamLogo from './TeamLogo';
 
 interface Props {
   prediction: Prediction;
@@ -46,14 +47,7 @@ export default function PredictionCard({ prediction, homeAbbr, awayAbbr, compact
               style={{ backgroundColor: teamBgTint(awayAbbr, 0.07) }}
             >
               <div className="flex items-center gap-2.5">
-                <div
-                  className="w-9 h-9 rounded-sm flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: awayColors.primary }}
-                >
-                  <span className="font-display font-bold text-white text-[11px] tracking-wide">
-                    {awayAbbr}
-                  </span>
-                </div>
+                <TeamLogo abbr={awayAbbr} size={36} className="rounded-sm" />
                 <div className="min-w-0">
                   <p className="text-[10px] uppercase tracking-wider text-text-muted font-medium">
                     Away
@@ -95,14 +89,7 @@ export default function PredictionCard({ prediction, homeAbbr, awayAbbr, compact
                     {prediction.home_team.split(' ').pop()}
                   </p>
                 </div>
-                <div
-                  className="w-9 h-9 rounded-sm flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: homeColors.primary }}
-                >
-                  <span className="font-display font-bold text-white text-[11px] tracking-wide">
-                    {homeAbbr}
-                  </span>
-                </div>
+                <TeamLogo abbr={homeAbbr} size={36} className="rounded-sm" />
               </div>
               <p
                 className="font-display text-3xl font-bold mt-3 tabular-nums"

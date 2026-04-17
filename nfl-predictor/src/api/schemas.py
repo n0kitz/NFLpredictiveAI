@@ -577,6 +577,27 @@ class ImportByNamesRequest(BaseModel):
     season: int = 2024
 
 
+# ── Value Picks ────────────────────────────────────────
+
+class ValuePick(BaseModel):
+    game_id: int
+    game_date: str
+    home_team: str
+    away_team: str
+    model_home_prob: float
+    vegas_home_implied_prob: float
+    edge: float
+    edge_side: str           # "home" or "away"
+    model_confidence: str    # "HIGH" / "MEDIUM" / "LOW"
+    vegas_spread: Optional[float] = None
+
+
+class ValuePicksResponse(BaseModel):
+    picks: List[ValuePick]
+    generated_at: str
+    note: str
+
+
 # ── General ────────────────────────────────────────────
 
 class ErrorResponse(BaseModel):

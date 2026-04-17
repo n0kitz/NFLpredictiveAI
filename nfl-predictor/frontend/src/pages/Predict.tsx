@@ -5,6 +5,7 @@ import PredictionCard from '../components/PredictionCard';
 import FactorPanel from '../components/FactorPanel';
 import ExplanationPanel, { ExplanationSkeleton } from '../components/ExplanationPanel';
 import Spinner from '../components/Spinner';
+import H2HTimeline from '../components/H2HTimeline';
 import { getTeamColors } from '../theme/teamColors';
 import type { InlineFactor } from '../api/types';
 
@@ -194,6 +195,11 @@ function H2HSection({ team1, team2 }: { team1: string; team2: string }) {
           {h2h.ties} tie{h2h.ties > 1 ? 's' : ''}
         </p>
       )}
+
+      {/* Score timeline */}
+      <div className="mt-4 mb-4">
+        <H2HTimeline h2h={h2h} t1={h2h.team1_abbr} t2={h2h.team2_abbr} c1={t1Color} c2={t2Color} />
+      </div>
 
       {/* Games list */}
       <div className="mt-5 space-y-0">

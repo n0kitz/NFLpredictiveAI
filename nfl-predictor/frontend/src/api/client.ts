@@ -12,6 +12,7 @@ import type {
   TeamRoster, PlayerProfile, PlayerSearchResult, FantasyLeaderboard,
   FantasyProjection, StartSitResult, DraftRanking, TradeAnalysis,
   PlayoffPicture, TeamUpcoming, PowerRankings, TradeValues, RosterImportResult,
+  ValuePicksResponse,
 } from './types';
 
 const BASE = '/api';
@@ -103,10 +104,11 @@ export const api = {
     get<PlayerSearchResult[]>(`/players/search?q=${encodeURIComponent(query)}`),
 
   // Fantasy — leaderboard (existing)
-  getFantasyTop: (position = 'QB', season = 2024, scoring = 'ppr', limit = 50) =>
-    get<FantasyLeaderboard>(
-      `/fantasy/top?position=${position}&season=${season}&scoring=${scoring}&limit=${limit}`
-    ),
+  getFantasyTop: (position?: string, season = 2024, scoring = 'ppr', limit = 50) => {
+    const params = new URLSearchParams({ season: String(season), scoring, limit: String(limit) });
+    if (position) params.set('position', position);
+    return get<FantasyLeaderboard>(`/fantasy/top?${params}`);
+  },
 
   // Fantasy — extended
   getFantasyProjections: (week: number, season = 2024, position = 'all', scoring = 'ppr') =>
@@ -149,4 +151,8 @@ export const api = {
 
   importRosterByNames: (names: string[], season = 2024) =>
     post<RosterImportResult>('/fantasy/roster/import-by-names', { names, season }),
+
+  // Value picks
+  getValuePicks: () =>
+    get<ValuePicksResponse>('/picks/value'),
 };

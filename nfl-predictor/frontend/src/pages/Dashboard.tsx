@@ -5,6 +5,7 @@ import type { Prediction } from '../api/types';
 import { useAccuracy } from '../hooks/useApi';
 import PredictionCard from '../components/PredictionCard';
 import Spinner from '../components/Spinner';
+import ValuePicksPanel from '../components/ValuePicksPanel';
 
 const FEATURED_MATCHUPS: [string, string][] = [
   ['KC', 'PHI'],
@@ -188,6 +189,11 @@ export default function Dashboard() {
             />
           </div>
         ))}
+      </div>
+
+      {/* ── Value Picks ─────────────────────────────────── */}
+      <div className="mt-10 animate-fade-up stagger-8">
+        <ValuePicksPanel />
       </div>
     </div>
   );

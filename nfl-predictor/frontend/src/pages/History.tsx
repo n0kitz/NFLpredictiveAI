@@ -32,7 +32,7 @@ export default function History() {
           </span>
         </div>
         <h1 className="font-display text-3xl font-bold text-text-primary uppercase tracking-tight">
-          Prediction History
+          Your Prediction History
         </h1>
       </div>
 

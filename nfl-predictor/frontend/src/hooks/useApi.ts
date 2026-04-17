@@ -123,3 +123,8 @@ export function usePlayer(playerId: number | null) {
     [playerId],
   );
 }
+
+/** Fetch value picks (games where model disagrees with Vegas by ≥4pp). */
+export function useValuePicks() {
+  return useAsync(() => api.getValuePicks(), []);
+}

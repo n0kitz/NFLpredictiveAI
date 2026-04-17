@@ -86,6 +86,25 @@ export function teamBgTint(abbr: string, opacity = 0.12): string {
   return hexToRgba(c.primary, opacity);
 }
 
+/**
+ * ESPN CDN overrides: internal abbr → ESPN abbr (lowercase).
+ * Only needed when the ESPN abbr differs from the internal one.
+ */
+const ESPN_ABBR_OVERRIDES: Record<string, string> = {
+  JAX: 'jax',
+  LAR: 'lar',
+  WAS: 'was',
+};
+
+/**
+ * Return the ESPN CDN logo URL for a team abbreviation.
+ * Falls back gracefully if the abbr is unknown.
+ */
+export function getTeamLogoUrl(abbr: string): string {
+  const espn = ESPN_ABBR_OVERRIDES[abbr] ?? abbr.toLowerCase();
+  return `https://a.espncdn.com/i/teamlogos/nfl/500/${espn}.png`;
+}
+
 function hexToRgba(hex: string, alpha: number): string {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);

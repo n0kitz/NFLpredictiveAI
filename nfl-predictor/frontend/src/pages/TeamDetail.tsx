@@ -5,11 +5,32 @@ import Spinner from '../components/Spinner';
 import TrendChart from '../components/TrendChart';
 import PlayerModal from '../components/PlayerModal';
 import { getTeamColors, teamBgTint } from '../theme/teamColors';
+import TeamLogo from '../components/TeamLogo';
 import type { PlayerEntry } from '../api/types';
+
+type StatView = 'season' | 'last10' | 'last5';
+
+function computeRollingStats(games: import('../api/types').Game[], teamId: number, n: number) {
+  const completed = games.filter((g) => g.home_score !== null && g.away_score !== null).slice(0, n);
+  let wins = 0, losses = 0, ties = 0, pf = 0, pa = 0;
+  for (const g of completed) {
+    const isHome = g.home_team_id === teamId;
+    const scored = isHome ? (g.home_score ?? 0) : (g.away_score ?? 0);
+    const allowed = isHome ? (g.away_score ?? 0) : (g.home_score ?? 0);
+    pf += scored;
+    pa += allowed;
+    if (g.winner_id === teamId) wins++;
+    else if (g.winner_id === null) ties++;
+    else losses++;
+  }
+  const gp = completed.length;
+  return { wins, losses, ties, gp, ppg: gp ? pf / gp : 0, papg: gp ? pa / gp : 0, pointDiff: pf - pa, winPct: gp ? wins / gp : 0 };
+}
 
 export default function TeamDetail() {
   const { abbr } = useParams<{ abbr: string }>();
   const [activeTab, setActiveTab] = useState<'overview' | 'roster'>('overview');
+  const [statView, setStatView] = useState<StatView>('season');
   const [selectedPlayer, setSelectedPlayer] = useState<PlayerEntry | null>(null);
   const { data: profile, loading: pLoading, error: pError } = useTeamProfile(abbr ?? '');
   const { data: metrics, loading: mLoading } = useTeamMetrics(abbr ?? '');
@@ -57,15 +78,10 @@ export default function TeamDetail() {
           <div className="flex items-center gap-5">
             {/* Team badge */}
             <div
-              className="w-16 h-16 rounded-lg flex items-center justify-center shrink-0 shadow-lg"
-              style={{
-                backgroundColor: colors.primary,
-                boxShadow: `0 8px 32px ${teamBgTint(profile.team_abbr, 0.4)}`,
-              }}
+              className="w-16 h-16 rounded-lg overflow-hidden flex items-center justify-center shrink-0 shadow-lg bg-surface-800"
+              style={{ boxShadow: `0 8px 32px ${teamBgTint(profile.team_abbr, 0.4)}` }}
             >
-              <span className="font-display font-bold text-white text-lg tracking-wider">
-                {profile.team_abbr}
-              </span>
+              <TeamLogo abbr={profile.team_abbr} size={56} />
             </div>
 
             <div>
@@ -90,7 +106,24 @@ export default function TeamDetail() {
         </div>
       </div>
 
+      {/* Stats section toggle */}
+      <div className="flex items-center gap-3 mb-3 animate-fade-up stagger-1">
+        <span className="font-display text-[10px] uppercase tracking-[0.2em] text-text-muted font-semibold">Stats</span>
+        <div className="flex rounded-md border border-border overflow-hidden text-[10px] font-display font-semibold uppercase tracking-widest">
+          {(['season', 'last10', 'last5'] as StatView[]).map((v) => (
+            <button
+              key={v}
+              onClick={() => setStatView(v)}
+              className={`px-3 py-1.5 transition-colors ${statView === v ? 'bg-accent text-surface-900' : 'bg-surface-850 text-text-muted hover:text-text-primary'}`}
+            >
+              {v === 'season' ? 'Season' : v === 'last10' ? 'Last 10' : 'Last 5'}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Stats grid */}
+      {statView === 'season' && (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8 animate-fade-up stagger-1">
         <DualStatBox
           label="Record"
@@ -185,6 +218,26 @@ export default function TeamDetail() {
           </>
         )}
       </div>
+      )}
+
+      {/* Rolling stats (Last 10 / Last 5) */}
+      {(statView === 'last10' || statView === 'last5') && (() => {
+        const n = statView === 'last10' ? 10 : 5;
+        const r = games ? computeRollingStats(games.games, profile.team_id, n) : null;
+        if (!r || r.gp === 0) return (
+          <div className="rounded-lg bg-surface-850 border border-border p-5 mb-8 text-sm text-text-muted animate-fade-up stagger-1">
+            {gLoading ? 'Loading games…' : `No completed games available for last ${n}.`}
+          </div>
+        );
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8 animate-fade-up stagger-1">
+            <StatBox label="Record" value={`${r.wins}-${r.losses}${r.ties ? `-${r.ties}` : ''}`} sub={`Last ${r.gp} games`} color={colors.primary} />
+            <StatBox label="Win %" value={`${(r.winPct * 100).toFixed(1)}%`} sub={`${r.wins}W ${r.losses}L`} color={r.winPct >= 0.5 ? 'var(--color-win)' : 'var(--color-loss)'} />
+            <StatBox label="PPG" value={r.ppg.toFixed(1)} sub={`Allowed: ${r.papg.toFixed(1)}`} color={colors.primary} />
+            <StatBox label="Point Diff" value={r.pointDiff >= 0 ? `+${r.pointDiff}` : String(r.pointDiff)} sub={`Over ${r.gp} games`} color={r.pointDiff >= 0 ? 'var(--color-win)' : 'var(--color-loss)'} />
+          </div>
+        );
+      })()}
 
       {/* Tab Navigation */}
       <div className="flex gap-1 mb-6 border-b border-border animate-fade-up stagger-2">

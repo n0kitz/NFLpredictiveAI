@@ -328,3 +328,48 @@ class TestRosterEndpoints:
         assert data["season"] == 2024
         assert "players" in data
         assert isinstance(data["players"], list)
+
+
+# ── Value Picks ────────────────────────────────────────
+
+
+class TestValuePicks:
+    def test_value_picks_returns_valid_shape(self):
+        """GET /api/picks/value returns picks list, generated_at, and note."""
+        r = client.get("/api/picks/value")
+        assert r.status_code == 200
+        data = r.json()
+        assert "picks" in data
+        assert "generated_at" in data
+        assert "note" in data
+        assert isinstance(data["picks"], list)
+        assert isinstance(data["note"], str)
+
+    def test_value_picks_each_pick_has_required_fields(self):
+        """Each pick in /api/picks/value has the required schema fields."""
+        r = client.get("/api/picks/value")
+        assert r.status_code == 200
+        picks = r.json()["picks"]
+        for pick in picks:
+            assert "game_id" in pick
+            assert "game_date" in pick
+            assert "home_team" in pick
+            assert "away_team" in pick
+            assert "model_home_prob" in pick
+            assert "vegas_home_implied_prob" in pick
+            assert "edge" in pick
+            assert "edge_side" in pick
+            assert pick["edge_side"] in ("home", "away")
+            assert "model_confidence" in pick
+            assert pick["model_confidence"] in ("HIGH", "MEDIUM", "LOW")
+            assert abs(pick["edge"]) >= 0.04
+
+    def test_value_picks_sorted_by_abs_edge(self):
+        """Picks are returned sorted by absolute edge descending."""
+        r = client.get("/api/picks/value")
+        assert r.status_code == 200
+        picks = r.json()["picks"]
+        if len(picks) < 2:
+            return
+        edges = [abs(p["edge"]) for p in picks]
+        assert edges == sorted(edges, reverse=True)

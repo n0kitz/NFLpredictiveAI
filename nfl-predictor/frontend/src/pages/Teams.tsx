@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useTeams } from '../hooks/useApi';
 import Spinner from '../components/Spinner';
-import { getTeamColors } from '../theme/teamColors';
+import TeamLogo from '../components/TeamLogo';
 import type { Team } from '../api/types';
 
 export default function Teams() {
@@ -57,21 +57,13 @@ export default function Teams() {
 
                   <div className="p-1.5">
                     {teams.map((t) => {
-                      const colors = getTeamColors(t.abbreviation);
                       return (
                         <Link
                           key={t.team_id}
                           to={`/teams/${t.abbreviation}`}
                           className="flex items-center gap-3 rounded-md px-3 py-2.5 hover:bg-surface-700/60 transition-all group"
                         >
-                          <div
-                            className="w-9 h-9 rounded-sm flex items-center justify-center shrink-0 transition-transform group-hover:scale-105"
-                            style={{ backgroundColor: colors.primary }}
-                          >
-                            <span className="font-display font-bold text-white text-[10px] tracking-wider">
-                              {t.abbreviation}
-                            </span>
-                          </div>
+                          <TeamLogo abbr={t.abbreviation} size={36} className="rounded-sm transition-transform group-hover:scale-105" />
                           <div className="min-w-0">
                             <p className="text-sm font-semibold text-text-primary group-hover:text-accent transition-colors truncate">
                               {t.name}

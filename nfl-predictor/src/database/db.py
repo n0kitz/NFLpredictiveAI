@@ -1200,16 +1200,14 @@ class Database:
 
     def get_fantasy_leaders(
         self,
-        position: str,
+        position: Optional[str],
         season: int,
         scoring: str = 'ppr',
         limit: int = 50,
     ) -> List[sqlite3.Row]:
-        """Get top fantasy players at a position for a season."""
+        """Get top fantasy players at a position (or all positions) for a season."""
         pts_col = 'fantasy_points_ppr' if scoring == 'ppr' else 'fantasy_points_standard'
-        pos_filter = position.upper()
-        return self.fetchall(
-            f"""
+        base = f"""
             SELECT p.player_id, p.full_name, p.position, p.headshot_url,
                    t.abbreviation as team_abbr,
                    pss.games_played, pss.fantasy_points_ppr, pss.fantasy_points_standard,
@@ -1220,12 +1218,17 @@ class Database:
             JOIN players p ON pss.player_id = p.player_id
             LEFT JOIN roster_entries re ON re.player_id = p.player_id AND re.season = pss.season
             LEFT JOIN teams t ON t.team_id = re.team_id
-            WHERE pss.season = ? AND p.position = ?
-            ORDER BY pss.{pts_col} DESC
-            LIMIT ?
-            """,
-            (season, pos_filter, limit),
-        )
+        """
+        if position:
+            return self.fetchall(
+                base + "WHERE pss.season = ? AND p.position = ? ORDER BY pss." + pts_col + " DESC LIMIT ?",
+                (season, position.upper(), limit),
+            )
+        else:
+            return self.fetchall(
+                base + "WHERE pss.season = ? AND p.position IN ('QB','RB','WR','TE','K') ORDER BY pss." + pts_col + " DESC LIMIT ?",
+                (season, limit),
+            )
 
 
     # ── Fantasy module operations ──────────────────────────────────────────────

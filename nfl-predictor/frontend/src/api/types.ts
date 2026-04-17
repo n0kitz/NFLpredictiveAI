@@ -479,3 +479,24 @@ export interface RosterImportResult {
   matched: RosterMatchEntry[];
   unmatched: string[];
 }
+
+// ── Value Picks ───────────────────────────────────────────────────────────────
+
+export interface ValuePick {
+  game_id: number;
+  game_date: string;
+  home_team: string;
+  away_team: string;
+  model_home_prob: number;
+  vegas_home_implied_prob: number;
+  edge: number;
+  edge_side: 'home' | 'away';
+  model_confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  vegas_spread: number | null;
+}
+
+export interface ValuePicksResponse {
+  picks: ValuePick[];
+  generated_at: string;
+  note: string;
+}

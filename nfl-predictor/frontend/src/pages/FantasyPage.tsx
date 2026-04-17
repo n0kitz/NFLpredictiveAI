@@ -213,7 +213,7 @@ function DashboardTab() {
                         />
                         <Tooltip
                           contentStyle={{ background: 'var(--color-surface-800)', border: '1px solid var(--color-border)', borderRadius: 8 }}
-                          formatter={(val: number) => [`${val.toFixed(1)} pts`, 'Projected']}
+                          formatter={(val) => [`${(val as number).toFixed(1)} pts`, 'Projected']}
                         />
                         <Bar dataKey="projected_points_ppr" radius={[0, 4, 4, 0]}>
                           {data.map((_, idx) => (
@@ -271,8 +271,7 @@ function LeaderboardsTab() {
 
   useEffect(() => {
     setLoading(true);
-    const pos = position === 'ALL' ? 'QB' : position;
-    api.getFantasyTop(pos, season, scoring, 50)
+    api.getFantasyTop(position === 'ALL' ? undefined : position, season, scoring, 50)
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false));

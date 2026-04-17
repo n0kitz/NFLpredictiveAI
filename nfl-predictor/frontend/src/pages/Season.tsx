@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Game, PlayoffPicture, PlayoffTeamEntry } from '../api/types';
 import Spinner from '../components/Spinner';
+import PlayoffBracket from '../components/PlayoffBracket';
 import { getTeamColors } from '../theme/teamColors';
 
 const YEARS = Array.from({ length: 2025 - 1990 + 1 }, (_, i) => 2025 - i);
@@ -274,6 +275,8 @@ function PlayoffPictureTab({ year }: { year: number }) {
           <ConferenceBlock key={conf} conf={conf.toUpperCase()} data={data[conf]} />
         ))}
       </div>
+
+      <PlayoffBracket afc={data.afc} nfc={data.nfc} />
     </div>
   );
 }

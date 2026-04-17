@@ -35,6 +35,7 @@ from .schemas import (
     FantasyProjectionEntry, StartSitPlayerEntry, StartSitResponse,
     DraftRankingEntry, TradePlayerEntry, TradeAnalysisResponse,
     FantasyRosterRequest, TradeAnalyzeRequest, ImportByNamesRequest,
+    ValuePick, ValuePicksResponse,
     ErrorResponse,
 )
 
@@ -1128,7 +1129,7 @@ def get_player(player_id: int, db: Database = Depends(get_db)):
     tags=["fantasy"],
 )
 def get_fantasy_top(
-    position: str = Query("QB", description="Position: QB, RB, WR, TE, K"),
+    position: Optional[str] = Query(None, description="Position: QB, RB, WR, TE, K (omit for all)"),
     season: int = Query(2024, description="Season year"),
     scoring: str = Query("ppr", description="Scoring: ppr or standard"),
     limit: int = Query(50, ge=1, le=200),
@@ -1151,7 +1152,7 @@ def get_fantasy_top(
         for r in rows
     ]
     return FantasyLeaderboardResponse(
-        position=position.upper(),
+        position=position.upper() if position else 'ALL',
         season=season,
         scoring=scoring,
         players=players,
@@ -1736,6 +1737,94 @@ def get_trade_values(week: int = Query(...), season: int = Query(2024), db: Data
             "schedule_difficulty": "easy" if avg_ms >= 1.1 else "hard" if avg_ms <= 0.9 else "neutral",
         })
     return {"week": week, "season": season, "players": result, "count": len(result)}
+
+
+# ── Value Picks ────────────────────────────────────────
+
+@app.get("/api/picks/value", response_model=ValuePicksResponse, tags=["predictions"])
+def get_value_picks(db: Database = Depends(get_db)):
+    """
+    Return upcoming games where the model's predicted probability disagrees with
+    Vegas implied probability by ≥ 4pp (abs_edge). Sorted by abs_edge descending.
+    Vegas odds are display-only enrichment — never used as prediction input.
+    """
+    from datetime import datetime
+
+    engine = get_engine()
+
+    # Fetch upcoming games that have Vegas odds
+    rows = db.fetchall(
+        """
+        SELECT g.game_id, g.date, g.season, g.week, g.game_type,
+               g.home_team_id, g.away_team_id,
+               ht.abbreviation AS home_abbr, at.abbreviation AS away_abbr,
+               ht.name AS home_name, at.name AS away_name,
+               go.home_implied_prob, go.away_implied_prob, go.opening_spread AS spread
+        FROM games g
+        JOIN teams ht ON g.home_team_id = ht.team_id
+        JOIN teams at ON g.away_team_id = at.team_id
+        JOIN game_odds go ON go.game_id = g.game_id
+        WHERE g.home_score IS NULL
+          AND go.home_implied_prob IS NOT NULL
+          AND go.away_implied_prob IS NOT NULL
+        ORDER BY g.date ASC
+        LIMIT 50
+        """
+    )
+
+    picks = []
+    for row in rows:
+        d = dict(row)
+        try:
+            prediction = engine.predict(
+                home_team=d["home_abbr"],
+                away_team=d["away_abbr"],
+                current_season=d["season"],
+                is_playoff=(d["game_type"] != "regular"),
+                week=0,
+                use_ml=False,
+            )
+        except Exception:
+            continue
+
+        model_prob = prediction.home_win_probability
+        vegas_prob = float(d["home_implied_prob"])
+        edge = round(model_prob - vegas_prob, 4)
+        abs_edge = abs(edge)
+
+        if abs_edge < 0.04:
+            continue
+
+        edge_side = "home" if edge > 0 else "away"
+        picks.append(
+            ValuePick(
+                game_id=d["game_id"],
+                game_date=str(d["date"])[:10],
+                home_team=d["home_abbr"],
+                away_team=d["away_abbr"],
+                model_home_prob=round(model_prob, 4),
+                vegas_home_implied_prob=round(vegas_prob, 4),
+                edge=edge,
+                edge_side=edge_side,
+                model_confidence=prediction.confidence,
+                vegas_spread=float(d["spread"]) if d["spread"] is not None else None,
+            )
+        )
+
+    picks.sort(key=lambda p: abs(p.edge), reverse=True)
+
+    if not picks:
+        note = "No upcoming games with model-Vegas disagreement ≥ 4pp"
+    elif not rows:
+        note = "No upcoming games with Vegas odds available"
+    else:
+        note = f"{len(picks)} game{'s' if len(picks) != 1 else ''} with model-Vegas disagreement ≥ 4pp"
+
+    return ValuePicksResponse(
+        picks=picks,
+        generated_at=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+        note=note,
+    )
 
 
 # ── Helpers ────────────────────────────────────────────

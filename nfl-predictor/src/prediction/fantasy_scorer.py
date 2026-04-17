@@ -202,40 +202,100 @@ class FantasyScorer:
         """
         Generate and persist projections for all active skill-position players.
 
-        Queries all players in QB/RB/WR/TE/K who have a roster entry for the season,
-        finds their opponent for the week, calls calculate_projection, and upserts
-        results into fantasy_projections. Returns the full list of projection dicts.
+        Uses bulk prefetching (~6 queries total) instead of per-player DB calls,
+        reducing query count from ~12k to ~6 for a full weekly run.
         """
-        rows = self.db.fetchall(
+        # ── 1. All skill players + season stats in one query ─────────────────
+        player_rows = self.db.fetchall(
             """
-            SELECT DISTINCT p.player_id, p.position, re.team_id
+            SELECT p.player_id, p.full_name, p.position, p.headshot_url,
+                   re.team_id, re.is_starter,
+                   t.abbreviation AS team_abbr,
+                   pss.fantasy_points_ppr, pss.fantasy_points_standard,
+                   pss.games_played, pss.targets
             FROM players p
-            JOIN roster_entries re ON re.player_id = p.player_id
+            JOIN roster_entries re ON re.player_id = p.player_id AND re.season = ?
+            LEFT JOIN player_season_stats pss
+                ON pss.player_id = p.player_id AND pss.season = ?
+            LEFT JOIN teams t ON t.team_id = re.team_id
             WHERE p.position IN ('QB','RB','WR','TE','K')
-              AND re.season = ?
+            GROUP BY p.player_id
             """,
-            (season,),
+            (season, season),
         )
 
+        # ── 2. All injuries (most recent report date) keyed by lowercase last name ─
+        injuries_by_last: Dict[str, str] = {}
+        for inj in self.db.get_all_current_injuries():
+            name = (inj['player_name'] or '').strip()
+            if name:
+                last = name.split()[-1].lower()
+                injuries_by_last[last] = inj['injury_status']
+
+        # ── 3. All games for this week → map team_id → game row ──────────────
+        week_games = self.db.fetchall(
+            """
+            SELECT game_id, home_team_id, away_team_id, date
+            FROM games
+            WHERE season = ?
+              AND (CAST(week AS INTEGER) = ? OR week = CAST(? AS TEXT))
+            """,
+            (season, week, str(week)),
+        )
+        game_by_team: Dict[int, Any] = {}
+        for g in week_games:
+            game_by_team[g['home_team_id']] = g
+            game_by_team[g['away_team_id']] = g
+
+        # ── 4. Weather for this week keyed by home_team_id ───────────────────
+        weather_by_home: Dict[int, Any] = {}
+        for wx in self.db.fetchall(
+            """
+            SELECT gw.* FROM game_weather gw
+            JOIN games g ON gw.home_team_id = g.home_team_id
+                         AND gw.game_date = g.date
+            WHERE g.season = ?
+              AND (CAST(g.week AS INTEGER) = ? OR g.week = CAST(? AS TEXT))
+            """,
+            (season, week, str(week)),
+        ):
+            weather_by_home[wx['home_team_id']] = wx
+
+        # ── 5. Advanced stats (prior season first, current overwrites) ───────
+        adv_stats: Dict[int, Any] = {}
+        for r in self.db.fetchall(
+            "SELECT * FROM team_advanced_stats WHERE season = ?", (season - 1,)
+        ):
+            adv_stats[r['team_id']] = r
+        for r in self.db.fetchall(
+            "SELECT * FROM team_advanced_stats WHERE season = ?", (season,)
+        ):
+            adv_stats[r['team_id']] = r
+
+        # ── 6. Over/under for this week keyed by game_id ─────────────────────
+        ou_by_game: Dict[int, float] = {}
+        for row in self.db.fetchall(
+            """
+            SELECT go.game_id, go.over_under FROM game_odds go
+            JOIN games g ON go.game_id = g.game_id
+            WHERE g.season = ?
+              AND (CAST(g.week AS INTEGER) = ? OR g.week = CAST(? AS TEXT))
+              AND go.over_under IS NOT NULL
+            """,
+            (season, week, str(week)),
+        ):
+            ou_by_game[row['game_id']] = float(row['over_under'])
+
+        # ── Loop: compute projections from prefetched data ───────────────────
         results: List[Dict[str, Any]] = []
 
-        for row in rows:
-            player_id = row['player_id']
-            team_id = row['team_id']
+        for p in player_rows:
+            player_id = p['player_id']
+            team_id   = p['team_id']
+            pos       = (p['position'] or '').upper()
+            name      = p['full_name'] or ''
 
-            # Find the game for this team in the given week
-            game = self.db.fetchone(
-                """
-                SELECT game_id, home_team_id, away_team_id
-                FROM games
-                WHERE season = ?
-                  AND (CAST(week AS INTEGER) = ? OR week = CAST(? AS TEXT))
-                  AND (home_team_id = ? OR away_team_id = ?)
-                LIMIT 1
-                """,
-                (season, week, str(week), team_id, team_id),
-            )
-
+            game = game_by_team.get(team_id)
             opponent_team_id: Optional[int] = None
             if game:
                 opponent_team_id = (
@@ -244,25 +304,82 @@ class FantasyScorer:
                     else game['home_team_id']
                 )
 
-            proj = self.calculate_projection(player_id, week, season, opponent_team_id)
-            if not proj:
-                continue
+            # Base points per game from prefetched stats
+            gp = int(p['games_played'] or 0)
+            if gp > 0:
+                base_ppr = float(p['fantasy_points_ppr'] or 0) / gp
+                base_std = float(p['fantasy_points_standard'] or 0) / gp
+            else:
+                base_ppr = 0.0
+                base_std = 0.0
 
-            opp_score = self.calculate_opportunity_score(
-                player_id, week, season, opponent_team_id
+            # Matchup score from prefetched adv stats
+            opp_adv = adv_stats.get(opponent_team_id) if opponent_team_id else None
+            matchup_score = self._matchup_score_from_stats(opp_adv, pos)
+
+            proj_ppr  = base_ppr * matchup_score
+            proj_std  = base_std * matchup_score
+            confidence = 'medium'
+            injury_status: Optional[str] = None
+            weather_impact = False
+
+            # Injury from prefetched dict (last-name match)
+            if name:
+                last = name.strip().split()[-1].lower()
+                status = injuries_by_last.get(last)
+                if status:
+                    injury_status = status
+                    if status in _INJURY_RULES:
+                        mult, conf = _INJURY_RULES[status]
+                        proj_ppr *= mult
+                        proj_std *= mult
+                        confidence = conf
+
+            # Weather from prefetched dict (keyed by game's home_team_id)
+            if game and pos in ('QB', 'WR', 'TE'):
+                wx = weather_by_home.get(game['home_team_id'])
+                if wx and not wx['is_dome']:
+                    if float(wx['precipitation_mm'] or 0) > 0:
+                        proj_ppr *= 0.93
+                        proj_std *= 0.93
+                        weather_impact = True
+
+            # Over/under from prefetched dict
+            if game and pos in ('QB', 'WR', 'TE', 'RB'):
+                ou = ou_by_game.get(game['game_id'])
+                if ou and ou > 0:
+                    ou_factor = max(0.9, min(1.1, ou / 44.0))
+                    proj_ppr *= ou_factor
+                    proj_std *= ou_factor
+
+            # Opportunity score (inline — all data already prefetched)
+            targets_per_game = float(p['targets'] or 0) / gp if gp > 0 else 0.0
+            snap_pct_proxy   = 0.8 if p['is_starter'] else 0.4
+            tpg_norm   = min(targets_per_game / 1.2, 10.0)
+            snap_norm  = snap_pct_proxy * 10.0
+            match_norm = (matchup_score - 0.7) / 0.6 * 10.0
+            opp_score  = round(
+                min(10.0, max(0.0, 0.4 * tpg_norm + 0.3 * snap_norm + 0.3 * match_norm)),
+                2,
             )
-            proj['opportunity_score'] = opp_score
-            proj['week'] = week
-            proj['season'] = season
-            proj['opponent_team_id'] = opponent_team_id
 
-            team_row = self.db.fetchone(
-                "SELECT abbreviation FROM teams WHERE team_id=?", (team_id,)
-            )
-            proj['team_abbr'] = team_row['abbreviation'] if team_row else None
-
-            player_obj = self.db.get_player_by_id(player_id)
-            proj['headshot_url'] = player_obj['headshot_url'] if player_obj else None
+            proj: Dict[str, Any] = {
+                'player_id':            player_id,
+                'full_name':            name,
+                'position':             pos,
+                'projected_points_ppr': round(proj_ppr, 2),
+                'projected_points_std': round(proj_std, 2),
+                'matchup_score':        matchup_score,
+                'confidence':           confidence,
+                'injury_status':        injury_status,
+                'weather_impact':       weather_impact,
+                'opportunity_score':    opp_score,
+                'week':                 week,
+                'season':               season,
+                'opponent_team_id':     opponent_team_id,
+                'team_abbr':            p['team_abbr'],
+                'headshot_url':         p['headshot_url'],
+            }
 
             self.db.upsert_fantasy_projection({
                 'player_id':            player_id,
@@ -271,9 +388,9 @@ class FantasyScorer:
                 'opponent_team_id':     opponent_team_id,
                 'projected_points_ppr': proj['projected_points_ppr'],
                 'projected_points_std': proj['projected_points_std'],
-                'matchup_score':        proj['matchup_score'],
+                'matchup_score':        matchup_score,
                 'opportunity_score':    opp_score,
-                'confidence':           proj['confidence'],
+                'confidence':           confidence,
             })
 
             results.append(proj)
@@ -593,6 +710,29 @@ class FantasyScorer:
         }
 
     # ── Private helpers ──────────────────────────────────────────────────────
+
+    def _matchup_score_from_stats(
+        self, adv_stats: Optional[Any], position: str
+    ) -> float:
+        """
+        Compute matchup score from a pre-fetched team_advanced_stats row.
+
+        Identical logic to calculate_matchup_score() but avoids a DB round-trip.
+        Returns 1.0 (neutral) when adv_stats is None.
+        """
+        if not adv_stats:
+            return 1.0
+        pos       = (position or '').upper()
+        ypp       = float(adv_stats['yards_per_play'] or _AVG_YPP)
+        sack_rate = float(adv_stats['sack_rate_allowed'] or _AVG_SACK_RATE)
+        rz_eff    = float(adv_stats['redzone_efficiency'] or _AVG_RZ_EFF)
+        if pos == 'QB':
+            raw = (sack_rate / _AVG_SACK_RATE) * 0.5 + (ypp / _AVG_YPP) * 0.5
+        elif pos in ('RB', 'FB'):
+            raw = ypp / _AVG_YPP
+        else:
+            raw = (1.0 + (rz_eff - _AVG_RZ_EFF)) * 0.4 + (ypp / _AVG_YPP) * 0.6
+        return round(max(0.7, min(1.3, raw)), 3)
 
     def _get_injury_for_player(self, player_name: str) -> Optional[Any]:
         """Get the most recent injury record matching the player's last name."""

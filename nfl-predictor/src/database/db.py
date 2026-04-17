@@ -44,6 +44,9 @@ class Database:
                 check_same_thread=False,
             )
             self._connection.row_factory = sqlite3.Row
+            self._connection.execute("PRAGMA journal_mode=WAL")
+            self._connection.execute("PRAGMA synchronous=NORMAL")
+            self._connection.commit()
             # Enable foreign keys
             self._connection.execute("PRAGMA foreign_keys = ON")
             # Ensure advanced-stats table exists for both fresh and existing DBs
@@ -884,6 +887,16 @@ class Database:
                 ),
             )
         self.commit()
+
+    def get_all_current_injuries(self) -> List[sqlite3.Row]:
+        """Return all injury_reports from the most recent report_date across all teams."""
+        return self.fetchall(
+            """
+            SELECT * FROM injury_reports
+            WHERE report_date = (SELECT MAX(report_date) FROM injury_reports)
+            ORDER BY team_id, player_name
+            """
+        )
 
     def get_key_injuries_for_team(self, team_id: int) -> List[sqlite3.Row]:
         """Return today's significant injury entries for a team (most-recent report_date)."""

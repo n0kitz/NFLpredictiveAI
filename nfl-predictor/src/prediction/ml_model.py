@@ -60,25 +60,6 @@ def _h2h_before(db, home_id: int, away_id: int, cutoff_date: str, limit: int = 1
     }
 
 
-def _vegas_prob_before(db, home_id: int, away_id: int, game_date: str) -> float:
-    """Fetch vegas home implied probability for a game, or 0.5 if not available."""
-    try:
-        row = db.fetchone(
-            """
-            SELECT home_implied_prob FROM game_odds
-            WHERE home_team_id = ? AND away_team_id = ?
-              AND ABS(julianday(game_date) - julianday(?)) < 2
-            ORDER BY ABS(julianday(game_date) - julianday(?))
-            LIMIT 1
-            """,
-            (home_id, away_id, game_date, game_date),
-        )
-        if row and row["home_implied_prob"] is not None:
-            return float(row["home_implied_prob"])
-    except Exception:
-        pass
-    return 0.5
-
 
 def build_training_dataset(
     db,
@@ -134,7 +115,6 @@ def build_training_dataset(
             continue
 
         h2h = _h2h_before(db, home_id, away_id, game_date, limit=10)
-        vegas_prob = _vegas_prob_before(db, home_id, away_id, game_date)
 
         week_int = _parse_week(game["week"])
         home_roll_epa = get_rolling_starter_qb_epa(
@@ -148,7 +128,6 @@ def build_training_dataset(
 
         feat_dict = build_feature_vector(
             home_m, away_m, h2h, is_playoff, week,
-            vegas_implied_prob=vegas_prob,
             home_starter_qb_epa=home_roll_epa,
             away_starter_qb_epa=away_roll_epa,
         )
@@ -215,7 +194,6 @@ def build_training_dataset_with_spread(db) -> Tuple[np.ndarray, np.ndarray]:
             continue
 
         h2h = _h2h_before(db, home_id, away_id, game_date, limit=10)
-        vegas_prob = _vegas_prob_before(db, home_id, away_id, game_date)
 
         week_int = _parse_week(game["week"])
         home_roll_epa = get_rolling_starter_qb_epa(
@@ -229,7 +207,6 @@ def build_training_dataset_with_spread(db) -> Tuple[np.ndarray, np.ndarray]:
 
         feat_dict = build_feature_vector(
             home_m, away_m, h2h, is_playoff, week,
-            vegas_implied_prob=vegas_prob,
             home_starter_qb_epa=home_roll_epa,
             away_starter_qb_epa=away_roll_epa,
         )

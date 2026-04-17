@@ -598,7 +598,16 @@ def predict_game(
     )
 
 
-@app.get("/api/predict/{away_team}/{home_team}", response_model=PredictionResponse, tags=["predictions"])
+# NOTE: This GET shortcut always uses is_playoff=False, week=0, current_season=None.
+# For playoff games or week-specific predictions, use POST /api/predict with the full
+# PredictionRequest body including is_playoff=True and week=N.
+# The ML model's is_playoff and week_of_season features will be 0 for all GET predictions.
+@app.get(
+    "/api/predict/{away_team}/{home_team}",
+    response_model=PredictionResponse,
+    tags=["predictions"],
+    description="Quick GET predict. Always uses is_playoff=False, week=0 — for playoff or week-specific predictions use POST /api/predict with the full request body.",
+)
 def predict_game_get(
     away_team: str,
     home_team: str,

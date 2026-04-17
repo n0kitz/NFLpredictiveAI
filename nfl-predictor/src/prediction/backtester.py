@@ -116,6 +116,7 @@ class Backtester:
         self,
         seasons: Optional[List[int]] = None,
         game_type: str = 'regular',
+        use_ml: bool = False,
     ) -> BacktestReport:
         """
         Run backtest over specified seasons.
@@ -191,6 +192,7 @@ class Backtester:
                         cutoff_date=game_date if game_date else None,
                         is_playoff=(game_dict.get("game_type", "regular") != "regular"),
                         week=game_dict.get("week", 0),
+                        use_ml=use_ml,
                     )
                 except Exception as e:
                     logger.warning(f"Backtest skip game {game_dict.get('game_id')}: {e}")

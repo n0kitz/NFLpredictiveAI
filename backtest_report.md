@@ -86,3 +86,41 @@ Seasons analysed: [2020, 2021, 2022, 2023, 2024]
     + dynamic home-field advantage (team-specific, capped 0-10%)
     + bye-week rest bonus (+1.5%)
     Note: if advanced stats unavailable, their 15% is redistributed to win-pct.
+
+## ML vs Weighted Sum — Post-Fix Comparison (2023–2024)
+
+> Generated: 2026-04-17 10:49:02  
+> Seasons: [2023, 2024] | All game types (regular + playoffs)
+
+### Overall Accuracy
+
+| Model | Games | Correct | Accuracy |
+|-------|------:|--------:|---------:|
+| Weighted Sum | 570 | 378 | 66.3% |
+| ML (calibrated GBM + rolling QB EPA) | 570 | 367 | 64.4% |
+| **Delta (ML − WS)** | — | **-11** | **-1.9pp** |
+
+### Per-Season Breakdown (All Games)
+
+| Season | WS Games | WS Correct | WS Acc | ML Correct | ML Acc | Delta |
+|-------:|---------:|-----------:|-------:|-----------:|-------:|------:|
+| 2023 | 285 | 182 | 63.9% | 182 | 63.9% | +0.0pp |
+| 2024 | 285 | 196 | 68.8% | 185 | 64.9% | -3.9pp |
+
+### ML Model — Probability Calibration (All Games)
+
+> Ideal: a bucket showing X% should actually win ~X% of the time.
+
+| Bucket | Games | Actual Wins | Actual % | Ideal Mid | Delta |
+|--------|------:|------------:|---------:|----------:|------:|
+| 50-55% | 217 | 113 | 52.1% | 52.5% | -0.4pp |
+| 55-60% | 0 | 0 | 0.0% | 57.5% | -57.5pp |
+| 60-65% | 51 | 35 | 68.6% | 62.5% | +6.1pp |
+| 65-70% | 29 | 20 | 69.0% | 67.5% | +1.5pp |
+| 70-75% | 65 | 44 | 67.7% | 72.5% | -4.8pp |
+| 75-80% | 48 | 33 | 68.8% | 77.5% | -8.8pp |
+| 80%+ | 160 | 122 | 76.2% | 85.0% | -8.8pp |
+
+### Conclusion
+
+Weighted-sum wins by 1.9pp (378/570 vs 367/570). Exceeds ±1.5pp noise threshold. **Keep weighted-sum as default.**

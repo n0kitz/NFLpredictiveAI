@@ -3,9 +3,13 @@
 Comprehensive NFL prediction model backtest: seasons 2020-2024.
 
 Run from nfl-predictor/ directory:
-    python scripts/run_backtest.py
+    python scripts/run_backtest.py                        # full 2020-2024 weighted-sum report
+    python scripts/run_backtest.py --seasons 2023,2024    # focused weighted-sum run
+    python scripts/run_backtest.py --seasons 2023,2024 --ml   # focused ML run
+    python scripts/run_backtest.py --seasons 2023,2024 --compare  # side-by-side ML vs WS
 """
 
+import argparse
 import sys
 import os
 from pathlib import Path
@@ -29,6 +33,11 @@ CALIBRATION_BUCKETS = [
     ('75-80%', 0.75, 0.80),
     ('80%+',   0.80, 1.01),
 ]
+
+BUCKET_MIDPOINTS = {
+    '50-55%': 52.5, '55-60%': 57.5, '60-65%': 62.5,
+    '65-70%': 67.5, '70-75%': 72.5, '75-80%': 77.5, '80%+': 85.0,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -71,13 +80,216 @@ def home_away_breakdown(results: list[BacktestResult]) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Main backtest runner
+# Focused per-season helper (used by compare mode)
+# ---------------------------------------------------------------------------
+
+def run_focused(backtester: Backtester, seasons: list[int], use_ml: bool = False) -> tuple:
+    """
+    Run all-games backtest for given seasons, plus per-season breakdown.
+
+    Returns:
+        (overall_report, {season: report})
+    """
+    overall = backtester.run(seasons=seasons, game_type=None, use_ml=use_ml)
+    per_season: dict[int, BacktestReport] = {}
+    for s in seasons:
+        per_season[s] = backtester.run(seasons=[s], game_type=None, use_ml=use_ml)
+    return overall, per_season
+
+
+# ---------------------------------------------------------------------------
+# Compare mode: WS vs ML side-by-side, appends section to backtest_report.md
+# ---------------------------------------------------------------------------
+
+def run_compare(backtester: Backtester, seasons: list[int]) -> None:
+    md_path = ROOT.parent / "backtest_report.md"
+
+    print(f"\nRunning weighted-sum backtest for seasons {seasons}...")
+    ws_overall, ws_per = run_focused(backtester, seasons, use_ml=False)
+
+    print(f"Running ML backtest for seasons {seasons}...")
+    ml_overall, ml_per = run_focused(backtester, seasons, use_ml=True)
+
+    ws_n = ws_overall.total_games
+    ws_c = ws_overall.correct_predictions
+    ml_n = ml_overall.total_games
+    ml_c = ml_overall.correct_predictions
+
+    delta_c   = ml_c - ws_c
+    delta_acc = (ml_c / ml_n - ws_c / ws_n) * 100 if ws_n and ml_n else 0.0
+    sign      = "+" if delta_acc >= 0 else ""
+
+    ml_calib = calibration_from_results(ml_overall.results)
+
+    # ── Conclusion logic ────────────────────────────────────────────────────
+    # With ~544 games, 95% CI half-width ≈ 1 / (2*sqrt(n)) ≈ 2.1pp.
+    # Use ±1.5pp as the practical "noise" threshold (user's stated threshold).
+    noise_threshold = 1.5
+    if abs(delta_acc) < noise_threshold:
+        conclusion = (
+            f"Delta of {sign}{delta_acc:.1f}pp is within noise (±{noise_threshold}pp "
+            f"threshold, ~{ml_n} games). **No statistically significant difference — "
+            f"keep weighted-sum as default** (simpler, no model file dependency)."
+        )
+    elif delta_acc > 0:
+        conclusion = (
+            f"ML wins by {delta_acc:.1f}pp ({ml_c}/{ml_n} vs {ws_c}/{ws_n}). "
+            f"Exceeds ±{noise_threshold}pp noise threshold. "
+            f"**Consider switching default model to ML.**"
+        )
+    else:
+        conclusion = (
+            f"Weighted-sum wins by {abs(delta_acc):.1f}pp ({ws_c}/{ws_n} vs {ml_c}/{ml_n}). "
+            f"Exceeds ±{noise_threshold}pp noise threshold. "
+            f"**Keep weighted-sum as default.**"
+        )
+
+    # ── Build markdown section ───────────────────────────────────────────────
+    season_str = "–".join(str(s) for s in [min(seasons), max(seasons)])
+    lines = [
+        f"\n## ML vs Weighted Sum — Post-Fix Comparison ({season_str})\n",
+        f"> Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  ",
+        f"> Seasons: {seasons} | All game types (regular + playoffs)\n",
+        "### Overall Accuracy\n",
+        "| Model | Games | Correct | Accuracy |",
+        "|-------|------:|--------:|---------:|",
+        f"| Weighted Sum | {ws_n} | {ws_c} | {pct(ws_c, ws_n)} |",
+        f"| ML (calibrated GBM + rolling QB EPA) | {ml_n} | {ml_c} | {pct(ml_c, ml_n)} |",
+        f"| **Delta (ML − WS)** | — | **{sign}{delta_c}** | **{sign}{delta_acc:.1f}pp** |",
+        "",
+        "### Per-Season Breakdown (All Games)\n",
+        "| Season | WS Games | WS Correct | WS Acc | ML Correct | ML Acc | Delta |",
+        "|-------:|---------:|-----------:|-------:|-----------:|-------:|------:|",
+    ]
+
+    for s in sorted(seasons):
+        ws_r = ws_per.get(s)
+        ml_r = ml_per.get(s)
+        if not ws_r or not ml_r:
+            continue
+        wn, wc = ws_r.total_games, ws_r.correct_predictions
+        mn, mc = ml_r.total_games, ml_r.correct_predictions
+        d = (mc / mn - wc / wn) * 100 if wn and mn else 0.0
+        ds = "+" if d >= 0 else ""
+        lines.append(
+            f"| {s} | {wn} | {wc} | {pct(wc, wn)} | {mc} | {pct(mc, mn)} | {ds}{d:.1f}pp |"
+        )
+
+    lines += [
+        "",
+        "### ML Model — Probability Calibration (All Games)\n",
+        "> Ideal: a bucket showing X% should actually win ~X% of the time.\n",
+        "| Bucket | Games | Actual Wins | Actual % | Ideal Mid | Delta |",
+        "|--------|------:|------------:|---------:|----------:|------:|",
+    ]
+
+    for label, _, _ in CALIBRATION_BUCKETS:
+        b      = ml_calib[label]
+        total  = b['total']
+        correct = b['correct']
+        actual = correct / total * 100 if total else 0
+        ideal  = BUCKET_MIDPOINTS[label]
+        delta  = actual - ideal
+        ds     = "+" if delta >= 0 else ""
+        lines.append(
+            f"| {label} | {total} | {correct} | {actual:.1f}% | {ideal:.1f}% | {ds}{delta:.1f}pp |"
+        )
+
+    lines += [
+        "",
+        "### Conclusion\n",
+        conclusion,
+        "",
+    ]
+
+    section = "\n".join(lines)
+
+    # Print to console
+    print(section)
+
+    # Append to backtest_report.md
+    with open(md_path, "a") as f:
+        f.write(section)
+
+    print(f"\nComparison section appended to: {md_path}")
+
+
+# ---------------------------------------------------------------------------
+# Main backtest runner (full 2020-2024 comprehensive report)
 # ---------------------------------------------------------------------------
 
 def main():
+    parser = argparse.ArgumentParser(description="NFL prediction model backtest runner")
+    parser.add_argument(
+        "--seasons",
+        type=str,
+        default=None,
+        help="Comma-separated seasons to test, e.g. 2023,2024 (default: 2020-2024)",
+    )
+    parser.add_argument(
+        "--ml",
+        action="store_true",
+        default=False,
+        help="Use ML model (calibrated GBM) instead of weighted-sum",
+    )
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        default=False,
+        help="Run both WS and ML, append side-by-side comparison to backtest_report.md",
+    )
+    args = parser.parse_args()
+
+    # Parse seasons
+    if args.seasons:
+        target_seasons = [int(s.strip()) for s in args.seasons.split(",")]
+    else:
+        target_seasons = SEASONS
+
     db = Database()
     backtester = Backtester(db)
 
+    # ── Compare mode ─────────────────────────────────────────────────────────
+    if args.compare:
+        run_compare(backtester, target_seasons)
+        return
+
+    # ── Focused single-model run ─────────────────────────────────────────────
+    if args.seasons or args.ml:
+        model_label = "ML (calibrated GBM)" if args.ml else "Weighted Sum"
+        print("=" * 60)
+        print(f"  NFL BACKTEST — {model_label}")
+        print(f"  Seasons: {target_seasons}")
+        print(f"  Run at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("=" * 60)
+
+        overall, per_season = run_focused(backtester, target_seasons, use_ml=args.ml)
+
+        print(f"\nOverall ({model_label}): "
+              f"{overall.correct_predictions}/{overall.total_games} = "
+              f"{pct(overall.correct_predictions, overall.total_games)}")
+        print("\nPer-season:")
+        for s in sorted(target_seasons):
+            r = per_season.get(s)
+            if r:
+                print(f"  {s}: {r.correct_predictions}/{r.total_games} = "
+                      f"{pct(r.correct_predictions, r.total_games)}")
+
+        if args.ml:
+            calib = calibration_from_results(overall.results)
+            print("\nML Calibration:")
+            print(f"  {'Bucket':<10} {'Games':>6} {'Correct':>8} {'Actual%':>9} {'Ideal%':>8} {'Delta':>8}")
+            for label, _, _ in CALIBRATION_BUCKETS:
+                b = calib[label]
+                t, c = b['total'], b['correct']
+                actual = c / t * 100 if t else 0
+                ideal  = BUCKET_MIDPOINTS[label]
+                delta  = actual - ideal
+                ds     = "+" if delta >= 0 else ""
+                print(f"  {label:<10} {t:>6} {c:>8} {actual:>8.1f}% {ideal:>7.1f}% {ds}{delta:>6.1f}pp")
+        return
+
+    # ── Full 2020-2024 comprehensive report (no args) ────────────────────────
     print("=" * 60)
     print("  NFL PREDICTION MODEL — COMPREHENSIVE BACKTEST 2020-2024")
     print(f"  Run at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -246,16 +458,12 @@ def main():
     lines.append(f"  {'Prob bucket':<12} {'Predictions':>12} {'Actual wins':>12} {'Actual %':>10}  {'Ideal mid':>10}  {'Delta':>8}")
     lines.append(f"  {'-'*12} {'-'*12} {'-'*12} {'-'*10}  {'-'*10}  {'-'*8}")
 
-    bucket_midpoints = {
-        '50-55%': 52.5, '55-60%': 57.5, '60-65%': 62.5,
-        '65-70%': 67.5, '70-75%': 72.5, '75-80%': 77.5, '80%+': 85.0,
-    }
     for label, _, _ in CALIBRATION_BUCKETS:
         b = calib_all[label]
         total   = b['total']
         correct = b['correct']
         actual  = correct / total * 100 if total else 0
-        ideal   = bucket_midpoints[label]
+        ideal   = BUCKET_MIDPOINTS[label]
         delta   = actual - ideal
         sign    = "+" if delta >= 0 else ""
         bar     = "#" * int(round(actual / 5)) if total else ""

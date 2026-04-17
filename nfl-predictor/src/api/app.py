@@ -1742,13 +1742,16 @@ def get_trade_values(week: int = Query(...), season: int = Query(2024), db: Data
 # ── Value Picks ────────────────────────────────────────
 
 @app.get("/api/picks/value", response_model=ValuePicksResponse, tags=["predictions"])
-def get_value_picks(db: Database = Depends(get_db)):
+def get_value_picks(
+    min_edge: float = Query(0.04, description="Minimum abs edge to include (default 0.04 = 4pp)"),
+    db: Database = Depends(get_db),
+):
     """
     Return upcoming games where the model's predicted probability disagrees with
-    Vegas implied probability by ≥ 4pp (abs_edge). Sorted by abs_edge descending.
+    Vegas implied probability by ≥ min_edge. Sorted by abs_edge descending.
     Vegas odds are display-only enrichment — never used as prediction input.
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     engine = get_engine()
 
@@ -1781,7 +1784,7 @@ def get_value_picks(db: Database = Depends(get_db)):
                 away_team=d["away_abbr"],
                 current_season=d["season"],
                 is_playoff=(d["game_type"] != "regular"),
-                week=0,
+                week=d["week"],
                 use_ml=False,
             )
         except Exception:
@@ -1792,7 +1795,7 @@ def get_value_picks(db: Database = Depends(get_db)):
         edge = round(model_prob - vegas_prob, 4)
         abs_edge = abs(edge)
 
-        if abs_edge < 0.04:
+        if abs_edge < min_edge:
             continue
 
         edge_side = "home" if edge > 0 else "away"
@@ -1806,23 +1809,23 @@ def get_value_picks(db: Database = Depends(get_db)):
                 vegas_home_implied_prob=round(vegas_prob, 4),
                 edge=edge,
                 edge_side=edge_side,
-                model_confidence=prediction.confidence,
+                model_confidence=prediction.confidence.upper(),
                 vegas_spread=float(d["spread"]) if d["spread"] is not None else None,
             )
         )
 
     picks.sort(key=lambda p: abs(p.edge), reverse=True)
 
-    if not picks:
-        note = "No upcoming games with model-Vegas disagreement ≥ 4pp"
-    elif not rows:
+    if not rows:
         note = "No upcoming games with Vegas odds available"
+    elif not picks:
+        note = f"No upcoming games with model-Vegas disagreement ≥ {min_edge * 100:.0f}pp"
     else:
-        note = f"{len(picks)} game{'s' if len(picks) != 1 else ''} with model-Vegas disagreement ≥ 4pp"
+        note = f"{len(picks)} game{'s' if len(picks) != 1 else ''} with model-Vegas disagreement ≥ {min_edge * 100:.0f}pp"
 
     return ValuePicksResponse(
         picks=picks,
-        generated_at=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+        generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
         note=note,
     )
 

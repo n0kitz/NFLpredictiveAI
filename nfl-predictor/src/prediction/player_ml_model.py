@@ -21,7 +21,7 @@ from .player_features import FEATURE_LABELS, FEATURE_NAMES
 
 logger = logging.getLogger(__name__)
 
-MODEL_VERSION = "ml-v1"
+MODEL_VERSION = "ml-v2"  # Phase 2: 16-feature vector (added opp_pace, opp_proe, opp_pos_dvp_6wk)
 
 _DATA_DIR = Path(__file__).parent.parent.parent / "data" / "player_models"
 

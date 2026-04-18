@@ -12,7 +12,7 @@ import type {
   TeamRoster, PlayerProfile, PlayerSearchResult, FantasyLeaderboard,
   FantasyProjection, StartSitResult, DraftRanking, TradeAnalysis,
   PlayoffPicture, TeamUpcoming, PowerRankings, TradeValues, RosterImportResult,
-  ValuePicksResponse,
+  MatchupGrade, ValuePicksResponse,
 } from './types';
 
 const BASE = '/api';
@@ -155,4 +155,8 @@ export const api = {
   // Value picks
   getValuePicks: () =>
     get<ValuePicksResponse>('/picks/value'),
+
+  // Phase 2: matchup grade
+  getMatchupGrade: (playerId: number, week: number, season = 2024) =>
+    get<MatchupGrade>(`/fantasy/matchup/${playerId}?week=${week}&season=${season}`),
 };

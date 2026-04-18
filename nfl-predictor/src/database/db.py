@@ -23,6 +23,23 @@ MIGRATIONS: List[str] = [
     "ALTER TABLE fantasy_projections ADD COLUMN floor_ppr REAL",
     "ALTER TABLE fantasy_projections ADD COLUMN ceiling_ppr REAL",
     "ALTER TABLE fantasy_projections ADD COLUMN contributions_json TEXT",
+    # v7: Phase 2 matchup cache table
+    """CREATE TABLE IF NOT EXISTS matchup_cache (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id INTEGER NOT NULL,
+        opp_team_id INTEGER NOT NULL,
+        season INTEGER NOT NULL,
+        week INTEGER NOT NULL,
+        grade TEXT NOT NULL,
+        score REAL NOT NULL,
+        rank_vs_league INTEGER,
+        dvp_6wk REAL,
+        pace REAL,
+        proe REAL,
+        component_scores_json TEXT,
+        generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(player_id, opp_team_id, season, week)
+    )""",
 ]
 
 

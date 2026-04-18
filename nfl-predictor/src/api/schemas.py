@@ -591,6 +591,36 @@ class ImportByNamesRequest(BaseModel):
     season: int = 2024
 
 
+# ── Phase 2: Matchup Grade ─────────────────────────────
+
+class MatchupComponentScores(BaseModel):
+    dvp: float
+    ypp: float
+    pace: float
+    proe: float
+
+
+class MatchupGradeResponse(BaseModel):
+    player_id: int
+    full_name: str
+    position: Optional[str] = None
+    team_abbr: Optional[str] = None
+    opp_team_id: int
+    opp_team_abbr: Optional[str] = None
+    week: int
+    season: int
+    grade: str                          # A / B / C / D / F
+    score: float                        # 0–100
+    rank_vs_league: int                 # 1 = hardest matchup, 32 = easiest
+    explanation: str
+    dvp_6wk: float
+    avg_league_dvp: float
+    opp_ypp: float
+    pace: float
+    proe: float
+    component_scores: MatchupComponentScores
+
+
 # ── Value Picks ────────────────────────────────────────
 
 class ValuePick(BaseModel):

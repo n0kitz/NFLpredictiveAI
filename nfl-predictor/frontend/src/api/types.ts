@@ -494,6 +494,36 @@ export interface RosterImportResult {
   unmatched: string[];
 }
 
+// ── Phase 2: Matchup Grade ────────────────────────────────────────────────────
+
+export interface MatchupComponentScores {
+  dvp: number;
+  ypp: number;
+  pace: number;
+  proe: number;
+}
+
+export interface MatchupGrade {
+  player_id: number;
+  full_name: string;
+  position: string | null;
+  team_abbr: string | null;
+  opp_team_id: number;
+  opp_team_abbr: string | null;
+  week: number;
+  season: number;
+  grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  score: number;
+  rank_vs_league: number;
+  explanation: string;
+  dvp_6wk: number;
+  avg_league_dvp: number;
+  opp_ypp: number;
+  pace: number;
+  proe: number;
+  component_scores: MatchupComponentScores;
+}
+
 // ── Value Picks ───────────────────────────────────────────────────────────────
 
 export interface ValuePick {

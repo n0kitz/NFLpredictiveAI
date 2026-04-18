@@ -350,6 +350,26 @@ CREATE TABLE IF NOT EXISTS weekly_qb_starts (
     UNIQUE(team_id, season, week)
 );
 
+-- Phase 2: matchup grade cache (computed on-demand, persisted for fast re-use)
+CREATE TABLE IF NOT EXISTS matchup_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(player_id),
+    opp_team_id INTEGER NOT NULL REFERENCES teams(team_id),
+    season INTEGER NOT NULL,
+    week INTEGER NOT NULL,
+    grade TEXT NOT NULL,
+    score REAL NOT NULL,
+    rank_vs_league INTEGER,
+    dvp_6wk REAL,
+    pace REAL,
+    proe REAL,
+    component_scores_json TEXT,
+    generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(player_id, opp_team_id, season, week)
+);
+CREATE INDEX IF NOT EXISTS idx_matchup_cache_player ON matchup_cache(player_id, season, week);
+CREATE INDEX IF NOT EXISTS idx_matchup_cache_opp ON matchup_cache(opp_team_id, season, week);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_games_season ON games(season);
 CREATE INDEX IF NOT EXISTS idx_games_date ON games(date);

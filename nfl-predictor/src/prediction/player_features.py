@@ -5,7 +5,7 @@ Produces a fixed-order feature vector for a single (player, week, season, opp)
 tuple. Training and inference must use the exact same order — the constants in
 this module are the single source of truth.
 
-Features (13):
+Features (16):
     1.  rolling_4wk_ppr       — avg PPR over last 4 weeks
     2.  rolling_8wk_ppr       — avg PPR over last 8 weeks
     3.  season_ppg_ppr        — season-to-date PPR per game
@@ -19,6 +19,10 @@ Features (13):
     11. is_home               — 0/1
     12. weather_is_adverse    — 0/1 (dome=0)
     13. weeks_of_experience   — player's weeks played this season up to current
+    -- Phase 2 additions --
+    14. opp_pace              — opponent game pace normalised around 1.0
+    15. opp_proe              — opponent PROE proxy (qb_epa deviation from mean)
+    16. opp_pos_dvp_6wk       — opponent PPR allowed to this position (6 wks)
 """
 
 import logging
@@ -43,6 +47,10 @@ FEATURE_NAMES: List[str] = [
     'is_home',
     'weather_is_adverse',
     'weeks_of_experience',
+    # Phase 2 additions (appended — must retrain)
+    'opp_pace',
+    'opp_proe',
+    'opp_pos_dvp_6wk',
 ]
 
 FEATURE_LABELS: Dict[str, str] = {
@@ -59,6 +67,9 @@ FEATURE_LABELS: Dict[str, str] = {
     'is_home':             'Home game',
     'weather_is_adverse':  'Adverse weather',
     'weeks_of_experience': 'Weeks played',
+    'opp_pace':            'Opp game pace',
+    'opp_proe':            'Opp PROE',
+    'opp_pos_dvp_6wk':     'Opp DvP (6w)',
 }
 
 POSITIONS: Tuple[str, ...] = ('QB', 'RB', 'WR', 'TE')
@@ -108,6 +119,12 @@ def build_player_feature_vector(
     advanced stats and vegas context (which reference the game itself). Callers
     must pass `opponent_team_id`, `is_home`, and optionally Vegas/weather.
     """
+    from .matchup_engine import (
+        opp_position_dvp as _me_dvp,
+        pace_adjusted_plays as _me_pace,
+        pass_rate_over_expected as _me_proe,
+    )
+
     # Historical weekly rows (newest first), strictly before this week
     hist = db.get_player_weekly_stats(player_id, season, before_week=week, limit=20)
 
@@ -123,6 +140,9 @@ def build_player_feature_vector(
     # Opponent DvP — fantasy pts allowed to this position by opponent
     opp_dvp = 0.0
     opp_ypp = 5.5
+    opp_pace = 1.0
+    opp_proe = 0.0
+    opp_dvp_6wk = 0.0
     if opponent_team_id:
         opp_dvp = db.get_opponent_position_allowed(
             opponent_team_id, position, season, week, lookback=4,
@@ -131,6 +151,10 @@ def build_player_feature_vector(
             or db.get_advanced_stats(opponent_team_id, season - 1)
         if adv:
             opp_ypp = float(adv['yards_per_play'] or 5.5)
+        # Phase 2 features
+        opp_pace    = _me_pace(db, opponent_team_id, season)
+        opp_proe    = _me_proe(db, opponent_team_id, season)
+        opp_dvp_6wk = _me_dvp(db, opponent_team_id, position, season, week, lookback=6)
 
     vegas_total = _vegas_team_total(spread, over_under, is_home)
 
@@ -148,6 +172,10 @@ def build_player_feature_vector(
         'is_home':             1.0 if is_home else 0.0,
         'weather_is_adverse':  1.0 if weather_is_adverse else 0.0,
         'weeks_of_experience': float(len(hist)),
+        # Phase 2
+        'opp_pace':            opp_pace,
+        'opp_proe':            opp_proe,
+        'opp_pos_dvp_6wk':     opp_dvp_6wk,
     }
 
 
@@ -216,4 +244,9 @@ def build_training_rows(db, seasons: List[int], position: str) -> Tuple[np.ndarr
 
     if not X_rows:
         return np.zeros((0, len(FEATURE_NAMES))), np.zeros(0)
-    return np.vstack(X_rows), np.array(y_rows, dtype=np.float64)
+    X = np.vstack(X_rows)
+    # Guard: if stored models used 13 features, pad to current width with zeros
+    if X.shape[1] < len(FEATURE_NAMES):
+        pad = np.zeros((X.shape[0], len(FEATURE_NAMES) - X.shape[1]))
+        X = np.hstack([X, pad])
+    return X, np.array(y_rows, dtype=np.float64)

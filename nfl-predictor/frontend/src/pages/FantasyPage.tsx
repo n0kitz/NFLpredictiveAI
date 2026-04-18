@@ -7,7 +7,7 @@ import { api } from '../api/client';
 import type {
   FantasyLeaderboard, FantasyPlayerEntry, FantasyProjection,
   DraftRanking, TradeAnalysis, TradePlayer, PlayerSearchResult,
-  PowerRanking, TradeValue, RosterMatchEntry,
+  PowerRanking, TradeValue, RosterMatchEntry, MatchupGrade,
 } from '../api/types';
 import Spinner from '../components/Spinner';
 import DataBadge from '../components/DataBadge';
@@ -75,6 +75,47 @@ function MLBadge({ projection }: { projection: FantasyProjection }) {
     <MTooltip text={tip}>
       <span className="text-[9px] font-display font-bold uppercase px-1.5 py-0.5 rounded bg-accent/15 text-accent">
         ML
+      </span>
+    </MTooltip>
+  );
+}
+
+function gradeColor(grade: MatchupGrade['grade']): string {
+  switch (grade) {
+    case 'A': return '#27ae60';
+    case 'B': return '#2ecc71';
+    case 'C': return '#f39c12';
+    case 'D': return '#e67e22';
+    case 'F': return '#e74c3c';
+    default:  return '#888';
+  }
+}
+
+function MatchupGradePill({
+  playerId, week, season,
+}: { playerId: number; week: number; season: number }) {
+  const [data, setData] = useState<MatchupGrade | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    api.getMatchupGrade(playerId, week, season)
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoaded(true));
+  }, [playerId, week, season]);
+
+  if (!loaded) return <span className="text-[9px] text-text-muted px-1">…</span>;
+  if (!data) return null;
+
+  const color = gradeColor(data.grade);
+  const tip = `Grade ${data.grade} (${data.score}/100) vs ${data.opp_team_abbr ?? 'opp'}: ${data.explanation} Rank ${data.rank_vs_league}/32 (1=toughest).`;
+  return (
+    <MTooltip text={tip}>
+      <span
+        className="text-[9px] font-display font-bold uppercase px-1.5 py-0.5 rounded cursor-help"
+        style={{ color, background: `${color}22`, border: `1px solid ${color}55` }}
+      >
+        {data.grade}
       </span>
     </MTooltip>
   );
@@ -248,6 +289,7 @@ function DashboardTab() {
                           <Headshot url={p.headshot_url} name={p.full_name} />
                           <span className="flex-1 text-xs text-text-secondary truncate">{p.full_name}</span>
                           {p.model_source === 'ml' && <MLBadge projection={p} />}
+                          <MatchupGradePill playerId={p.player_id} week={week} season={season} />
                           <MTooltip text={`${p.confidence === 'low' ? `Low confidence — ${p.injury_status ?? 'limited data'}` : p.confidence === 'high' ? 'Full stats, no injury concerns' : 'Based on season average'}`}>
                             <ConfBadge conf={p.confidence} />
                           </MTooltip>

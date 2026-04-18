@@ -291,6 +291,20 @@ Replace `YYYY` with the season year (e.g. 2025).
 - **TypeScript types** — appended: `PlayoffTeamEntry`, `PlayoffConference`, `PlayoffPicture`, `UpcomingGame`, `TeamUpcoming`, `PowerRanking`, `PowerRankings`, `TradeValue`, `TradeValues`, `RosterMatchEntry`, `RosterImportResult`
 - **`client.ts`** — added: `getPlayoffPicture`, `getTeamUpcoming`, `getFantasyPowerRankings`, `getFantasyTradeValues`, `importRosterByNames`, plus all other fantasy extended methods
 
+### Phase 2 — Advanced Matchup Engine (2026-04-18)
+- **`src/prediction/matchup_engine.py`** — new module: `opp_position_dvp` (6wk PPR allowed by position), `pace_adjusted_plays` (game-tempo proxy via avg total pts), `pass_rate_over_expected` (PROE via qb_epa_per_play deviation), `neutral_script_rates` (pass/rush balance in close games), `matchup_grade` (A–F + 0–100 composite: 45% DvP, 25% YPP, 20% pace, 10% PROE)
+- **`src/prediction/player_features.py`** — expanded to 16 features: added `opp_pace` (#14), `opp_proe` (#15), `opp_pos_dvp_6wk` (#16); `build_training_rows` pads legacy 13-feature arrays to width 16
+- **`src/prediction/player_ml_model.py`** — bumped `MODEL_VERSION` to `"ml-v2"` (triggers model cache invalidation; retrain required)
+- **`src/api/schemas.py`** — added `MatchupComponentScores` + `MatchupGradeResponse` Pydantic models
+- **`src/api/app.py`** — new `GET /api/fantasy/matchup/{player_id}?week=&season=` endpoint; resolves team/opponent from schedule automatically
+- **`src/database/schema.sql`** — added `matchup_cache` table (player/opp/season/week, grade, score, rank, dvp_6wk, pace, proe, component_scores_json)
+- **`src/database/db.py`** — MIGRATIONS v7: `CREATE TABLE matchup_cache`
+- **`frontend/src/api/types.ts`** — added `MatchupComponentScores` + `MatchupGrade` interfaces
+- **`frontend/src/api/client.ts`** — added `getMatchupGrade(playerId, week, season)` method
+- **`frontend/src/pages/FantasyPage.tsx`** — added `gradeColor()`, `MatchupGradePill` component (lazy-fetches per player, shows A–F pill with tooltip: score/100, explanation, rank vs league); pill added to Dashboard projection rows alongside MLBadge
+- **`tests/test_matchup_engine.py`** — 34 new tests (unit + integration); 175 total tests now
+- **`tests/test_player_ml.py`** — updated `test_feature_names_length_matches_positions` from 13 → 16
+
 ## Pending Data Operations (run after code changes)
 ```bash
 cd nfl-predictor

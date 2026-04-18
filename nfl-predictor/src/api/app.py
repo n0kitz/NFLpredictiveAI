@@ -35,6 +35,7 @@ from .schemas import (
     FantasyProjectionEntry, StartSitPlayerEntry, StartSitResponse,
     DraftRankingEntry, TradePlayerEntry, TradeAnalysisResponse,
     FantasyRosterRequest, TradeAnalyzeRequest, ImportByNamesRequest,
+    MatchupComponentScores, MatchupGradeResponse,
     ValuePick, ValuePicksResponse,
     ErrorResponse,
 )
@@ -1757,6 +1758,94 @@ def get_trade_values(week: int = Query(...), season: int = Query(2024), db: Data
             "schedule_difficulty": "easy" if avg_ms >= 1.1 else "hard" if avg_ms <= 0.9 else "neutral",
         })
     return {"week": week, "season": season, "players": result, "count": len(result)}
+
+
+# ── Phase 2: Matchup Grade ─────────────────────────────
+
+@app.get(
+    "/api/fantasy/matchup/{player_id}",
+    response_model=MatchupGradeResponse,
+    tags=["fantasy"],
+)
+def get_matchup_grade(
+    player_id: int,
+    week: int = Query(..., description="NFL week number"),
+    season: int = Query(2024),
+    db: Database = Depends(get_db),
+):
+    """Advanced matchup grade for a player vs their scheduled opponent.
+
+    Returns an A–F letter grade plus a 0–100 composite score built from:
+    6-week position DvP (45%), YPP allowed (25%), game pace (20%), PROE (10%).
+    """
+    from ..prediction.matchup_engine import matchup_grade
+
+    player = db.get_player_by_id(player_id)
+    if not player:
+        raise HTTPException(status_code=404, detail=f"Player {player_id} not found")
+
+    pos = (player['position'] or '').upper()
+
+    # Resolve team and opponent from the week's schedule
+    team_row = db.fetchone(
+        """
+        SELECT re.team_id, t.abbreviation
+        FROM roster_entries re
+        JOIN teams t ON t.team_id = re.team_id
+        WHERE re.player_id = ? ORDER BY re.season DESC LIMIT 1
+        """,
+        (player_id,),
+    )
+    if not team_row:
+        raise HTTPException(status_code=404, detail="Player has no team roster entry")
+
+    team_id = team_row['team_id']
+    game = db.fetchone(
+        """
+        SELECT game_id, home_team_id, away_team_id FROM games
+        WHERE season = ?
+          AND (CAST(week AS INTEGER) = ? OR week = CAST(? AS TEXT))
+          AND (home_team_id = ? OR away_team_id = ?)
+        LIMIT 1
+        """,
+        (season, week, str(week), team_id, team_id),
+    )
+    if not game:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No game found for player's team in season {season} week {week}",
+        )
+
+    opp_team_id = (
+        game['away_team_id'] if game['home_team_id'] == team_id else game['home_team_id']
+    )
+    opp_team_row = db.fetchone(
+        "SELECT abbreviation FROM teams WHERE team_id = ?", (opp_team_id,)
+    )
+    opp_abbr = opp_team_row['abbreviation'] if opp_team_row else None
+
+    result = matchup_grade(db, player_id, opp_team_id, pos, season, week)
+
+    return MatchupGradeResponse(
+        player_id=player_id,
+        full_name=player['full_name'],
+        position=pos or None,
+        team_abbr=team_row['abbreviation'],
+        opp_team_id=opp_team_id,
+        opp_team_abbr=opp_abbr,
+        week=week,
+        season=season,
+        grade=result['grade'],
+        score=result['score'],
+        rank_vs_league=result['rank_vs_league'],
+        explanation=result['explanation'],
+        dvp_6wk=result['dvp_6wk'],
+        avg_league_dvp=result['avg_league_dvp'],
+        opp_ypp=result['opp_ypp'],
+        pace=result['pace'],
+        proe=result['proe'],
+        component_scores=MatchupComponentScores(**result['component_scores']),
+    )
 
 
 # ── Value Picks ────────────────────────────────────────

@@ -370,6 +370,21 @@ CREATE TABLE IF NOT EXISTS matchup_cache (
 CREATE INDEX IF NOT EXISTS idx_matchup_cache_player ON matchup_cache(player_id, season, week);
 CREATE INDEX IF NOT EXISTS idx_matchup_cache_opp ON matchup_cache(opp_team_id, season, week);
 
+-- Phase 3: user rosters (player pool for lineup optimizer)
+CREATE TABLE IF NOT EXISTS user_rosters (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL DEFAULT 'default',
+    player_id INTEGER NOT NULL REFERENCES players(player_id),
+    season INTEGER NOT NULL,
+    week INTEGER NOT NULL,
+    salary INTEGER DEFAULT 0,
+    is_locked INTEGER DEFAULT 0,
+    is_excluded INTEGER DEFAULT 0,
+    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, player_id, season, week)
+);
+CREATE INDEX IF NOT EXISTS idx_user_rosters_week ON user_rosters(user_id, season, week);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_games_season ON games(season);
 CREATE INDEX IF NOT EXISTS idx_games_date ON games(date);

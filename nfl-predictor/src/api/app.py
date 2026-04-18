@@ -36,6 +36,8 @@ from .schemas import (
     DraftRankingEntry, TradePlayerEntry, TradeAnalysisResponse,
     FantasyRosterRequest, TradeAnalyzeRequest, ImportByNamesRequest,
     MatchupComponentScores, MatchupGradeResponse,
+    OptimizerPlayerInput, OptimizeRequest, OptimizeDFSRequest,
+    LineupPlayerOut, LineupResult, ExposureEntry, OptimizeResponse,
     ValuePick, ValuePicksResponse,
     ErrorResponse,
 )
@@ -1758,6 +1760,131 @@ def get_trade_values(week: int = Query(...), season: int = Query(2024), db: Data
             "schedule_difficulty": "easy" if avg_ms >= 1.1 else "hard" if avg_ms <= 0.9 else "neutral",
         })
     return {"week": week, "season": season, "players": result, "count": len(result)}
+
+
+# ── Phase 3: Lineup Optimizer ──────────────────────────
+
+def _build_lineup_response(result: dict) -> OptimizeResponse:
+    lineups = []
+    for lu in result['lineups']:
+        players_out = [
+            LineupPlayerOut(
+                player_id=p['player_id'],
+                full_name=p['full_name'],
+                position=p['position'],
+                team_abbr=p['team_abbr'],
+                headshot_url=p.get('headshot_url'),
+                slot=p['slot'],
+                projected_points=p['projected_points'],
+                salary=p.get('salary', 0),
+            )
+            for p in lu['players']
+        ]
+        lineups.append(LineupResult(
+            rank=lu['rank'],
+            players=players_out,
+            projected_points=lu['projected_points'],
+            total_salary=lu['total_salary'],
+            correlation_bonus=lu['correlation_bonus'],
+        ))
+    exposure = {
+        str(pid): ExposureEntry(
+            count=e['count'], pct=e['pct'],
+            full_name=e['full_name'], position=e['position'],
+        )
+        for pid, e in result['exposure'].items()
+    }
+    return OptimizeResponse(
+        lineups=lineups,
+        exposure=exposure,
+        total_lineups=result['total_lineups'],
+        slots=result['slots'],
+    )
+
+
+@app.post(
+    "/api/fantasy/optimize",
+    response_model=OptimizeResponse,
+    tags=["fantasy"],
+)
+def optimize_lineup(req: OptimizeRequest):
+    """Season-long lineup optimizer. Provide a player pool + slot config."""
+    from ..prediction.lineup_optimizer import LineupPlayer, optimize_lineup as _opt
+
+    pool = [
+        LineupPlayer(
+            player_id=p.player_id, full_name=p.full_name, position=p.position,
+            team_id=p.team_id, team_abbr=p.team_abbr,
+            projected_points=p.projected_points, salary=p.salary,
+            is_locked=p.is_locked, is_excluded=p.is_excluded,
+            headshot_url=p.headshot_url, opponent_team_id=p.opponent_team_id,
+        )
+        for p in req.players
+    ]
+    try:
+        result = _opt(
+            players=pool,
+            slots=req.slots,
+            flex_positions=set(req.flex_positions),
+            salary_cap=req.salary_cap,
+            n_lineups=min(req.n_lineups, 150),
+            correlations=req.correlations,
+            max_from_team=req.max_from_team,
+        )
+    except ImportError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return _build_lineup_response(result)
+
+
+@app.post(
+    "/api/fantasy/optimize/dfs",
+    response_model=OptimizeResponse,
+    tags=["fantasy"],
+)
+def optimize_dfs(req: OptimizeDFSRequest):
+    """DFS lineup optimizer for DraftKings ('dk') or FanDuel ('fd')."""
+    from ..prediction.lineup_optimizer import (
+        LineupPlayer, optimize_lineup as _opt, DFS_SLOTS,
+    )
+
+    site = req.site.lower()
+    if site not in DFS_SLOTS:
+        raise HTTPException(status_code=400, detail=f"Unknown site '{site}'. Use 'dk' or 'fd'.")
+
+    cfg = DFS_SLOTS[site]
+    locked   = set(req.locked_player_ids)
+    excluded = set(req.excluded_player_ids)
+
+    pool = [
+        LineupPlayer(
+            player_id=p.player_id, full_name=p.full_name, position=p.position,
+            team_id=p.team_id, team_abbr=p.team_abbr,
+            projected_points=p.projected_points, salary=p.salary,
+            is_locked=(p.player_id in locked or p.is_locked),
+            is_excluded=(p.player_id in excluded or p.is_excluded),
+            headshot_url=p.headshot_url, opponent_team_id=p.opponent_team_id,
+        )
+        for p in req.players
+    ]
+    try:
+        result = _opt(
+            players=pool,
+            slots=cfg['slots'],
+            flex_positions=cfg['flex_positions'],
+            salary_cap=cfg['salary_cap'],
+            n_lineups=min(req.n_lineups, 150),
+            correlations=req.correlations,
+            max_from_team=cfg['max_from_team'],
+        )
+    except ImportError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return _build_lineup_response(result)
 
 
 # ── Phase 2: Matchup Grade ─────────────────────────────

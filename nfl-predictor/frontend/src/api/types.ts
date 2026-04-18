@@ -524,6 +524,74 @@ export interface MatchupGrade {
   component_scores: MatchupComponentScores;
 }
 
+// ── Phase 3: Lineup Optimizer ─────────────────────────────────────────────────
+
+export interface OptimizerPlayerInput {
+  player_id: number;
+  full_name: string;
+  position: string;
+  team_id: number;
+  team_abbr: string;
+  projected_points: number;
+  salary: number;
+  is_locked: boolean;
+  is_excluded: boolean;
+  headshot_url: string | null;
+  opponent_team_id: number | null;
+}
+
+export interface LineupPlayerOut {
+  player_id: number;
+  full_name: string;
+  position: string;
+  team_abbr: string;
+  headshot_url: string | null;
+  slot: string;
+  projected_points: number;
+  salary: number;
+}
+
+export interface LineupResult {
+  rank: number;
+  players: LineupPlayerOut[];
+  projected_points: number;
+  total_salary: number;
+  correlation_bonus: number;
+}
+
+export interface ExposureEntry {
+  count: number;
+  pct: number;
+  full_name: string;
+  position: string;
+}
+
+export interface OptimizeResponse {
+  lineups: LineupResult[];
+  exposure: Record<string, ExposureEntry>;
+  total_lineups: number;
+  slots: Record<string, number>;
+}
+
+export interface OptimizeRequest {
+  players: OptimizerPlayerInput[];
+  slots: Record<string, number>;
+  flex_positions?: string[];
+  salary_cap?: number | null;
+  n_lineups?: number;
+  correlations?: boolean;
+  max_from_team?: number;
+}
+
+export interface OptimizeDFSRequest {
+  players: OptimizerPlayerInput[];
+  site: 'dk' | 'fd';
+  n_lineups?: number;
+  correlations?: boolean;
+  locked_player_ids?: number[];
+  excluded_player_ids?: number[];
+}
+
 // ── Value Picks ───────────────────────────────────────────────────────────────
 
 export interface ValuePick {

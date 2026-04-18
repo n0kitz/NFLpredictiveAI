@@ -40,6 +40,19 @@ MIGRATIONS: List[str] = [
         generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(player_id, opp_team_id, season, week)
     )""",
+    # v8: Phase 3 user rosters for lineup optimizer
+    """CREATE TABLE IF NOT EXISTS user_rosters (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL DEFAULT 'default',
+        player_id INTEGER NOT NULL,
+        season INTEGER NOT NULL,
+        week INTEGER NOT NULL,
+        salary INTEGER DEFAULT 0,
+        is_locked INTEGER DEFAULT 0,
+        is_excluded INTEGER DEFAULT 0,
+        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, player_id, season, week)
+    )""",
 ]
 
 

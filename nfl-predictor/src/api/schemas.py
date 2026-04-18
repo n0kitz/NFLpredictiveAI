@@ -1,7 +1,7 @@
 """Pydantic response/request schemas for the NFL API."""
 
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Tuple
 from enum import Enum
 
 
@@ -619,6 +619,74 @@ class MatchupGradeResponse(BaseModel):
     pace: float
     proe: float
     component_scores: MatchupComponentScores
+
+
+# ── Phase 3: Lineup Optimizer ──────────────────────────
+
+class OptimizerPlayerInput(BaseModel):
+    player_id: int
+    full_name: str
+    position: str
+    team_id: int
+    team_abbr: str
+    projected_points: float
+    salary: int = 0
+    is_locked: bool = False
+    is_excluded: bool = False
+    headshot_url: Optional[str] = None
+    opponent_team_id: Optional[int] = None
+
+
+class OptimizeRequest(BaseModel):
+    players: List[OptimizerPlayerInput]          # full player pool
+    slots: Dict[str, int]                        # e.g. {"QB":1,"RB":2,"WR":2,"TE":1,"FLEX":1,"K":1}
+    flex_positions: List[str] = ['RB', 'WR', 'TE']
+    salary_cap: Optional[int] = None
+    n_lineups: int = 20
+    correlations: bool = True
+    max_from_team: int = 8
+
+
+class OptimizeDFSRequest(BaseModel):
+    players: List[OptimizerPlayerInput]
+    site: str = 'dk'                             # 'dk' or 'fd'
+    n_lineups: int = 20
+    correlations: bool = True
+    locked_player_ids: List[int] = []
+    excluded_player_ids: List[int] = []
+
+
+class LineupPlayerOut(BaseModel):
+    player_id: int
+    full_name: str
+    position: str
+    team_abbr: str
+    headshot_url: Optional[str] = None
+    slot: str
+    projected_points: float
+    salary: int = 0
+
+
+class LineupResult(BaseModel):
+    rank: int
+    players: List[LineupPlayerOut]
+    projected_points: float
+    total_salary: int
+    correlation_bonus: float
+
+
+class ExposureEntry(BaseModel):
+    count: int
+    pct: float
+    full_name: str
+    position: str
+
+
+class OptimizeResponse(BaseModel):
+    lineups: List[LineupResult]
+    exposure: Dict[str, ExposureEntry]
+    total_lineups: int
+    slots: Dict[str, int]
 
 
 # ── Value Picks ────────────────────────────────────────

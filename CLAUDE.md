@@ -305,6 +305,18 @@ Replace `YYYY` with the season year (e.g. 2025).
 - **`tests/test_matchup_engine.py`** — 34 new tests (unit + integration); 175 total tests now
 - **`tests/test_player_ml.py`** — updated `test_feature_names_length_matches_positions` from 13 → 16
 
+### Phase 3 — Lineup Optimizer (2026-04-18)
+- **`src/prediction/lineup_optimizer.py`** — MILP via PuLP/CBC: `optimize_lineup` (N distinct lineups, iterative exclusion), `_solve_once` (one MILP pass), `_correlation_bonus_map` (QB-stack +1.5, bring-back +0.8, RB/DEF −1.0); `DFS_SLOTS` for DK/FD; `players_from_projections` builder; bug fix: force ineligible player-slot variables to 0
+- **`src/api/schemas.py`** — added Phase 3 schemas: `OptimizerPlayerInput`, `OptimizeRequest`, `OptimizeDFSRequest`, `LineupPlayerOut`, `LineupResult`, `ExposureEntry`, `OptimizeResponse`; also added `Dict, Tuple` to typing imports
+- **`src/api/app.py`** — new `POST /api/fantasy/optimize` and `POST /api/fantasy/optimize/dfs` endpoints; `_build_lineup_response` helper
+- **`src/database/schema.sql`** — added `user_rosters` table
+- **`src/database/db.py`** — migration v8: `CREATE TABLE user_rosters`
+- **`requirements.txt`** — added `pulp>=2.7.0`
+- **`frontend/src/api/types.ts`** — added `OptimizerPlayerInput`, `LineupPlayerOut`, `LineupResult`, `ExposureEntry`, `OptimizeResponse`, `OptimizeRequest`, `OptimizeDFSRequest` interfaces
+- **`frontend/src/api/client.ts`** — added `optimizeLineup(body)`, `optimizeDFS(body)` methods
+- **`frontend/src/pages/FantasyPage.tsx`** — `OptimizerTab` component (config panel: week/mode/salary cap/n_lineups/correlations, player table per lineup, exposure bars); `'Optimizer'` tab added; wired into tab content switch
+- **`tests/test_lineup_optimizer.py`** — 19 new tests (LineupPlayer, correlation map, optimize_lineup, players_from_projections); 194 total tests now
+
 ## Pending Data Operations (run after code changes)
 ```bash
 cd nfl-predictor

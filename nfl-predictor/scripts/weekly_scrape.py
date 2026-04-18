@@ -199,7 +199,35 @@ def main():
     except Exception as e:
         logger.error(f"Roster fetch failed (non-fatal): {e}")
 
-    # Generate fantasy projections for the current week
+    # Import weekly player stats (nfl_data_py) for ML features
+    try:
+        from src.scraper.player_weekly_importer import import_player_weekly_stats
+        rows = import_player_weekly_stats(db, [current_season])
+        logger.info(f"Weekly player stats: {rows} rows upserted for {current_season}")
+    except Exception as e:
+        logger.error(f"Weekly player stats import failed (non-fatal): {e}")
+
+    # Retrain per-position ML fantasy models (2018 → prior season)
+    try:
+        from src.prediction.player_features import POSITIONS, build_training_rows
+        from src.prediction.player_ml_model import train_position_model
+        train_seasons = list(range(2018, current_season))
+        if len(train_seasons) >= 2:
+            for pos in POSITIONS:
+                X, y = build_training_rows(db, train_seasons, pos)
+                if X.shape[0] >= 200:
+                    res = train_position_model(X, y, pos)
+                    logger.info(
+                        f"Retrained {pos}: MAE {res['cv_mae']} (n={res['n_training_samples']})"
+                    )
+                else:
+                    logger.warning(f"{pos}: not enough training rows ({X.shape[0]}) — keeping prior model")
+        else:
+            logger.info("Skipping ML retrain — insufficient training seasons")
+    except Exception as e:
+        logger.error(f"ML retrain failed (non-fatal): {e}")
+
+    # Generate fantasy projections for the current week (uses ML if loaded)
     try:
         from src.prediction.fantasy_scorer import FantasyScorer
         scorer = FantasyScorer(db)

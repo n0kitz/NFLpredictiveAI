@@ -492,6 +492,14 @@ class FantasyLeaderboardResponse(BaseModel):
 
 # ── Fantasy (extended) ─────────────────────────────────
 
+class FantasyContribution(BaseModel):
+    feature: str
+    label: str
+    shap_value: float
+    direction: str  # 'up' | 'down' | 'neutral'
+    feature_value: float
+
+
 class FantasyProjectionEntry(BaseModel):
     player_id: int
     full_name: str
@@ -507,6 +515,12 @@ class FantasyProjectionEntry(BaseModel):
     confidence: str = 'medium'
     injury_status: Optional[str] = None
     weather_impact: bool = False
+    # Phase 1 ML extensions
+    model_source: str = 'heuristic'  # 'heuristic' | 'ml'
+    model_version: Optional[str] = None
+    floor_ppr: Optional[float] = None
+    ceiling_ppr: Optional[float] = None
+    contributions: List[FantasyContribution] = []
 
 
 class StartSitPlayerEntry(BaseModel):

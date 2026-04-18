@@ -17,6 +17,12 @@ SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 MIGRATIONS: List[str] = [
     # v1: add qb_epa_per_play column to team_advanced_stats (backfill for pre-existing DBs)
     "ALTER TABLE team_advanced_stats ADD COLUMN qb_epa_per_play REAL DEFAULT 0",
+    # v2-v6: Phase 1 ML projection columns on fantasy_projections
+    "ALTER TABLE fantasy_projections ADD COLUMN model_version TEXT",
+    "ALTER TABLE fantasy_projections ADD COLUMN model_source TEXT DEFAULT 'heuristic'",
+    "ALTER TABLE fantasy_projections ADD COLUMN floor_ppr REAL",
+    "ALTER TABLE fantasy_projections ADD COLUMN ceiling_ppr REAL",
+    "ALTER TABLE fantasy_projections ADD COLUMN contributions_json TEXT",
 ]
 
 
@@ -220,6 +226,49 @@ class Database:
                     UNIQUE(player_id, season, week)
                 )
             """)
+            self._connection.execute("""
+                CREATE TABLE IF NOT EXISTS player_weekly_stats (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    player_id INTEGER NOT NULL,
+                    season INTEGER NOT NULL,
+                    week INTEGER NOT NULL,
+                    team_id INTEGER,
+                    opponent_team_id INTEGER,
+                    position TEXT,
+                    is_home INTEGER DEFAULT 0,
+                    snaps INTEGER DEFAULT 0,
+                    snap_pct REAL DEFAULT 0,
+                    routes INTEGER DEFAULT 0,
+                    route_pct REAL DEFAULT 0,
+                    targets INTEGER DEFAULT 0,
+                    receptions INTEGER DEFAULT 0,
+                    rec_yards INTEGER DEFAULT 0,
+                    rec_tds INTEGER DEFAULT 0,
+                    target_share REAL DEFAULT 0,
+                    air_yards INTEGER DEFAULT 0,
+                    adot REAL DEFAULT 0,
+                    rush_attempts INTEGER DEFAULT 0,
+                    rush_yards INTEGER DEFAULT 0,
+                    rush_tds INTEGER DEFAULT 0,
+                    pass_attempts INTEGER DEFAULT 0,
+                    pass_completions INTEGER DEFAULT 0,
+                    pass_yards INTEGER DEFAULT 0,
+                    pass_tds INTEGER DEFAULT 0,
+                    interceptions INTEGER DEFAULT 0,
+                    fantasy_points_ppr REAL DEFAULT 0,
+                    fantasy_points_standard REAL DEFAULT 0,
+                    UNIQUE(player_id, season, week)
+                )
+            """)
+            self._connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_player_weekly_season_week ON player_weekly_stats(season, week)"
+            )
+            self._connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_player_weekly_player ON player_weekly_stats(player_id, season, week DESC)"
+            )
+            self._connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_player_weekly_opp ON player_weekly_stats(opponent_team_id, season, week)"
+            )
             self._connection.execute("""
                 CREATE TABLE IF NOT EXISTS draft_rankings (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1254,8 +1303,10 @@ class Database:
             INSERT OR REPLACE INTO fantasy_projections
                 (player_id, season, week, opponent_team_id,
                  projected_points_ppr, projected_points_std,
-                 matchup_score, opportunity_score, confidence)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 matchup_score, opportunity_score, confidence,
+                 model_version, model_source,
+                 floor_ppr, ceiling_ppr, contributions_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data['player_id'], data['season'], data['week'],
@@ -1265,8 +1316,79 @@ class Database:
                 data.get('matchup_score', 1.0),
                 data.get('opportunity_score', 0.0),
                 data.get('confidence', 'medium'),
+                data.get('model_version'),
+                data.get('model_source', 'heuristic'),
+                data.get('floor_ppr'),
+                data.get('ceiling_ppr'),
+                data.get('contributions_json'),
             ),
         )
+
+    def upsert_player_weekly_stats(self, stats: Dict[str, Any]) -> None:
+        """Insert or replace a per-player per-week stat row."""
+        self.execute(
+            """
+            INSERT OR REPLACE INTO player_weekly_stats
+                (player_id, season, week, team_id, opponent_team_id, position, is_home,
+                 snaps, snap_pct, routes, route_pct,
+                 targets, receptions, rec_yards, rec_tds, target_share, air_yards, adot,
+                 rush_attempts, rush_yards, rush_tds,
+                 pass_attempts, pass_completions, pass_yards, pass_tds, interceptions,
+                 fantasy_points_ppr, fantasy_points_standard)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                stats['player_id'], stats['season'], stats['week'],
+                stats.get('team_id'), stats.get('opponent_team_id'),
+                stats.get('position'), 1 if stats.get('is_home') else 0,
+                stats.get('snaps', 0), stats.get('snap_pct', 0.0),
+                stats.get('routes', 0), stats.get('route_pct', 0.0),
+                stats.get('targets', 0), stats.get('receptions', 0),
+                stats.get('rec_yards', 0), stats.get('rec_tds', 0),
+                stats.get('target_share', 0.0), stats.get('air_yards', 0),
+                stats.get('adot', 0.0),
+                stats.get('rush_attempts', 0), stats.get('rush_yards', 0),
+                stats.get('rush_tds', 0),
+                stats.get('pass_attempts', 0), stats.get('pass_completions', 0),
+                stats.get('pass_yards', 0), stats.get('pass_tds', 0),
+                stats.get('interceptions', 0),
+                stats.get('fantasy_points_ppr', 0.0),
+                stats.get('fantasy_points_standard', 0.0),
+            ),
+        )
+
+    def get_player_weekly_stats(
+        self, player_id: int, season: int, before_week: Optional[int] = None, limit: int = 20,
+    ) -> List[sqlite3.Row]:
+        """Most recent weekly rows for a player, newest first, optionally filtered < before_week."""
+        if before_week is None:
+            return self.fetchall(
+                "SELECT * FROM player_weekly_stats WHERE player_id=? AND season=? ORDER BY week DESC LIMIT ?",
+                (player_id, season, limit),
+            )
+        return self.fetchall(
+            "SELECT * FROM player_weekly_stats WHERE player_id=? AND season=? AND week < ? ORDER BY week DESC LIMIT ?",
+            (player_id, season, before_week, limit),
+        )
+
+    def get_opponent_position_allowed(
+        self, opponent_team_id: int, position: str, season: int, before_week: int, lookback: int = 4,
+    ) -> float:
+        """Avg fantasy points (PPR) allowed by opponent to this position over the last N weeks."""
+        rows = self.fetchall(
+            """
+            SELECT AVG(fantasy_points_ppr) as avg_ppr
+            FROM (
+                SELECT fantasy_points_ppr FROM player_weekly_stats
+                WHERE opponent_team_id=? AND season=? AND week < ? AND position=?
+                ORDER BY week DESC LIMIT ?
+            )
+            """,
+            (opponent_team_id, season, before_week, position, lookback * 32),
+        )
+        if not rows or rows[0]['avg_ppr'] is None:
+            return 0.0
+        return float(rows[0]['avg_ppr'])
 
     def get_fantasy_projections(
         self,

@@ -276,6 +276,12 @@ CREATE TABLE IF NOT EXISTS fantasy_projections (
     matchup_score REAL,
     opportunity_score REAL,
     confidence TEXT DEFAULT 'medium',
+    -- Phase 1 ML additions
+    model_version TEXT,                -- e.g. 'ml-v1-WR', or null for heuristic
+    model_source TEXT DEFAULT 'heuristic',  -- 'heuristic' | 'ml'
+    floor_ppr REAL,                    -- P10 (placeholder until Phase 2)
+    ceiling_ppr REAL,                  -- P90 (placeholder until Phase 2)
+    contributions_json TEXT,           -- JSON list of top SHAP contributions
     generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(player_id, season, week)
 );
@@ -293,6 +299,43 @@ CREATE TABLE IF NOT EXISTS draft_rankings (
     notes TEXT,
     UNIQUE(season, scoring_format, player_id)
 );
+
+-- Weekly per-player stats (nfl_data_py weekly import) — powers ML player projections
+CREATE TABLE IF NOT EXISTS player_weekly_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(player_id),
+    season INTEGER NOT NULL,
+    week INTEGER NOT NULL,
+    team_id INTEGER REFERENCES teams(team_id),
+    opponent_team_id INTEGER REFERENCES teams(team_id),
+    position TEXT,
+    is_home INTEGER DEFAULT 0,
+    snaps INTEGER DEFAULT 0,
+    snap_pct REAL DEFAULT 0,
+    routes INTEGER DEFAULT 0,
+    route_pct REAL DEFAULT 0,
+    targets INTEGER DEFAULT 0,
+    receptions INTEGER DEFAULT 0,
+    rec_yards INTEGER DEFAULT 0,
+    rec_tds INTEGER DEFAULT 0,
+    target_share REAL DEFAULT 0,
+    air_yards INTEGER DEFAULT 0,
+    adot REAL DEFAULT 0,
+    rush_attempts INTEGER DEFAULT 0,
+    rush_yards INTEGER DEFAULT 0,
+    rush_tds INTEGER DEFAULT 0,
+    pass_attempts INTEGER DEFAULT 0,
+    pass_completions INTEGER DEFAULT 0,
+    pass_yards INTEGER DEFAULT 0,
+    pass_tds INTEGER DEFAULT 0,
+    interceptions INTEGER DEFAULT 0,
+    fantasy_points_ppr REAL DEFAULT 0,
+    fantasy_points_standard REAL DEFAULT 0,
+    UNIQUE(player_id, season, week)
+);
+CREATE INDEX IF NOT EXISTS idx_player_weekly_season_week ON player_weekly_stats(season, week);
+CREATE INDEX IF NOT EXISTS idx_player_weekly_player ON player_weekly_stats(player_id, season, week DESC);
+CREATE INDEX IF NOT EXISTS idx_player_weekly_opp ON player_weekly_stats(opponent_team_id, season, week);
 
 -- Weekly QB starts (per-game starter EPA, used for rolling 4-game feature)
 CREATE TABLE IF NOT EXISTS weekly_qb_starts (

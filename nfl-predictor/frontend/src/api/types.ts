@@ -301,6 +301,14 @@ export interface AccuracyStats {
 
 // ── Fantasy (extended) ───────────────────────────────────────────────
 
+export interface FantasyContribution {
+  feature: string;
+  label: string;
+  shap_value: number;
+  direction: 'up' | 'down' | 'neutral';
+  feature_value: number;
+}
+
 export interface FantasyProjection {
   player_id: number;
   full_name: string;
@@ -316,6 +324,12 @@ export interface FantasyProjection {
   confidence: string;
   injury_status: string | null;
   weather_impact: boolean;
+  // Phase 1 ML extensions
+  model_source: 'heuristic' | 'ml';
+  model_version: string | null;
+  floor_ppr: number | null;
+  ceiling_ppr: number | null;
+  contributions: FantasyContribution[];
 }
 
 export interface StartSitPlayer {

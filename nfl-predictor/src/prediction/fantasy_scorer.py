@@ -1,7 +1,20 @@
 """Fantasy Football scorer: projections, matchup scoring, draft rankings, trade analysis."""
 
+import json
 import logging
 from typing import Any, Dict, List, Optional
+
+from .player_features import (
+    FEATURE_NAMES as PLAYER_FEATURE_NAMES,
+    build_player_feature_vector,
+    feature_dict_to_array,
+)
+from .player_ml_model import (
+    MODEL_VERSION as PLAYER_MODEL_VERSION,
+    explain_player_prediction,
+    get_cache as get_player_model_cache,
+    predict_player_points,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -272,19 +285,27 @@ class FantasyScorer:
         ):
             adv_stats[r['team_id']] = r
 
-        # ── 6. Over/under for this week keyed by game_id ─────────────────────
+        # ── 6. Over/under + spread for this week keyed by game_id ────────────
         ou_by_game: Dict[int, float] = {}
+        spread_by_game: Dict[int, float] = {}
         for row in self.db.fetchall(
             """
-            SELECT go.game_id, go.over_under FROM game_odds go
+            SELECT go.game_id, go.over_under, go.opening_spread FROM game_odds go
             JOIN games g ON go.game_id = g.game_id
             WHERE g.season = ?
               AND (CAST(g.week AS INTEGER) = ? OR g.week = CAST(? AS TEXT))
-              AND go.over_under IS NOT NULL
             """,
             (season, week, str(week)),
         ):
-            ou_by_game[row['game_id']] = float(row['over_under'])
+            if row['over_under'] is not None:
+                ou_by_game[row['game_id']] = float(row['over_under'])
+            if row['opening_spread'] is not None:
+                spread_by_game[row['game_id']] = float(row['opening_spread'])
+
+        # Pre-warm ML model cache (one joblib load per position)
+        model_cache = get_player_model_cache()
+        ml_positions = {pos: model_cache.get_model(pos) is not None
+                        for pos in ('QB', 'RB', 'WR', 'TE')}
 
         # ── Loop: compute projections from prefetched data ───────────────────
         results: List[Dict[str, Any]] = []
@@ -363,6 +384,57 @@ class FantasyScorer:
                 2,
             )
 
+            # ── ML override (when a model for this position is loaded) ──────
+            model_source: str = 'heuristic'
+            model_version: Optional[str] = None
+            contributions: list = []
+            floor_ppr: Optional[float] = None
+            ceiling_ppr: Optional[float] = None
+
+            # Skip ML when player is ruled out — keep the zeroed heuristic output
+            ruled_out = injury_status in ('Out', 'IR', 'PUP')
+
+            if ml_positions.get(pos) and not ruled_out and game:
+                game_id = game['game_id']
+                wx = weather_by_home.get(game['home_team_id'])
+                adverse = bool(wx and wx['is_adverse'])
+                feats = build_player_feature_vector(
+                    self.db,
+                    player_id=player_id,
+                    position=pos,
+                    season=season,
+                    week=week,
+                    opponent_team_id=opponent_team_id,
+                    is_home=(game['home_team_id'] == team_id),
+                    spread=spread_by_game.get(game_id),
+                    over_under=ou_by_game.get(game_id),
+                    weather_is_adverse=adverse,
+                )
+                feat_arr = feature_dict_to_array(feats)
+                ml_pred = predict_player_points(feat_arr, pos)
+                if ml_pred is not None:
+                    # Apply injury multiplier (Doubtful/Questionable only — Out is skipped above)
+                    inj_mult = 1.0
+                    if injury_status == 'Doubtful':
+                        inj_mult = 0.2
+                    elif injury_status == 'Questionable':
+                        inj_mult = 0.7
+                    proj_ppr = ml_pred * inj_mult
+                    # Scale standard projection from the PPR/Standard ratio of season base
+                    if base_ppr > 0:
+                        proj_std = proj_ppr * (base_std / base_ppr)
+                    else:
+                        proj_std = proj_ppr * 0.85
+                    model_source = 'ml'
+                    model_version = f"{PLAYER_MODEL_VERSION}-{pos}"
+                    contributions = explain_player_prediction(feat_arr, feats, pos, top_k=5)
+                    # Simple placeholder floor/ceiling (±25%) until Phase 2 adds MC sims
+                    floor_ppr = round(proj_ppr * 0.70, 2)
+                    ceiling_ppr = round(proj_ppr * 1.35, 2)
+                    # Confidence bumps up when we have 4+ weeks of recent data
+                    if feats.get('weeks_of_experience', 0) >= 4 and injury_status is None:
+                        confidence = 'high'
+
             proj: Dict[str, Any] = {
                 'player_id':            player_id,
                 'full_name':            name,
@@ -379,6 +451,11 @@ class FantasyScorer:
                 'opponent_team_id':     opponent_team_id,
                 'team_abbr':            p['team_abbr'],
                 'headshot_url':         p['headshot_url'],
+                'model_source':         model_source,
+                'model_version':        model_version,
+                'floor_ppr':            floor_ppr,
+                'ceiling_ppr':          ceiling_ppr,
+                'contributions':        contributions,
             }
 
             self.db.upsert_fantasy_projection({
@@ -391,6 +468,11 @@ class FantasyScorer:
                 'matchup_score':        matchup_score,
                 'opportunity_score':    opp_score,
                 'confidence':           confidence,
+                'model_source':         model_source,
+                'model_version':        model_version,
+                'floor_ppr':            floor_ppr,
+                'ceiling_ppr':          ceiling_ppr,
+                'contributions_json':   json.dumps(contributions) if contributions else None,
             })
 
             results.append(proj)

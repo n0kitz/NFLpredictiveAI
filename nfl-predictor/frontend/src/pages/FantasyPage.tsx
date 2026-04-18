@@ -65,6 +65,21 @@ function ConfBadge({ conf }: { conf: string }) {
   return <span className={`text-[9px] font-display font-bold uppercase px-1.5 py-0.5 rounded ${style}`}>{conf}</span>;
 }
 
+function MLBadge({ projection }: { projection: FantasyProjection }) {
+  const contribs = projection.contributions ?? [];
+  const top = contribs.slice(0, 3);
+  const tip = top.length === 0
+    ? `ML model ${projection.model_version ?? ''} — floor ${projection.floor_ppr?.toFixed(1) ?? '—'} / ceiling ${projection.ceiling_ppr?.toFixed(1) ?? '—'} PPR`
+    : `ML ${projection.model_version ?? ''} top drivers: ${top.map((c) => `${c.direction === 'up' ? '↑' : c.direction === 'down' ? '↓' : '·'}${c.label} ${c.shap_value >= 0 ? '+' : ''}${c.shap_value.toFixed(2)}`).join(' · ')}`;
+  return (
+    <MTooltip text={tip}>
+      <span className="text-[9px] font-display font-bold uppercase px-1.5 py-0.5 rounded bg-accent/15 text-accent">
+        ML
+      </span>
+    </MTooltip>
+  );
+}
+
 function Headshot({ url, name }: { url: string | null; name: string }) {
   return url ? (
     <img
@@ -232,12 +247,18 @@ function DashboardTab() {
                           <span className="text-[10px] text-text-muted w-4 shrink-0">{i + 1}</span>
                           <Headshot url={p.headshot_url} name={p.full_name} />
                           <span className="flex-1 text-xs text-text-secondary truncate">{p.full_name}</span>
+                          {p.model_source === 'ml' && <MLBadge projection={p} />}
                           <MTooltip text={`${p.confidence === 'low' ? `Low confidence — ${p.injury_status ?? 'limited data'}` : p.confidence === 'high' ? 'Full stats, no injury concerns' : 'Based on season average'}`}>
                             <ConfBadge conf={p.confidence} />
                           </MTooltip>
                           <span className="text-xs font-bold tabular-nums" style={{ color: posColor(pos) }}>
                             {p.projected_points_ppr.toFixed(1)}
                           </span>
+                          {p.floor_ppr !== null && p.ceiling_ppr !== null && (
+                            <span className="text-[9px] text-text-muted tabular-nums whitespace-nowrap">
+                              {p.floor_ppr.toFixed(1)}–{p.ceiling_ppr.toFixed(1)}
+                            </span>
+                          )}
                           {p.matchup_score !== 1.0 && (
                             <MTooltip text={`Matchup Score: ${p.matchup_score.toFixed(2)}× — opponent defensive advanced stats proxy. >1.1 = favorable, <0.9 = unfavorable, 1.0 = neutral`}>
                               <span className="text-[10px]" style={{ color: matchupColor(p.matchup_score) }}>

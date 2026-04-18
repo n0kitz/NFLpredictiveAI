@@ -1164,7 +1164,15 @@ def get_fantasy_top(
 
 def _proj_row_to_entry(r, week: int, season: int) -> FantasyProjectionEntry:
     """Convert a fantasy_projections DB row to FantasyProjectionEntry."""
+    import json as _json
     d = dict(r)
+    contribs = []
+    raw = d.get('contributions_json')
+    if raw:
+        try:
+            contribs = _json.loads(raw) or []
+        except Exception:
+            contribs = []
     return FantasyProjectionEntry(
         player_id=d['player_id'],
         full_name=d.get('full_name', ''),
@@ -1180,7 +1188,19 @@ def _proj_row_to_entry(r, week: int, season: int) -> FantasyProjectionEntry:
         confidence=d.get('confidence') or 'medium',
         injury_status=None,
         weather_impact=False,
+        model_source=d.get('model_source') or 'heuristic',
+        model_version=d.get('model_version'),
+        floor_ppr=d.get('floor_ppr'),
+        ceiling_ppr=d.get('ceiling_ppr'),
+        contributions=contribs,
     )
+
+
+@app.get("/api/fantasy/model-info", tags=["fantasy"])
+def get_fantasy_model_info():
+    """Which per-position ML fantasy models are available on disk."""
+    from ..prediction.player_ml_model import model_info
+    return model_info()
 
 
 @app.get(

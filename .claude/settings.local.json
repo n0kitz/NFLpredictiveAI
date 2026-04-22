@@ -13,7 +13,9 @@
       "Bash(python -m pytest tests/test_roster.py -q)",
       "Bash(python -m pytest tests/test_api.py -p no:warnings -q)",
       "Bash(python -m pytest tests/ -x -q)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__list_pages",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__take_screenshot"
     ]
   }
 }

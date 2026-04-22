@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import type { PlayerSearchResult } from '../api/types';
+import Ticker from './Ticker';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard' },
@@ -44,7 +45,6 @@ function PlayerSearch() {
     navigate(`/players/${p.player_id}`);
   }
 
-  // Close on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -66,7 +66,7 @@ function PlayerSearch() {
           onChange={handleChange}
           onFocus={() => results.length > 0 && setOpen(true)}
           placeholder="Search players…"
-          className="w-44 bg-surface-800 border border-border rounded-md pl-8 pr-3 py-1.5 text-xs text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+          className="w-44 bg-surface-700 border border-border rounded-sm pl-8 pr-3 py-1.5 text-xs text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
         />
       </div>
       {open && results.length > 0 && (
@@ -98,69 +98,60 @@ function PlayerSearch() {
 export default function Layout() {
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Top nav — broadcast ticker style */}
-      <header className="sticky top-0 z-50 border-b border-border bg-surface-900/90 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-6 flex items-center h-14 gap-0">
-          {/* Logo */}
-          <NavLink to="/" className="flex items-center gap-3 mr-8 group">
-            <div className="relative">
-              <div className="w-8 h-8 rounded-sm bg-accent flex items-center justify-center rotate-[-2deg] group-hover:rotate-0 transition-transform duration-300">
-                <span className="font-display font-bold text-surface-900 text-sm tracking-tight">
-                  NFL
-                </span>
-              </div>
-            </div>
-            <span className="font-display font-semibold text-text-primary text-lg tracking-wide uppercase hidden sm:block">
-              Predictor
-            </span>
-          </NavLink>
-
-          {/* Nav links */}
-          <nav className="flex items-center h-full">
-            {NAV_ITEMS.map(({ to, label }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={to === '/'}
-                className={({ isActive }) =>
-                  `relative h-full flex items-center px-5 font-display text-sm font-medium uppercase tracking-widest transition-colors ${
-                    isActive
-                      ? 'text-accent'
-                      : 'text-text-muted hover:text-text-secondary'
-                  }`
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    {label}
-                    {isActive && (
-                      <span className="absolute bottom-0 left-4 right-4 h-[2px] bg-accent rounded-full" />
-                    )}
-                  </>
-                )}
-              </NavLink>
-            ))}
-          </nav>
-
-          {/* Right side — player search + data badge */}
-          <div className="ml-auto flex items-center gap-4">
-            <PlayerSearch />
-            <div className="hidden md:flex items-center gap-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-win animate-pulse" />
-              <span className="text-[11px] text-text-muted font-medium tracking-wide">
-                9,400+ GAMES
+      {/* Sticky header: TopBar + Ticker */}
+      <header className="sticky top-0 z-50">
+        {/* TopBar */}
+        <div className="bg-surface-850 border-b border-border">
+          <div className="px-6 flex items-center h-14 gap-0">
+            {/* Logo */}
+            <NavLink to="/" className="flex items-center mr-8 shrink-0">
+              <span className="font-display font-extrabold text-[18px] tracking-tight leading-none">
+                <span className="text-accent">▲</span>
+                {' '}NFL<span className="text-text-muted">/</span>PREDICTOR
               </span>
+            </NavLink>
+
+            {/* Nav pills */}
+            <nav className="flex items-center gap-0.5 font-display text-[12px] font-semibold tracking-[0.08em]">
+              {NAV_ITEMS.map(({ to, label }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={to === '/'}
+                  className={({ isActive }) =>
+                    `px-3.5 py-2 rounded-sm transition-colors uppercase ${
+                      isActive
+                        ? 'bg-surface-700 text-text-primary'
+                        : 'text-text-muted hover:text-text-secondary'
+                    }`
+                  }
+                >
+                  {label}
+                </NavLink>
+              ))}
+            </nav>
+
+            {/* Right side */}
+            <div className="ml-auto flex items-center gap-3">
+              <PlayerSearch />
+              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-surface-700 rounded-sm font-display text-[11px] font-semibold tracking-[0.1em] shrink-0">
+                <div className="w-1.5 h-1.5 rounded-full bg-win animate-pulse" />
+                MODEL ONLINE
+              </div>
             </div>
           </div>
         </div>
+
+        {/* Ticker */}
+        <Ticker />
       </header>
 
       {/* Page content */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-10">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-12">
         <Outlet />
       </main>
 
-      {/* Footer — minimal broadcast bar */}
+      {/* Footer */}
       <footer className="border-t border-border">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <span className="text-[11px] text-text-muted font-display uppercase tracking-widest">

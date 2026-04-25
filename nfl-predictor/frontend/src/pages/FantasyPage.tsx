@@ -11,6 +11,7 @@ import type {
 } from '../api/types';
 import Spinner from '../components/Spinner';
 import DataBadge from '../components/DataBadge';
+import BoomBustBadge from '../components/BoomBustBadge';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -369,6 +370,7 @@ function WaiverTab() {
   const [week, setWeek] = useState(1);
   const [season] = useState(new Date().getFullYear());
   const [position, setPosition] = useState<PositionFilter>('ALL');
+  const [hideBye, setHideBye] = useState(true);
   const [players, setPlayers] = useState<FantasyProjection[]>([]);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -380,6 +382,10 @@ function WaiverTab() {
       .catch(() => setPlayers([]))
       .finally(() => setLoading(false));
   }, [week, season, position]);
+
+  const visible = hideBye
+    ? players.filter((p) => p.bye_week !== week)
+    : players;
 
   function oppBar(score: number) {
     const pct = Math.round(score * 10);
@@ -410,6 +416,15 @@ function WaiverTab() {
           </select>
         </div>
         <PositionFilter value={position} onChange={setPosition} />
+        <label className="flex items-center gap-1.5 text-xs text-text-muted font-display uppercase tracking-widest cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={hideBye}
+            onChange={(e) => setHideBye(e.target.checked)}
+            className="accent-accent"
+          />
+          Hide bye week
+        </label>
       </div>
 
       {loading ? <Spinner text="Loading waiver wire…" /> : (
@@ -425,7 +440,7 @@ function WaiverTab() {
               </tr>
             </thead>
             <tbody>
-              {players.map((p, i) => (
+              {visible.map((p, i) => (
                 <tr
                   key={p.player_id}
                   onClick={() => navigate(`/players/${p.player_id}`)}
@@ -435,7 +450,10 @@ function WaiverTab() {
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2">
                       <Headshot url={p.headshot_url} name={p.full_name} />
-                      <span className="text-text-primary font-medium text-xs truncate max-w-[120px]">{p.full_name}</span>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-text-primary font-medium text-xs truncate max-w-[140px]">{p.full_name}</span>
+                        <BoomBustBadge boomPct={p.boom_pct} bustPct={p.bust_pct} />
+                      </div>
                     </div>
                   </td>
                   <td className="px-4 py-2.5"><PosBadge pos={p.position} /></td>
@@ -452,7 +470,11 @@ function WaiverTab() {
                     </MTooltip>
                   </td>
                   <td className="px-4 py-2.5">
-                    {p.injury_status ? (
+                    {p.bye_week === week ? (
+                      <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-surface-700 text-text-muted">
+                        BYE
+                      </span>
+                    ) : p.injury_status ? (
                       <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
                         ['Out', 'IR', 'PUP'].includes(p.injury_status)
                           ? 'bg-loss/15 text-loss'
@@ -466,7 +488,7 @@ function WaiverTab() {
                   </td>
                 </tr>
               ))}
-              {!loading && players.length === 0 && (
+              {!loading && visible.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-4 py-12 text-center text-text-muted text-xs">
                     No waiver data — run scripts/import_rosters.py first.
@@ -557,9 +579,23 @@ function DraftTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border">
-                {['Rank', 'Tier', 'Player', 'Pos', 'Team', 'ADP', 'Pos Rank', 'Proj Pts'].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-[10px] font-display uppercase tracking-widest text-text-muted">
-                    {h}
+                {[
+                  { k: 'Rank' },
+                  { k: 'Tier' },
+                  { k: 'Player' },
+                  { k: 'Pos' },
+                  { k: 'Team' },
+                  { k: 'ADP' },
+                  { k: 'Pos Rank' },
+                  { k: 'Proj Pts' },
+                  { k: 'VBD', t: 'Value Based Drafting: projected season points above replacement-level at this position (12-team league baseline)' },
+                ].map(({ k, t }) => (
+                  <th
+                    key={k}
+                    title={t}
+                    className={`px-4 py-3 text-left text-[10px] font-display uppercase tracking-widest text-text-muted ${t ? 'cursor-help' : ''}`}
+                  >
+                    {k}
                   </th>
                 ))}
               </tr>
@@ -571,7 +607,7 @@ function DraftTab() {
                 return [
                   tierSep && (
                     <tr key={`tier-${r.tier}`}>
-                      <td colSpan={8} className="px-4 py-2 bg-surface-900 border-b border-border">
+                      <td colSpan={9} className="px-4 py-2 bg-surface-900 border-b border-border">
                         <span className="text-[10px] font-display font-bold uppercase tracking-widest text-text-muted">
                           Tier {r.tier}
                         </span>
@@ -596,7 +632,10 @@ function DraftTab() {
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2">
                         <Headshot url={r.headshot_url} name={r.full_name} />
-                        <span className="text-text-primary font-medium text-xs truncate max-w-[120px]">{r.full_name}</span>
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-text-primary font-medium text-xs truncate max-w-[140px]">{r.full_name}</span>
+                          <BoomBustBadge boomPct={r.boom_pct} bustPct={r.bust_pct} />
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 py-2.5"><PosBadge pos={r.position} /></td>
@@ -606,12 +645,15 @@ function DraftTab() {
                     <td className="px-4 py-2.5 font-bold tabular-nums text-text-primary">
                       {r.projected_season_points.toFixed(0)}
                     </td>
+                    <td className="px-4 py-2.5 tabular-nums text-xs" style={{ color: r.vbd && r.vbd > 0 ? 'var(--color-accent)' : 'var(--color-text-muted)' }}>
+                      {r.vbd != null ? r.vbd.toFixed(0) : '—'}
+                    </td>
                   </tr>,
                 ];
               })}
               {!loading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-text-muted text-xs">
+                  <td colSpan={9} className="px-4 py-12 text-center text-text-muted text-xs">
                     No rankings found. Try a different filter or run scripts/import_rosters.py.
                   </td>
                 </tr>

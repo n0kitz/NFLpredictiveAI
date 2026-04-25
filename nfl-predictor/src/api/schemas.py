@@ -459,6 +459,8 @@ class PlayerProfile(BaseModel):
     headshot_url: Optional[str] = None
     team_abbr: Optional[str] = None
     current_stats: Optional[PlayerStatsEntry] = None
+    boom_pct: Optional[float] = None
+    bust_pct: Optional[float] = None
 
 
 class PlayerSearchResult(BaseModel):
@@ -523,6 +525,9 @@ class FantasyProjectionEntry(BaseModel):
     floor_ppr: Optional[float] = None
     ceiling_ppr: Optional[float] = None
     contributions: List[FantasyContribution] = []
+    boom_pct: Optional[float] = None
+    bust_pct: Optional[float] = None
+    bye_week: Optional[int] = None
 
 
 class StartSitPlayerEntry(BaseModel):
@@ -555,6 +560,33 @@ class DraftRankingEntry(BaseModel):
     projected_season_points: float
     season: int
     scoring_format: str
+    vbd: Optional[float] = None
+    boom_pct: Optional[float] = None
+    bust_pct: Optional[float] = None
+
+
+class PlayerWeekCell(BaseModel):
+    week: int
+    is_bye: bool = False
+    # snaps may be None when the importer only filled snap_pct (raw count missing).
+    snaps: Optional[int] = None
+    snap_pct: float = 0.0
+    routes: int = 0
+    targets: int = 0
+    target_share: float = 0.0
+    rec_yards: int = 0
+    rush_yards: int = 0
+    pass_yards: int = 0
+    fantasy_points_ppr: float = 0.0
+    fantasy_points_standard: float = 0.0
+    opponent_abbr: Optional[str] = None
+    is_home: bool = False
+
+
+class PlayerWeeklyStatsResponse(BaseModel):
+    player_id: int
+    season: int
+    weeks: List[PlayerWeekCell]
 
 
 class TradePlayerEntry(BaseModel):

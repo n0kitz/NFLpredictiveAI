@@ -296,6 +296,7 @@ CREATE TABLE IF NOT EXISTS draft_rankings (
     tier INTEGER,
     adp REAL,
     projected_season_points REAL,
+    vbd REAL,
     notes TEXT,
     UNIQUE(season, scoring_format, player_id)
 );

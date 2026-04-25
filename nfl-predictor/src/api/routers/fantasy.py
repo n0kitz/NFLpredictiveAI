@@ -18,7 +18,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["fantasy"])
 
 
-def _proj_row_to_entry(r, week: int, season: int) -> FantasyProjectionEntry:
+def _proj_row_to_entry(
+    r,
+    week: int,
+    season: int,
+    boom_bust: Optional[dict] = None,
+    bye_by_team: Optional[dict] = None,
+) -> FantasyProjectionEntry:
     d = dict(r)
     contribs = []
     raw = d.get("contributions_json")
@@ -28,6 +34,10 @@ def _proj_row_to_entry(r, week: int, season: int) -> FantasyProjectionEntry:
         except Exception as e:
             logger.warning("Failed to parse contributions_json: %s", e)
             contribs = []
+    bb = (boom_bust or {}).get(d["player_id"]) or {}
+    bye_week = None
+    if bye_by_team and d.get("team_id") is not None:
+        bye_week = bye_by_team.get(d["team_id"])
     return FantasyProjectionEntry(
         player_id=d["player_id"],
         full_name=d.get("full_name", ""),
@@ -48,6 +58,9 @@ def _proj_row_to_entry(r, week: int, season: int) -> FantasyProjectionEntry:
         floor_ppr=d.get("floor_ppr"),
         ceiling_ppr=d.get("ceiling_ppr"),
         contributions=contribs,
+        boom_pct=bb.get("boom_pct"),
+        bust_pct=bb.get("bust_pct"),
+        bye_week=bye_week,
     )
 
 
@@ -92,12 +105,15 @@ def get_fantasy_projections(
     db=Depends(get_db),
 ):
     from ...prediction.fantasy_scorer import FantasyScorer
+    scorer = FantasyScorer(db)
     rows = db.get_fantasy_projections(season, week, position, scoring)
     if not rows:
-        scorer = FantasyScorer(db)
         scorer.generate_weekly_projections(season, week)
         rows = db.get_fantasy_projections(season, week, position, scoring)
-    return [_proj_row_to_entry(r, week, season) for r in rows]
+    player_ids = [r["player_id"] for r in rows]
+    boom_bust = scorer.bulk_boom_bust(season - 1, player_ids=player_ids)
+    bye_by_team = db.get_bye_weeks(season)
+    return [_proj_row_to_entry(r, week, season, boom_bust, bye_by_team) for r in rows]
 
 
 @router.get("/api/fantasy/start-sit", response_model=StartSitResponse)
@@ -140,13 +156,17 @@ def get_waiver_wire(
     db=Depends(get_db),
 ):
     from ...prediction.fantasy_scorer import FantasyScorer
+    scorer = FantasyScorer(db)
     rows = db.get_fantasy_projections(season, week, position, scoring)
     if not rows:
-        scorer = FantasyScorer(db)
         scorer.generate_weekly_projections(season, week)
         rows = db.get_fantasy_projections(season, week, position, scoring)
     sorted_rows = sorted(rows, key=lambda r: float(r["opportunity_score"] or 0), reverse=True)
-    return [_proj_row_to_entry(r, week, season) for r in sorted_rows[:limit]]
+    visible_rows = sorted_rows[:limit]
+    player_ids = [r["player_id"] for r in visible_rows]
+    boom_bust = scorer.bulk_boom_bust(season - 1, player_ids=player_ids)
+    bye_by_team = db.get_bye_weeks(season)
+    return [_proj_row_to_entry(r, week, season, boom_bust, bye_by_team) for r in visible_rows]
 
 
 @router.get("/api/fantasy/draft-rankings", response_model=List[DraftRankingEntry])
@@ -158,22 +178,33 @@ def get_draft_rankings(
 ):
     from ...prediction.fantasy_scorer import FantasyScorer
     rows = db.get_draft_rankings(season, scoring, position)
+    scorer = FantasyScorer(db)
     if not rows:
-        scorer = FantasyScorer(db)
         scorer.generate_draft_rankings(season, scoring)
         rows = db.get_draft_rankings(season, scoring, position)
-    return [
-        DraftRankingEntry(
-            player_id=r["player_id"], full_name=r.get("full_name", ""),
-            position=r.get("position"), team_abbr=r.get("team_abbr"),
-            headshot_url=r.get("headshot_url"),
+    boom_bust = scorer.bulk_boom_bust(
+        season - 1,
+        player_ids=[r["player_id"] for r in rows],
+    )
+    rankings = []
+    for r in rows:
+        keys = r.keys()
+        bb = boom_bust.get(r["player_id"]) or {}
+        rankings.append(DraftRankingEntry(
+            player_id=r["player_id"],
+            full_name=r["full_name"] if "full_name" in keys else "",
+            position=r["position"] if "position" in keys else None,
+            team_abbr=r["team_abbr"] if "team_abbr" in keys else None,
+            headshot_url=r["headshot_url"] if "headshot_url" in keys else None,
             overall_rank=r["overall_rank"], position_rank=r["position_rank"],
             tier=r["tier"], adp=r["adp"],
             projected_season_points=r["projected_season_points"],
             season=r["season"], scoring_format=r["scoring_format"],
-        )
-        for r in rows
-    ]
+            vbd=r["vbd"] if "vbd" in keys else None,
+            boom_pct=bb.get("boom_pct"),
+            bust_pct=bb.get("bust_pct"),
+        ))
+    return rankings
 
 
 @router.post("/api/fantasy/roster")

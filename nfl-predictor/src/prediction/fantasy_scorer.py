@@ -37,6 +37,53 @@ _FANTASY_POSITIONS = ('QB', 'RB', 'WR', 'TE', 'K')
 # Tier boundaries (cumulative player count thresholds)
 _TIER_BOUNDARIES = [12, 36, 60, 84, 108, 132, 156, 180]
 
+# Replacement-level position rank for VBD (12-team league assumption)
+_REPLACEMENT_LEVEL: Dict[str, int] = {
+    'QB': 12,
+    'RB': 30,
+    'WR': 36,
+    'TE': 12,
+    'K': 12,
+}
+
+# Boom/bust thresholds (multipliers of player's season average PPR points)
+_BOOM_THRESHOLD = 1.5
+_BUST_THRESHOLD = 0.5
+
+
+def _played_week(r: Any) -> bool:
+    """A weekly row counts as 'played' when either snaps>0 or snap_pct>0.
+
+    The current importer leaves snaps=0 for rows where only snap_pct is populated,
+    so checking both keeps boom/bust working regardless of which column is filled.
+    """
+    keys = r.keys() if hasattr(r, 'keys') else r
+    snaps = (r['snaps'] if 'snaps' in keys else 0) or 0
+    snap_pct = (r['snap_pct'] if 'snap_pct' in keys else 0) or 0
+    return snaps > 0 or snap_pct > 0
+
+
+def calc_boom_bust_from_rows(rows: List[Any]) -> Optional[Dict[str, float]]:
+    """
+    Compute boom/bust percentages from a list of weekly rows for one player.
+
+    Counts weeks where snaps>0 or snap_pct>0 (importer fills only one of the two).
+    Returns None when fewer than 4 active weeks (sample too small).
+    """
+    pts = [float(r['fantasy_points_ppr'] or 0) for r in rows if _played_week(r)]
+    if len(pts) < 4:
+        return None
+    avg = sum(pts) / len(pts)
+    if avg <= 0:
+        return None
+    boom = sum(1 for p in pts if p >= _BOOM_THRESHOLD * avg)
+    bust = sum(1 for p in pts if p <= _BUST_THRESHOLD * avg)
+    return {
+        'boom_pct': round(100.0 * boom / len(pts), 1),
+        'bust_pct': round(100.0 * bust / len(pts), 1),
+        'weeks_played': len(pts),
+    }
+
 
 class FantasyScorer:
     """Generate fantasy projections, draft rankings, trade analysis, and start/sit advice."""
@@ -302,6 +349,12 @@ class FantasyScorer:
             if row['opening_spread'] is not None:
                 spread_by_game[row['game_id']] = float(row['opening_spread'])
 
+        # ── 7. Boom/bust % from prior season weekly stats (bulk) ─────────────
+        boom_bust_by_player = self.bulk_boom_bust(season - 1)
+
+        # ── 8. Bye weeks per team ────────────────────────────────────────────
+        bye_by_team = self.db.get_bye_weeks(season)
+
         # Pre-warm ML model cache (one joblib load per position)
         model_cache = get_player_model_cache()
         ml_positions = {pos: model_cache.get_model(pos) is not None
@@ -435,6 +488,7 @@ class FantasyScorer:
                     if feats.get('weeks_of_experience', 0) >= 4 and injury_status is None:
                         confidence = 'high'
 
+            bb = boom_bust_by_player.get(player_id) or {}
             proj: Dict[str, Any] = {
                 'player_id':            player_id,
                 'full_name':            name,
@@ -456,6 +510,9 @@ class FantasyScorer:
                 'floor_ppr':            floor_ppr,
                 'ceiling_ppr':          ceiling_ppr,
                 'contributions':        contributions,
+                'boom_pct':             bb.get('boom_pct'),
+                'bust_pct':             bb.get('bust_pct'),
+                'bye_week':             bye_by_team.get(team_id),
             }
 
             self.db.upsert_fantasy_projection({
@@ -482,6 +539,40 @@ class FantasyScorer:
             "Generated %d projections for season %s week %s", len(results), season, week
         )
         return results
+
+    # ── Boom/bust bulk helper ───────────────────────────────────────────────
+
+    def bulk_boom_bust(
+        self,
+        season: int,
+        player_ids: Optional[List[int]] = None,
+    ) -> Dict[int, Dict[str, float]]:
+        """Compute boom/bust pct for every player with weekly data in a season.
+
+        Pass `player_ids` to restrict the scan to a known set (avoids loading
+        the full season's weekly rows on each request-path call).
+        """
+        if player_ids is not None and not player_ids:
+            return {}
+        query = (
+            "SELECT player_id, fantasy_points_ppr, snaps, snap_pct "
+            "FROM player_weekly_stats WHERE season = ?"
+        )
+        params: List[Any] = [season]
+        if player_ids is not None:
+            placeholders = ", ".join("?" for _ in player_ids)
+            query += f" AND player_id IN ({placeholders})"
+            params.extend(player_ids)
+        rows = self.db.fetchall(query, tuple(params))
+        by_player: Dict[int, list] = {}
+        for r in rows:
+            by_player.setdefault(r['player_id'], []).append(r)
+        result: Dict[int, Dict[str, float]] = {}
+        for pid, rs in by_player.items():
+            bb = calc_boom_bust_from_rows(rs)
+            if bb is not None:
+                result[pid] = bb
+        return result
 
     # ── Draft rankings ───────────────────────────────────────────────────────
 
@@ -567,6 +658,20 @@ class FantasyScorer:
 
         scored.sort(key=lambda x: x['adj_score'], reverse=True)
 
+        # Replacement-level baseline points per position (for VBD)
+        # Walk scored list once, capture nth-ranked player's adj_score per position
+        replacement_pts: Dict[str, float] = {}
+        pos_rank_walk: Dict[str, int] = {}
+        for entry in scored:
+            pos = entry['position'] or 'OTH'
+            pos_rank_walk[pos] = pos_rank_walk.get(pos, 0) + 1
+            cutoff = _REPLACEMENT_LEVEL.get(pos)
+            if cutoff and pos_rank_walk[pos] == cutoff:
+                replacement_pts[pos] = float(entry['adj_score'])
+
+        # Boom/bust from prior season weekly data (same as projections)
+        boom_bust_by_player = self.bulk_boom_bust(prev_season)
+
         pos_rank_counter: Dict[str, int] = {}
         results: List[Dict[str, Any]] = []
 
@@ -582,6 +687,13 @@ class FantasyScorer:
                     break
 
             adp = float(overall_rank)
+            replacement = replacement_pts.get(pos)
+            vbd = (
+                round(max(0.0, float(entry['adj_score']) - replacement), 1)
+                if replacement is not None
+                else None
+            )
+            bb = boom_bust_by_player.get(entry['player_id']) or {}
 
             ranking: Dict[str, Any] = {
                 'player_id':               entry['player_id'],
@@ -594,6 +706,9 @@ class FantasyScorer:
                 'tier':                    tier,
                 'adp':                     adp,
                 'projected_season_points': round(entry['season_pts'], 1),
+                'vbd':                     vbd,
+                'boom_pct':                bb.get('boom_pct'),
+                'bust_pct':                bb.get('bust_pct'),
                 'season':                  season,
                 'scoring_format':          scoring_format,
             }
@@ -608,6 +723,7 @@ class FantasyScorer:
                 'tier':                    tier,
                 'adp':                     adp,
                 'projected_season_points': round(entry['season_pts'], 1),
+                'vbd':                     vbd,
             })
 
         self.db.commit()

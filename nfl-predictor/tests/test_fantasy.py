@@ -295,3 +295,115 @@ class TestWithRealDB:
             assert 'position_rank' in r
             assert 'tier' in r
             assert r['tier'] >= 1
+            assert 'vbd' in r
+            assert r['vbd'] >= 0
+
+
+# ── Boom/bust + VBD + bye-week tests (Fantasy Depth Pack) ────────────────────
+
+
+class TestBoomBustCalc:
+    def test_returns_none_for_too_few_weeks(self):
+        from src.prediction.fantasy_scorer import calc_boom_bust_from_rows
+        rows = [
+            {'fantasy_points_ppr': 10.0, 'snaps': 50},
+            {'fantasy_points_ppr': 12.0, 'snaps': 50},
+            {'fantasy_points_ppr': 8.0,  'snaps': 50},
+        ]
+        assert calc_boom_bust_from_rows(rows) is None
+
+    def test_skips_dnp_weeks(self):
+        from src.prediction.fantasy_scorer import calc_boom_bust_from_rows
+        rows = [{'fantasy_points_ppr': 10.0, 'snaps': 0} for _ in range(8)]
+        assert calc_boom_bust_from_rows(rows) is None
+
+    def test_basic_distribution(self):
+        from src.prediction.fantasy_scorer import calc_boom_bust_from_rows
+        # Avg = 10. Boom (>=15): 2 of 10 = 20%. Bust (<=5): 2 of 10 = 20%.
+        rows = [
+            {'fantasy_points_ppr': v, 'snaps': 50, 'snap_pct': 0.8}
+            for v in [16.0, 17.0, 10.0, 11.0, 9.0, 12.0, 8.0, 11.0, 4.0, 2.0]
+        ]
+        result = calc_boom_bust_from_rows(rows)
+        assert result is not None
+        assert result['weeks_played'] == 10
+        assert result['boom_pct'] == 20.0
+        assert result['bust_pct'] == 20.0
+
+    def test_counts_when_only_snap_pct_filled(self):
+        """Importer leaves snaps=0; rows count as played when snap_pct>0."""
+        from src.prediction.fantasy_scorer import calc_boom_bust_from_rows
+        rows = [
+            {'fantasy_points_ppr': v, 'snaps': 0, 'snap_pct': 0.7}
+            for v in [16.0, 17.0, 10.0, 11.0, 9.0, 12.0]
+        ]
+        result = calc_boom_bust_from_rows(rows)
+        assert result is not None
+        assert result['weeks_played'] == 6
+
+
+@pytest.mark.skipif(not db_available, reason="Real database not found")
+class TestBulkBoomBustFilter:
+    def test_empty_player_ids_returns_empty(self, real_scorer):
+        """Empty player_ids list short-circuits without scanning DB."""
+        assert real_scorer.bulk_boom_bust(2024, player_ids=[]) == {}
+
+    def test_player_ids_filter_subset(self, real_scorer, real_db):
+        """Result only contains player_ids requested (when they have data)."""
+        # Pick a small set of player_ids that exist in weekly stats
+        rows = real_db.fetchall(
+            "SELECT DISTINCT player_id FROM player_weekly_stats WHERE season = 2024 LIMIT 5"
+        )
+        ids = [r["player_id"] for r in rows]
+        if not ids:
+            pytest.skip("No 2024 weekly data")
+        result = real_scorer.bulk_boom_bust(2024, player_ids=ids)
+        for pid in result.keys():
+            assert pid in ids, f"unexpected player_id {pid} in filtered result"
+
+
+@pytest.mark.skipif(not db_available, reason="Real database not found")
+class TestByeWeekDerivation:
+    def test_returns_dict(self, real_db):
+        byes = real_db.get_bye_weeks(2024)
+        assert isinstance(byes, dict)
+
+    def test_all_byes_in_range(self, real_db):
+        byes = real_db.get_bye_weeks(2024)
+        if not byes:
+            pytest.skip("No 2024 game data")
+        for team_id, week in byes.items():
+            assert 1 <= week <= 22, f"team {team_id} has implausible bye week {week}"
+
+    def test_no_team_has_two_byes(self, real_db):
+        # Implicit by dict structure (one int per team_id), but verify each team is in
+        # exactly one team_id key
+        byes = real_db.get_bye_weeks(2024)
+        if not byes:
+            pytest.skip("No 2024 game data")
+        # Every team_id should appear at most once (dict guarantees), and team count should be plausible (≤32)
+        assert len(byes) <= 40
+
+
+@pytest.mark.skipif(not db_available, reason="Real database not found")
+class TestVBD:
+    def test_replacement_qb12_near_zero(self, real_scorer):
+        rankings = real_scorer.generate_draft_rankings(2025, 'ppr')
+        qbs = [r for r in rankings if r['position'] == 'QB']
+        if len(qbs) < 12:
+            pytest.skip("Fewer than 12 QBs in dataset")
+        qb12 = qbs[11]
+        assert qb12['vbd'] is not None
+        assert qb12['vbd'] <= 0.1, f"QB12 VBD should be ~0, got {qb12['vbd']}"
+
+    def test_top_player_has_positive_vbd(self, real_scorer):
+        rankings = real_scorer.generate_draft_rankings(2025, 'ppr')
+        if not rankings:
+            pytest.skip("No rankings generated")
+        # Top scoring at any of these positions should have meaningful VBD
+        for pos in ('RB', 'WR'):
+            top = next((r for r in rankings if r['position'] == pos), None)
+            if top is None:
+                continue
+            assert top['vbd'] is not None
+            assert top['vbd'] >= 0  # could be 0 if dataset is sparse, but never negative

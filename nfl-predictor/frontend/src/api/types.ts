@@ -408,7 +408,7 @@ export interface DraftRanking {
 export interface PlayerWeekCell {
   week: number;
   is_bye: boolean;
-  snaps: number;
+  snaps: number | null;
   snap_pct: number;
   routes: number;
   targets: number;

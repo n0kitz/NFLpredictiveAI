@@ -1493,6 +1493,22 @@ class Database:
         """Get fantasy projections with player + team info, ordered by projected points desc."""
         pts_col = 'fp.projected_points_ppr' if scoring == 'ppr' else 'fp.projected_points_std'
         pos_filter = position.upper()
+        # Pre-aggregate roster_entries to one team_id per (player, season) so the join
+        # can't duplicate projection rows for traded players (UNIQUE is on
+        # (player_id, team_id, season) — multiple rows possible after a trade).
+        # Pick the entry with the latest fetched_at, breaking ties on highest id.
+        roster_subquery = """
+            SELECT player_id, season, team_id FROM roster_entries
+            WHERE id IN (
+                SELECT id FROM roster_entries re1
+                WHERE re1.id = (
+                    SELECT id FROM roster_entries re2
+                    WHERE re2.player_id = re1.player_id AND re2.season = re1.season
+                    ORDER BY datetime(re2.fetched_at) DESC, re2.id DESC
+                    LIMIT 1
+                )
+            )
+        """
         if pos_filter == 'ALL':
             return self.fetchall(
                 f"""
@@ -1500,7 +1516,7 @@ class Database:
                        t.abbreviation AS team_abbr, re.team_id AS team_id
                 FROM fantasy_projections fp
                 JOIN players p ON fp.player_id = p.player_id
-                LEFT JOIN roster_entries re ON re.player_id = p.player_id AND re.season = fp.season
+                LEFT JOIN ({roster_subquery}) re ON re.player_id = p.player_id AND re.season = fp.season
                 LEFT JOIN teams t ON t.team_id = re.team_id
                 WHERE fp.season=? AND fp.week=?
                 ORDER BY {pts_col} DESC
@@ -1513,7 +1529,7 @@ class Database:
                    t.abbreviation AS team_abbr, re.team_id AS team_id
             FROM fantasy_projections fp
             JOIN players p ON fp.player_id = p.player_id
-            LEFT JOIN roster_entries re ON re.player_id = p.player_id AND re.season = fp.season
+            LEFT JOIN ({roster_subquery}) re ON re.player_id = p.player_id AND re.season = fp.season
             LEFT JOIN teams t ON t.team_id = re.team_id
             WHERE fp.season=? AND fp.week=? AND p.position=?
             ORDER BY {pts_col} DESC

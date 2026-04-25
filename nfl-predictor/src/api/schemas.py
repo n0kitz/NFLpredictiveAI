@@ -568,7 +568,8 @@ class DraftRankingEntry(BaseModel):
 class PlayerWeekCell(BaseModel):
     week: int
     is_bye: bool = False
-    snaps: int = 0
+    # snaps may be None when the importer only filled snap_pct (raw count missing).
+    snaps: Optional[int] = None
     snap_pct: float = 0.0
     routes: int = 0
     targets: int = 0

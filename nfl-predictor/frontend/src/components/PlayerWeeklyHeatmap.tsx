@@ -21,13 +21,18 @@ function fmtPct(p: number): string {
 
 function tooltip(c: PlayerWeekCell): string {
   if (c.is_bye) return `Week ${c.week}: BYE`;
-  if (c.snaps === 0 && c.snap_pct === 0 && c.fantasy_points_ppr === 0) {
-    return `Week ${c.week}: no data`;
-  }
+  const noData = (c.snaps == null || c.snaps === 0) && c.snap_pct === 0 && c.fantasy_points_ppr === 0;
+  if (noData) return `Week ${c.week}: no data`;
   const opp = c.opponent_abbr ? (c.is_home ? `vs ${c.opponent_abbr}` : `@ ${c.opponent_abbr}`) : '';
+  // Show raw snap count only when the importer actually provided it; otherwise just the %.
+  const snapLine = c.snaps != null && c.snaps > 0
+    ? `Snaps: ${c.snaps} (${fmtPct(c.snap_pct)}%)`
+    : c.snap_pct > 0
+      ? `Snap %: ${fmtPct(c.snap_pct)}%`
+      : '';
   return [
     `Week ${c.week} ${opp}`,
-    `Snaps: ${c.snaps} (${fmtPct(c.snap_pct)}%)`,
+    snapLine,
     c.targets ? `Targets: ${c.targets} (${fmtPct(c.target_share)}%)` : '',
     c.rec_yards ? `Rec yds: ${c.rec_yards}` : '',
     c.rush_yards ? `Rush yds: ${c.rush_yards}` : '',

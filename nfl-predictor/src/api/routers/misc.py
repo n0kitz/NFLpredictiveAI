@@ -323,15 +323,38 @@ def get_player_weekly_stats(
     if max_week == 0:
         return PlayerWeeklyStatsResponse(player_id=player_id, season=season, weeks=[])
 
+    # Build per-week team_id (handles mid-season trades + double byes).
+    # 1) Use weekly row's team_id where available.
+    # 2) For missing weeks, propagate from the nearest prior week (then later week)
+    #    so traded players' bye for each team is detected correctly.
+    weeks_team: dict = {r["week"]: r["team_id"] for r in rows if r["team_id"] is not None}
+    bye_by_team_full = db.get_bye_weeks(season) if rows or selected_team_id is not None else {}
+
+    def team_for_week(w: int) -> Optional[int]:
+        if w in weeks_team:
+            return weeks_team[w]
+        # Look earlier first, then later
+        for delta in range(1, max_week + 1):
+            if (w - delta) in weeks_team:
+                return weeks_team[w - delta]
+            if (w + delta) in weeks_team:
+                return weeks_team[w + delta]
+        return selected_team_id
+
     cells: List[PlayerWeekCell] = []
     for w in range(1, max_week + 1):
         r = by_week.get(w)
         if r is not None:
+            raw_snaps = int(r["snaps"] or 0)
+            snap_pct = float(r["snap_pct"] or 0)
+            # When only snap_pct is populated (importer didn't fill raw count),
+            # report snaps=None rather than a misleading 0.
+            snaps_out = raw_snaps if raw_snaps > 0 else (None if snap_pct > 0 else 0)
             cells.append(PlayerWeekCell(
                 week=w,
                 is_bye=False,
-                snaps=int(r["snaps"] or 0),
-                snap_pct=float(r["snap_pct"] or 0),
+                snaps=snaps_out,
+                snap_pct=snap_pct,
                 routes=int(r["routes"] or 0),
                 targets=int(r["targets"] or 0),
                 target_share=float(r["target_share"] or 0),
@@ -344,9 +367,11 @@ def get_player_weekly_stats(
                 is_home=bool(r["is_home"]),
             ))
         else:
+            week_team = team_for_week(w)
+            week_bye = bye_by_team_full.get(week_team) if week_team is not None else bye_week
             cells.append(PlayerWeekCell(
                 week=w,
-                is_bye=(bye_week is not None and w == bye_week),
+                is_bye=(week_bye is not None and w == week_bye),
             ))
 
     return PlayerWeeklyStatsResponse(player_id=player_id, season=season, weeks=cells)

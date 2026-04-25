@@ -212,6 +212,18 @@ class TestPlayerWeeklyStats:
         r = client.get("/api/players/1/weekly-stats?season=1800")
         assert r.status_code == 422
 
+    def test_snaps_nullable(self):
+        """snaps may be null when importer only filled snap_pct."""
+        pid = self._any_player_id()
+        if pid is None:
+            pytest.skip("No players in DB")
+        r = client.get(f"/api/players/{pid}/weekly-stats?season=2024")
+        assert r.status_code == 200
+        for cell in r.json()["weeks"]:
+            # snaps either int or null; never both 0 and snap_pct>0 simultaneously
+            if cell.get("snap_pct", 0) > 0 and (cell.get("snaps") in (0, None)):
+                assert cell["snaps"] is None or cell["snaps"] > 0
+
 
 # ── Factors CRUD ──────────────────────────────────────────────────────────────
 

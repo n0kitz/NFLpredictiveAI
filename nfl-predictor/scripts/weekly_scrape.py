@@ -18,6 +18,7 @@ from datetime import timedelta
 
 from src.database.db import create_database
 from src.scraper.pfr_scraper import PFRScraper
+from src.scraper.schedule_scraper import ScheduleScraper
 from src.scraper.odds_scraper import OddsScraper
 from src.scraper.injury_scraper import InjuryScraper
 from src.scraper.weather_scraper import WeatherScraper
@@ -44,6 +45,19 @@ def main():
     logger.info(f"Weekly scrape: seasons {start}–{end}")
 
     db = create_database()
+    _fatal_error: str = ""
+
+    # Step 0: Fetch upcoming schedule from ESPN (fast, no Cloudflare issues)
+    try:
+        schedule_scraper = ScheduleScraper(db)
+        esp_games = schedule_scraper.fetch_season(current_season)
+        esp_ins, esp_skip = schedule_scraper.store_games(esp_games)
+        if esp_ins > 0:
+            db.calculate_team_season_stats(current_season)
+        logger.info(f"ESPN schedule: {esp_ins} inserted/updated, {esp_skip} skipped")
+    except Exception as e:
+        logger.error(f"ESPN schedule fetch failed (non-fatal): {e}")
+
     scraper = PFRScraper(db, rate_limit=4.0)
     scraper.initialize_teams()
 
@@ -237,9 +251,23 @@ def main():
     except Exception as e:
         logger.error(f"Fantasy projection generation failed (non-fatal): {e}")
 
+    # Write scrape log (success or failure)
+    try:
+        db.write_scrape_log(
+            success=not bool(_fatal_error),
+            error_message=_fatal_error or None,
+            seasons_scraped=f"{start}-{end}",
+        )
+    except Exception as e:
+        logger.warning(f"Failed to write scrape log: {e}")
+
     db.close()
     logger.info("Weekly scrape complete.")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        logger.critical(f"Weekly scrape aborted: {e}", exc_info=True)
+        raise

@@ -12,6 +12,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_DB_PATH = Path(__file__).parent.parent.parent / "data" / "nfl.db"
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
+# Tracks which db_paths have already had schema setup run.
+# Schema init (CREATE TABLE IF NOT EXISTS + migrations) runs once per path,
+# not on every per-request Database() instantiation.
+_initialized_paths: set = set()
+
 # Ordered list of schema migrations.  Each entry is run exactly once (tracked by db_version).
 # To add a new migration: append to this list — do NOT reorder or remove existing entries.
 MIGRATIONS: List[str] = [
@@ -23,6 +28,17 @@ MIGRATIONS: List[str] = [
     "ALTER TABLE fantasy_projections ADD COLUMN floor_ppr REAL",
     "ALTER TABLE fantasy_projections ADD COLUMN ceiling_ppr REAL",
     "ALTER TABLE fantasy_projections ADD COLUMN contributions_json TEXT",
+    # v7: scrape log table for cron failure visibility
+    """CREATE TABLE IF NOT EXISTS scrape_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_at TEXT NOT NULL,
+        success INTEGER NOT NULL DEFAULT 0,
+        error_message TEXT,
+        seasons_scraped TEXT
+    )""",
+    # v8: edge_pick flag on prediction_history for value picks tracking
+    "ALTER TABLE prediction_history ADD COLUMN edge_pick INTEGER DEFAULT 0",
+    "ALTER TABLE prediction_history ADD COLUMN model_edge REAL",
 ]
 
 
@@ -55,6 +71,9 @@ class Database:
             self._connection.commit()
             # Enable foreign keys
             self._connection.execute("PRAGMA foreign_keys = ON")
+            # Schema init runs once per db path (not per request)
+            if str(self.db_path) in _initialized_paths:
+                return self._connection
             # Ensure advanced-stats table exists for both fresh and existing DBs
             self._connection.execute("""
                 CREATE TABLE IF NOT EXISTS team_advanced_stats (
@@ -284,8 +303,22 @@ class Database:
                     UNIQUE(season, scoring_format, player_id)
                 )
             """)
+            # Indexes for tables defined inline above (safe to add here)
+            self._connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_roster_team_season ON roster_entries(team_id, season)"
+            )
+            self._connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_player_stats_player_season ON player_season_stats(player_id, season)"
+            )
+            self._connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_fantasy_proj_season_week ON fantasy_projections(season, week)"
+            )
+            self._connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_draft_rankings_season_scoring ON draft_rankings(season, scoring_format)"
+            )
             self._connection.commit()
             self.run_migrations(self._connection)
+            _initialized_paths.add(str(self.db_path))
         return self._connection
 
     def run_migrations(self, conn: sqlite3.Connection) -> None:
@@ -359,6 +392,13 @@ class Database:
 
         with self.transaction():
             self.connection.executescript(schema_sql)
+            # Performance indexes for tables defined in schema.sql
+            self.connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_games_season_type ON games(season, game_type)"
+            )
+            self.connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_prediction_history_correct ON prediction_history(correct)"
+            )
 
         logger.info("Database schema initialized successfully")
 
@@ -433,30 +473,23 @@ class Database:
         Returns:
             Team row if found, None otherwise.
         """
-        search_term = search_term.strip().upper()
-
-        # Try abbreviation first (exact match)
-        team = self.fetchone(
-            "SELECT * FROM teams WHERE UPPER(abbreviation) = ? AND active_until IS NULL",
-            (search_term,)
+        s = search_term.strip().upper()
+        # Single query: abbreviation exact > name partial > city partial (ordered by match quality)
+        return self.fetchone(
+            """
+            SELECT *, CASE
+                WHEN UPPER(abbreviation) = ? THEN 1
+                WHEN UPPER(name) LIKE ? THEN 2
+                ELSE 3
+            END AS _rank
+            FROM teams
+            WHERE active_until IS NULL
+              AND (UPPER(abbreviation) = ? OR UPPER(name) LIKE ? OR UPPER(city) LIKE ?)
+            ORDER BY _rank ASC
+            LIMIT 1
+            """,
+            (s, f"%{s}%", s, f"%{s}%", f"%{s}%"),
         )
-        if team:
-            return team
-
-        # Try name (partial match)
-        team = self.fetchone(
-            "SELECT * FROM teams WHERE UPPER(name) LIKE ? AND active_until IS NULL",
-            (f"%{search_term}%",)
-        )
-        if team:
-            return team
-
-        # Try city (partial match)
-        team = self.fetchone(
-            "SELECT * FROM teams WHERE UPPER(city) LIKE ? AND active_until IS NULL",
-            (f"%{search_term}%",)
-        )
-        return team
 
     # Game operations
     def insert_game(self, date: str, season: int, week: str, game_type: str,
@@ -841,31 +874,70 @@ class Database:
 
     def enrich_prediction_history(self) -> int:
         """Match unresolved predictions to completed games and fill actual_winner_id/correct."""
-        unresolved = self.fetchall(
-            "SELECT id, home_team_id, away_team_id, predicted_winner_id FROM prediction_history WHERE correct IS NULL"
+        # Single JOIN query instead of N+1 per-prediction lookups
+        rows = self.fetchall(
+            """
+            SELECT ph.id, ph.predicted_winner_id,
+                   g.winner_id
+            FROM prediction_history ph
+            JOIN games g
+              ON g.home_team_id = ph.home_team_id
+             AND g.away_team_id = ph.away_team_id
+             AND g.home_score IS NOT NULL
+             AND g.winner_id IS NOT NULL
+             AND g.game_id = (
+                 SELECT game_id FROM games g2
+                 WHERE g2.home_team_id = ph.home_team_id
+                   AND g2.away_team_id = ph.away_team_id
+                   AND g2.home_score IS NOT NULL
+                 ORDER BY g2.date DESC LIMIT 1
+             )
+            WHERE ph.correct IS NULL
+            """
         )
         enriched = 0
-        for row in unresolved:
-            game = self.fetchone(
-                """
-                SELECT winner_id FROM games
-                WHERE home_team_id = ? AND away_team_id = ?
-                  AND home_score IS NOT NULL
-                ORDER BY date DESC LIMIT 1
-                """,
-                (row['home_team_id'], row['away_team_id']),
+        for row in rows:
+            correct = 1 if row['winner_id'] == row['predicted_winner_id'] else 0
+            self.execute(
+                "UPDATE prediction_history SET actual_winner_id = ?, correct = ? WHERE id = ?",
+                (row['winner_id'], correct, row['id']),
             )
-            if game and game['winner_id'] is not None:
-                correct = 1 if game['winner_id'] == row['predicted_winner_id'] else 0
-                self.execute(
-                    "UPDATE prediction_history SET actual_winner_id = ?, correct = ? WHERE id = ?",
-                    (game['winner_id'], correct, row['id']),
-                )
-                enriched += 1
+            enriched += 1
         if enriched:
             self.commit()
         return enriched
 
+
+    def get_value_picks_history(self, min_edge: float = 0.04, limit: int = 50) -> List[sqlite3.Row]:
+        """
+        Return resolved predictions that had a model-vs-Vegas edge >= min_edge.
+
+        Joins prediction_history with game_odds to find edge picks and their outcomes.
+        """
+        return self.fetchall(
+            """
+            SELECT
+                ph.id, ph.predicted_at, ph.confidence, ph.correct,
+                ph.home_prob, ph.away_prob,
+                go.home_implied_prob, go.away_implied_prob, go.opening_spread,
+                ht.abbreviation AS home_abbr, at.abbreviation AS away_abbr,
+                pw.abbreviation AS predicted_winner_abbr,
+                aw.abbreviation AS actual_winner_abbr,
+                (ph.home_prob - go.home_implied_prob) AS edge
+            FROM prediction_history ph
+            JOIN teams ht ON ht.team_id = ph.home_team_id
+            JOIN teams at ON at.team_id = ph.away_team_id
+            LEFT JOIN teams pw ON pw.team_id = ph.predicted_winner_id
+            LEFT JOIN teams aw ON aw.team_id = ph.actual_winner_id
+            JOIN game_odds go ON go.home_team_id = ph.home_team_id
+                              AND go.away_team_id = ph.away_team_id
+            WHERE go.home_implied_prob IS NOT NULL
+              AND ABS(ph.home_prob - go.home_implied_prob) >= ?
+            ORDER BY ph.predicted_at DESC
+            LIMIT ?
+            """,
+            (min_edge, limit),
+        )
 
     # Game odds operations
     def upsert_game_odds(self, data: Dict[str, Any]) -> None:
@@ -946,6 +1018,25 @@ class Database:
             ORDER BY team_id, player_name
             """
         )
+
+    # Scrape log operations (cron health tracking)
+    def write_scrape_log(self, success: bool, error_message: Optional[str] = None, seasons_scraped: Optional[str] = None) -> None:
+        """Record a scrape run result (called from weekly_scrape.py)."""
+        from datetime import datetime, timezone
+        self.execute(
+            "INSERT INTO scrape_log (run_at, success, error_message, seasons_scraped) VALUES (?, ?, ?, ?)",
+            (
+                datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                1 if success else 0,
+                error_message,
+                seasons_scraped,
+            ),
+        )
+        self.commit()
+
+    def get_latest_scrape_log(self) -> Optional[sqlite3.Row]:
+        """Return the most recent scrape_log row."""
+        return self.fetchone("SELECT * FROM scrape_log ORDER BY run_at DESC LIMIT 1")
 
     def get_key_injuries_for_team(self, team_id: int) -> List[sqlite3.Row]:
         """Return today's significant injury entries for a team (most-recent report_date)."""

@@ -127,6 +127,9 @@ export default function PlayerModal({ player, teamColors, onClose }: Props) {
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Player profile: ${player.full_name}`}
     >
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />

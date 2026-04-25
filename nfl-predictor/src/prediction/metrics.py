@@ -1,12 +1,18 @@
 """Metrics calculation module for NFL predictions."""
 
 import math
+import time
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import List, Optional, Dict, Any, Tuple
 
 from ..database.db import Database
 from ..database.models import Game, TeamSeasonStats
+
+# Simple TTL cache for team metrics — avoids recomputing on every prediction request.
+# Key: (team_id, current_season) → (TeamMetrics, timestamp)
+_metrics_cache: Dict[tuple, Any] = {}
+_METRICS_TTL = 3600  # 1 hour
 
 
 @dataclass
@@ -66,12 +72,13 @@ class TeamMetrics:
     # Rest / bye week
     rest_days: int = 7  # days since last game
 
-    # Advanced stats (populated from team_advanced_stats table, 0 if unavailable)
+    # Advanced stats (populated from team_advanced_stats table; league-average defaults
+    # are used so that missing data doesn't bias predictions toward 0)
     turnover_margin: float = 0.0
-    third_down_pct: float = 0.0
-    redzone_efficiency: float = 0.0
-    yards_per_play: float = 0.0
-    sack_rate_allowed: float = 0.0
+    third_down_pct: float = 0.40   # NFL league avg ~40%
+    redzone_efficiency: float = 0.55   # NFL league avg ~55%
+    yards_per_play: float = 5.5    # NFL league avg ~5.5 yards/play
+    sack_rate_allowed: float = 0.065   # NFL league avg ~6.5%
     qb_epa_per_play: float = 0.0
 
     # Data quality
@@ -133,6 +140,30 @@ def calculate_season_weight(seasons_ago: int, current_season_multiplier: float =
 
 
 def calculate_team_metrics(
+    db: Database,
+    team_id: int,
+    current_season: Optional[int] = None,
+    recent_games_count: int = 5,
+    seasons_to_analyze: int = 3,
+    cutoff_date: Optional[str] = None,
+) -> 'TeamMetrics':
+    # TTL cache — skip for historical cutoff queries (prediction engine uses cutoff_date)
+    if cutoff_date is None:
+        cache_key = (team_id, current_season)
+        cached = _metrics_cache.get(cache_key)
+        if cached and (time.time() - cached[1]) < _METRICS_TTL:
+            return cached[0]
+        result = _calculate_team_metrics_impl(
+            db, team_id, current_season, recent_games_count, seasons_to_analyze, cutoff_date
+        )
+        _metrics_cache[cache_key] = (result, time.time())
+        return result
+    return _calculate_team_metrics_impl(
+        db, team_id, current_season, recent_games_count, seasons_to_analyze, cutoff_date
+    )
+
+
+def _calculate_team_metrics_impl(
     db: Database,
     team_id: int,
     current_season: Optional[int] = None,

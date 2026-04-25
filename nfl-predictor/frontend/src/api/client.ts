@@ -12,7 +12,7 @@ import type {
   TeamRoster, PlayerProfile, PlayerSearchResult, FantasyLeaderboard,
   FantasyProjection, StartSitResult, DraftRanking, TradeAnalysis,
   PlayoffPicture, TeamUpcoming, PowerRankings, TradeValues, RosterImportResult,
-  ValuePicksResponse,
+  ValuePicksResponse, ValuePickHistoryResponse, TeamScheduleResponse, SimulationResult,
 } from './types';
 
 const BASE = '/api';
@@ -153,6 +153,19 @@ export const api = {
     post<RosterImportResult>('/fantasy/roster/import-by-names', { names, season }),
 
   // Value picks
-  getValuePicks: () =>
-    get<ValuePicksResponse>('/picks/value'),
+  getValuePicks: (minEdge?: number) =>
+    get<ValuePicksResponse>(`/picks/value${minEdge !== undefined ? `?min_edge=${minEdge}` : ''}`),
+
+  getValuePicksHistory: (minEdge = 0.04, limit = 50) =>
+    get<ValuePickHistoryResponse>(`/picks/history?min_edge=${minEdge}&limit=${limit}`),
+
+  // Team schedule (full season)
+  getTeamSchedule: (id: string, season?: number) =>
+    get<TeamScheduleResponse>(
+      `/teams/${encodeURIComponent(id)}/schedule${season ? `?season=${season}` : ''}`
+    ),
+
+  // Monte Carlo simulation
+  simulateGame: (homeTeam: string, awayTeam: string, n = 1000) =>
+    post<SimulationResult>('/games/simulate', { home_team: homeTeam, away_team: awayTeam, n }),
 };

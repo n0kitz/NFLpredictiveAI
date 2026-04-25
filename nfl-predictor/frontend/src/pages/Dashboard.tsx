@@ -374,8 +374,26 @@ export default function Dashboard() {
     let cancelled = false;
     async function load() {
       try {
+        // Try to use upcoming games from the current season
+        const currentYear = new Date().getFullYear();
+        let matchupPairs: [string, string][] = [];
+        try {
+          const gameData = await api.getGames(currentYear, 'regular');
+          const upcoming = gameData.games
+            .filter(g => g.home_score === null && g.home_abbr && g.away_abbr)
+            .slice(0, 8);
+          if (upcoming.length >= 4) {
+            matchupPairs = upcoming.map(g => [g.away_abbr!, g.home_abbr!]);
+          }
+        } catch {
+          // Fall through to hardcoded list
+        }
+        if (matchupPairs.length === 0) {
+          matchupPairs = FEATURED_MATCHUPS;
+        }
+
         const settled = await Promise.allSettled(
-          FEATURED_MATCHUPS.map(async ([away, home]) => {
+          matchupPairs.map(async ([away, home]) => {
             const prediction = await api.predictGet(away, home);
             return { prediction, homeAbbr: home, awayAbbr: away };
           }),

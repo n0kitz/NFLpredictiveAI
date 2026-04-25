@@ -145,13 +145,15 @@ const DASH_POSITIONS = ['QB', 'RB', 'WR', 'TE'] as const;
 
 function DashboardTab() {
   const [week, setWeek] = useState(1);
-  const [season] = useState(2024);
+  const [season] = useState(new Date().getFullYear());
   const [projections, setProjections] = useState<Record<string, FantasyProjection[]>>({});
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const load = useCallback(async (w: number) => {
     setLoading(true);
+    setError(null);
     try {
       const results = await Promise.all(
         DASH_POSITIONS.map((pos) => api.getFantasyProjections(w, season, pos, 'ppr'))
@@ -161,8 +163,8 @@ function DashboardTab() {
         map[pos] = results[i].slice(0, 5);
       });
       setProjections(map);
-    } catch {
-      // silent
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load projections');
     } finally {
       setLoading(false);
     }
@@ -172,6 +174,7 @@ function DashboardTab() {
 
   return (
     <div className="space-y-6">
+      {error && <p className="text-red-400">{error}</p>}
       {/* Info banner */}
       <div className="rounded-xl border border-border bg-surface-800/50 px-4 py-3 flex items-center gap-3 flex-wrap">
         <span className="text-[11px] text-text-muted">
@@ -285,7 +288,7 @@ function DashboardTab() {
 function LeaderboardsTab() {
   const [position, setPosition] = useState<PositionFilter>('QB');
   const [scoring, setScoring] = useState('ppr');
-  const [season] = useState(2024);
+  const [season] = useState(new Date().getFullYear());
   const [data, setData] = useState<FantasyLeaderboard | null>(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -364,7 +367,7 @@ function LeaderboardsTab() {
 
 function WaiverTab() {
   const [week, setWeek] = useState(1);
-  const [season] = useState(2024);
+  const [season] = useState(new Date().getFullYear());
   const [position, setPosition] = useState<PositionFilter>('ALL');
   const [players, setPlayers] = useState<FantasyProjection[]>([]);
   const [loading, setLoading] = useState(false);
@@ -732,7 +735,7 @@ function PlayerSearchPanel({
 function TradeTab({ externalWeek }: { externalWeek?: number } = {}) {
   const [internalWeek, setInternalWeek] = useState(1);
   const week = externalWeek ?? internalWeek;
-  const [season] = useState(2024);
+  const [season] = useState(new Date().getFullYear());
   const [givePlayers, setGivePlayers] = useState<TradePlayer[]>([]);
   const [getPlayers, setGetPlayers] = useState<TradePlayer[]>([]);
   const [result, setResult] = useState<TradeAnalysis | null>(null);
@@ -862,7 +865,7 @@ function TradeTab({ externalWeek }: { externalWeek?: number } = {}) {
 
 function PowerRankingsTab() {
   const [week, setWeek] = useState(1);
-  const [season] = useState(2024);
+  const [season] = useState(new Date().getFullYear());
   const [rankings, setRankings] = useState<PowerRanking[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -935,18 +938,20 @@ function RosterImportHelper({ onImported }: { onImported: (ids: number[]) => voi
   const [unmatched, setUnmatched] = useState<string[]>([]);
   const [step, setStep] = useState<'input' | 'confirm'>('input');
   const [loading, setLoading] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
 
   async function handleSearch() {
     const names = text.split('\n').map((n) => n.trim()).filter(Boolean);
     if (!names.length) return;
     setLoading(true);
+    setImportError(null);
     try {
       const res = await api.importRosterByNames(names, 2024);
       setMatched(res.matched);
       setUnmatched(res.unmatched);
       setStep('confirm');
-    } catch {
-      // silent
+    } catch (err: unknown) {
+      setImportError(err instanceof Error ? err.message : 'Import failed');
     } finally {
       setLoading(false);
     }
@@ -961,6 +966,7 @@ function RosterImportHelper({ onImported }: { onImported: (ids: number[]) => voi
   return (
     <div className="rounded-xl border border-border bg-surface-850 p-5 space-y-4">
       <h3 className="font-display text-[11px] font-bold uppercase tracking-[0.2em] text-text-muted">Setup My Roster</h3>
+      {importError && <p className="text-red-400 text-xs">{importError}</p>}
       {step === 'input' ? (
         <>
           <p className="text-xs text-text-muted">Paste your NFL.com roster player names (one per line) to enable Start/Sit recommendations.</p>

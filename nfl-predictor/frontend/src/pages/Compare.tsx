@@ -11,7 +11,7 @@ import H2HTimeline from '../components/H2HTimeline';
 import TeamLogo from '../components/TeamLogo';
 import { getTeamColors } from '../theme/teamColors';
 import { api } from '../api/client';
-import type { Prediction, TeamMetrics, UpcomingGame } from '../api/types';
+import type { Prediction, TeamMetrics, UpcomingGame, SimulationResult } from '../api/types';
 
 export default function Compare() {
   const { team1: paramT1, team2: paramT2 } = useParams<{ team1?: string; team2?: string }>();
@@ -58,14 +58,16 @@ export default function Compare() {
 function QuickPredict({ t1, t2, c1, c2 }: { t1: string; t2: string; c1: string; c2: string }) {
   const [result, setResult] = useState<Prediction | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const predict = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await api.predict(t1, t2);
       setResult(res);
-    } catch {
-      // silent
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Prediction failed');
     } finally {
       setLoading(false);
     }
@@ -80,6 +82,7 @@ function QuickPredict({ t1, t2, c1, c2 }: { t1: string; t2: string; c1: string; 
         <DataBadge source="calculated" />
       </div>
 
+      {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
       {!result ? (
         <button
           onClick={predict}
@@ -241,6 +244,151 @@ function ScheduleColumn({ abbr, color, season }: { abbr: string; color: string; 
   );
 }
 
+// ── Monte Carlo Simulator ─────────────────────────────────────────────────────
+
+const SIM_OPTIONS = [500, 1000, 2500, 5000] as const;
+
+function MonteCarloPanel({ t1, t2, c1, c2 }: { t1: string; t2: string; c1: string; c2: string }) {
+  const [n, setN] = useState<number>(1000);
+  const [result, setResult] = useState<SimulationResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // t1 is "home" in the URL param sense (left team), t2 is "away"
+      const res = await api.simulateGame(t1, t2, n);
+      setResult(res);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Simulation failed');
+    } finally {
+      setLoading(false);
+    }
+  }, [t1, t2, n]);
+
+  // reset when teams change
+  useEffect(() => { setResult(null); setError(null); }, [t1, t2]);
+
+  const homePct = result ? result.home_win_pct * 100 : 50;
+  const awayPct = result ? result.away_win_pct * 100 : 50;
+
+  return (
+    <div className="rounded-lg border border-border bg-surface-850 p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-display text-[11px] font-semibold text-text-muted uppercase tracking-[0.2em]">
+          Monte Carlo Simulator
+        </h3>
+        <DataBadge source="calculated" />
+      </div>
+
+      {/* Controls */}
+      <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-1 bg-surface-700 rounded-sm p-0.5">
+          {SIM_OPTIONS.map((opt) => (
+            <button
+              key={opt}
+              onClick={() => setN(opt)}
+              className={`px-2.5 py-1 rounded-sm text-[11px] font-display font-semibold transition-colors ${
+                n === opt ? 'bg-accent text-surface-900' : 'text-text-muted hover:text-text-secondary'
+              }`}
+            >
+              {opt.toLocaleString()}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={run}
+          disabled={loading}
+          className="flex-1 py-1.5 rounded-sm bg-accent text-surface-900 font-display font-bold text-[11px] uppercase tracking-widest hover:opacity-90 transition-opacity disabled:opacity-50"
+        >
+          {loading ? 'Simulating…' : `Simulate ${n.toLocaleString()} Games`}
+        </button>
+        {result && (
+          <button onClick={() => setResult(null)} className="text-[10px] text-text-muted hover:text-text-secondary shrink-0">Reset</button>
+        )}
+      </div>
+
+      {error && <p className="text-red-400 text-xs mb-3">{error}</p>}
+
+      {result && (
+        <div className="space-y-4">
+          {/* Win probability bar */}
+          <div>
+            <div className="flex justify-between mb-1.5">
+              <div className="text-center">
+                <p className="font-display text-lg font-bold tabular-nums" style={{ color: c1 }}>
+                  {homePct.toFixed(1)}%
+                </p>
+                <p className="text-[10px] text-text-muted font-display uppercase">{result.home_team_abbr} Win</p>
+              </div>
+              <div className="text-center">
+                <p className="font-display text-xs text-text-muted mt-1">
+                  {result.n_simulations.toLocaleString()} sims
+                </p>
+              </div>
+              <div className="text-center">
+                <p className="font-display text-lg font-bold tabular-nums" style={{ color: c2 }}>
+                  {awayPct.toFixed(1)}%
+                </p>
+                <p className="text-[10px] text-text-muted font-display uppercase">{result.away_team_abbr} Win</p>
+              </div>
+            </div>
+            <div className="flex h-3 rounded-sm overflow-hidden">
+              <div className="transition-all duration-700" style={{ width: `${homePct}%`, backgroundColor: c1 }} />
+              <div className="transition-all duration-700" style={{ width: `${awayPct}%`, backgroundColor: c2 }} />
+            </div>
+          </div>
+
+          {/* Score distribution */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-md bg-surface-800 p-3 text-center border border-border">
+              <p className="font-display text-xl font-bold tabular-nums" style={{ color: c1 }}>
+                {result.avg_home_score.toFixed(1)}
+              </p>
+              <p className="text-[10px] text-text-muted font-display uppercase mt-0.5">
+                {result.home_team_abbr} Avg Score
+              </p>
+              <p className="text-[9px] text-text-muted mt-1">
+                ±{result.std_home_score.toFixed(1)} pts std dev
+              </p>
+            </div>
+            <div className="rounded-md bg-surface-800 p-3 text-center border border-border">
+              <p className="font-display text-xl font-bold tabular-nums" style={{ color: c2 }}>
+                {result.avg_away_score.toFixed(1)}
+              </p>
+              <p className="text-[10px] text-text-muted font-display uppercase mt-0.5">
+                {result.away_team_abbr} Avg Score
+              </p>
+              <p className="text-[9px] text-text-muted mt-1">
+                ±{result.std_away_score.toFixed(1)} pts std dev
+              </p>
+            </div>
+          </div>
+
+          {/* Implied total */}
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[10px] text-text-muted font-display uppercase tracking-wider">Implied Total</span>
+            <span className="font-display text-sm font-bold text-text-primary tabular-nums">
+              {(result.avg_home_score + result.avg_away_score).toFixed(1)} pts
+            </span>
+            <span className="text-[10px] text-text-muted font-display uppercase tracking-wider">
+              {result.home_wins.toLocaleString()}–{result.away_wins.toLocaleString()}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {!result && !loading && (
+        <p className="text-[11px] text-text-muted text-center py-3">
+          Run N simulated games to see projected win distribution and scores.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── Compare Body ──────────────────────────────────────────────────────────────
 
 function CompareBody({ t1, t2 }: { t1: string; t2: string }) {
@@ -302,6 +450,9 @@ function CompareBody({ t1, t2 }: { t1: string; t2: string }) {
 
       {/* Quick Predict */}
       <QuickPredict t1={t1} t2={t2} c1={c1} c2={c2} />
+
+      {/* Monte Carlo Simulator */}
+      <MonteCarloPanel t1={t1} t2={t2} c1={c1} c2={c2} />
 
       {/* H2H summary + timeline */}
       {!hl && h2h && h2h.total_games > 0 && (

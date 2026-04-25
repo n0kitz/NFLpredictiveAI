@@ -1,5 +1,35 @@
 /** TypeScript types matching the FastAPI Pydantic schemas exactly. */
 
+export interface VegasContext {
+  spread: number | null;
+  over_under: number | null;
+  home_implied_prob: number | null;
+  away_implied_prob: number | null;
+  fetched_at: string | null;
+}
+
+export interface InjuryEntry {
+  player_name: string;
+  position: string;
+  injury_status: string;
+  report_date: string;
+}
+
+export interface WeatherInfo {
+  is_dome: boolean;
+  condition: string;
+  temperature_c: number | null;
+  wind_speed_kmh: number | null;
+  precipitation_mm: number | null;
+  is_adverse: boolean;
+}
+
+export interface ConditionsSummary {
+  home_injuries: InjuryEntry[];
+  away_injuries: InjuryEntry[];
+  weather: WeatherInfo | null;
+}
+
 export interface Team {
   team_id: number;
   name: string;
@@ -61,6 +91,9 @@ export interface Prediction {
   confidence: 'low' | 'medium' | 'high';
   key_factors: string[];
   factors_applied: AppliedFactor[];
+  predicted_spread?: number | null;
+  vegas_context?: VegasContext | null;
+  conditions?: ConditionsSummary | null;
 }
 
 export interface H2H {
@@ -513,4 +546,91 @@ export interface ValuePicksResponse {
   picks: ValuePick[];
   generated_at: string;
   note: string;
+}
+
+// ── Value Picks History ───────────────────────────────────────────────────────
+
+export interface ValuePickHistoryItem {
+  id: number;
+  predicted_at: string;
+  home_abbr: string;
+  away_abbr: string;
+  predicted_winner_abbr: string;
+  home_prob: number;
+  vegas_home_implied_prob: number;
+  edge: number;
+  edge_side: 'home' | 'away';
+  vegas_spread: number | null;
+  confidence: string;
+  correct: boolean | null;
+  actual_winner_abbr: string | null;
+}
+
+export interface ValuePickHistoryResponse {
+  picks: ValuePickHistoryItem[];
+  total: number;
+  resolved: number;
+  correct: number;
+  hit_rate: number | null;
+}
+
+// ── Team Schedule ─────────────────────────────────────────────────────────────
+
+export interface TeamScheduleEntry {
+  game_id: number;
+  date: string;
+  week: string;
+  game_type: string;
+  is_home: boolean;
+  opp_abbr: string;
+  opp_name: string;
+  home_score: number | null;
+  away_score: number | null;
+  team_score: number | null;
+  opp_score: number | null;
+  result: 'W' | 'L' | 'T' | null;
+  overtime: boolean;
+  difficulty: 'easy' | 'medium' | 'hard' | null;
+}
+
+export interface TeamScheduleResponse {
+  team_id: number;
+  team_abbr: string;
+  team_name: string;
+  season: number;
+  games: TeamScheduleEntry[];
+  wins: number;
+  losses: number;
+  ties: number;
+}
+
+// ── Health ────────────────────────────────────────────────────────────────────
+
+export interface HealthResponse {
+  status: string;
+  total_teams: number;
+  total_games: number;
+  database: string;
+  last_scrape_at: string | null;
+  last_scrape_ok: boolean | null;
+  last_scrape_error: string | null;
+  data_updated_at: string | null;
+}
+
+// ── Monte Carlo Simulation ────────────────────────────────────────────────────
+
+export interface SimulationResult {
+  home_team: string;
+  away_team: string;
+  home_team_abbr: string;
+  away_team_abbr: string;
+  n_simulations: number;
+  home_wins: number;
+  away_wins: number;
+  home_win_pct: number;
+  away_win_pct: number;
+  avg_home_score: number;
+  avg_away_score: number;
+  std_home_score: number;
+  std_away_score: number;
 }

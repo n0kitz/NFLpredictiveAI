@@ -52,7 +52,10 @@ function PlayerSearch() {
       }
     }
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
   }, []);
 
   return (
@@ -66,14 +69,19 @@ function PlayerSearch() {
           onChange={handleChange}
           onFocus={() => results.length > 0 && setOpen(true)}
           placeholder="Search players…"
+          aria-label="Search NFL players"
+          aria-autocomplete="list"
+          aria-haspopup="listbox"
           className="w-44 bg-surface-700 border border-border rounded-sm pl-8 pr-3 py-1.5 text-xs text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
         />
       </div>
       {open && results.length > 0 && (
-        <div className="absolute right-0 top-full mt-1 w-64 rounded-xl border border-border bg-surface-850 shadow-2xl z-50 overflow-hidden">
+        <div role="listbox" aria-label="Player search results" className="absolute right-0 top-full mt-1 w-64 rounded-xl border border-border bg-surface-850 shadow-2xl z-50 overflow-hidden">
           {results.map((p) => (
             <button
               key={p.player_id}
+              role="option"
+              aria-selected={false}
               onMouseDown={() => pick(p)}
               className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-surface-700 transition-colors text-left"
             >
@@ -95,7 +103,33 @@ function PlayerSearch() {
   );
 }
 
+function useModelStatus() {
+  const [online, setOnline] = useState<boolean | null>(null);
+  const [dataUpdatedAt, setDataUpdatedAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.health()
+      .then((h) => {
+        setOnline(true);
+        // h may be typed as HealthStatus (old type alias) but now includes data_updated_at
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        setDataUpdatedAt((h as any).data_updated_at ?? null);
+      })
+      .catch(() => setOnline(false));
+  }, []);
+
+  // Compute staleness
+  const isStale = dataUpdatedAt !== null && (() => {
+    const updated = new Date(dataUpdatedAt).getTime();
+    const now = Date.now();
+    return (now - updated) > 7 * 24 * 60 * 60 * 1000;
+  })();
+
+  return { online, dataUpdatedAt, isStale };
+}
+
 export default function Layout() {
+  const { online: modelOnline, dataUpdatedAt, isStale } = useModelStatus();
   return (
     <div className="min-h-screen flex flex-col">
       {/* Sticky header: TopBar + Ticker */}
@@ -135,8 +169,8 @@ export default function Layout() {
             <div className="ml-auto flex items-center gap-3">
               <PlayerSearch />
               <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-surface-700 rounded-sm font-display text-[11px] font-semibold tracking-[0.1em] shrink-0">
-                <div className="w-1.5 h-1.5 rounded-full bg-win animate-pulse" />
-                MODEL ONLINE
+                <div className={`w-1.5 h-1.5 rounded-full ${modelOnline === false ? 'bg-red-500' : 'bg-win animate-pulse'}`} />
+                {modelOnline === false ? 'MODEL OFFLINE' : 'MODEL ONLINE'}
               </div>
             </div>
           </div>
@@ -153,13 +187,25 @@ export default function Layout() {
 
       {/* Footer */}
       <footer className="border-t border-border">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
           <span className="text-[11px] text-text-muted font-display uppercase tracking-widest">
             NFL Predictor
           </span>
-          <span className="text-[11px] text-text-muted">
-            35 seasons of data &middot; 1990&ndash;2025
-          </span>
+          <div className="flex items-center gap-4">
+            {isStale && (
+              <span className="text-[10px] text-yellow-500 font-semibold uppercase tracking-wider">
+                ⚠ Data may be stale
+              </span>
+            )}
+            {dataUpdatedAt && (
+              <span className="text-[11px] text-text-muted">
+                Stats as of {dataUpdatedAt}
+              </span>
+            )}
+            <span className="text-[11px] text-text-muted">
+              35 seasons &middot; 1990&ndash;2025
+            </span>
+          </div>
         </div>
       </footer>
     </div>

@@ -8,15 +8,17 @@ import { getTeamColors } from '../theme/teamColors';
 export default function History() {
   const [data, setData] = useState<PredictionHistory | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const limit = 30;
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setError(null);
     api.getPredictionHistory(limit, page * limit)
       .then((d) => { if (!cancelled) setData(d); })
-      .catch(() => {})
+      .catch((err: unknown) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load history'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [page]);
@@ -35,6 +37,8 @@ export default function History() {
           Your Prediction History
         </h1>
       </div>
+
+      {error && <p className="text-red-400 mb-4">{error}</p>}
 
       {/* Accuracy cards */}
       {data && (

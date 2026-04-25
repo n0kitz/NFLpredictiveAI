@@ -336,10 +336,12 @@ class ModelInfoResponse(BaseModel):
     active_model: str = "weighted_sum"
     ml_model_loaded: bool
     ml_available: bool = False
+    ensemble_available: bool = False
     feature_count: Optional[int] = None
     model_file_exists: bool
     ml_oos_accuracy: Optional[float] = None
     weighted_sum_oos_accuracy: Optional[float] = None
+    ensemble_oos_accuracy: Optional[float] = None
     recommendation: Optional[str] = None
     spread_model_loaded: bool = False
     spread_model_mae: Optional[float] = None
@@ -575,19 +577,19 @@ class TradeAnalysisResponse(BaseModel):
 
 class FantasyRosterRequest(BaseModel):
     league_id: int
-    player_ids: List[int]
-    slots: List[str]
+    player_ids: List[int] = Field(max_length=20)
+    slots: List[str] = Field(max_length=20)
 
 
 class TradeAnalyzeRequest(BaseModel):
-    give_player_ids: List[int]
-    get_player_ids: List[int]
+    give_player_ids: List[int] = Field(max_length=10)
+    get_player_ids: List[int] = Field(max_length=10)
     week: int
     season: int = 2024
 
 
 class ImportByNamesRequest(BaseModel):
-    names: List[str]
+    names: List[str] = Field(max_length=50)
     season: int = 2024
 
 
@@ -604,6 +606,8 @@ class ValuePick(BaseModel):
     edge_side: str           # "home" or "away"
     model_confidence: str    # "HIGH" / "MEDIUM" / "LOW"
     vegas_spread: Optional[float] = None
+    is_adverse_weather: bool = False
+    weather_condition: Optional[str] = None
 
 
 class ValuePicksResponse(BaseModel):
@@ -612,10 +616,62 @@ class ValuePicksResponse(BaseModel):
     note: str
 
 
+class ValuePickHistoryItem(BaseModel):
+    id: int
+    predicted_at: str
+    home_abbr: str
+    away_abbr: str
+    predicted_winner_abbr: str
+    home_prob: float
+    vegas_home_implied_prob: float
+    edge: float
+    edge_side: str          # "home" or "away"
+    vegas_spread: Optional[float] = None
+    confidence: str
+    correct: Optional[bool] = None
+    actual_winner_abbr: Optional[str] = None
+
+
+class ValuePickHistoryResponse(BaseModel):
+    picks: List[ValuePickHistoryItem]
+    total: int
+    resolved: int
+    correct: int
+    hit_rate: Optional[float] = None
+
+
 # ── General ────────────────────────────────────────────
 
 class ErrorResponse(BaseModel):
     detail: str
+
+
+class TeamScheduleEntry(BaseModel):
+    game_id: int
+    date: str
+    week: str
+    game_type: str
+    is_home: bool
+    opp_abbr: str
+    opp_name: str
+    home_score: Optional[int] = None
+    away_score: Optional[int] = None
+    team_score: Optional[int] = None
+    opp_score: Optional[int] = None
+    result: Optional[str] = None    # "W", "L", "T", or None if upcoming
+    overtime: bool = False
+    difficulty: Optional[str] = None  # "easy", "medium", "hard" for upcoming games
+
+
+class TeamScheduleResponse(BaseModel):
+    team_id: int
+    team_abbr: str
+    team_name: str
+    season: int
+    games: List[TeamScheduleEntry]
+    wins: int
+    losses: int
+    ties: int
 
 
 class HealthResponse(BaseModel):
@@ -623,3 +679,7 @@ class HealthResponse(BaseModel):
     total_teams: int
     total_games: int
     database: str
+    last_scrape_at: Optional[str] = None
+    last_scrape_ok: Optional[bool] = None
+    last_scrape_error: Optional[str] = None
+    data_updated_at: Optional[str] = None

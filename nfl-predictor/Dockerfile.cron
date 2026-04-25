@@ -12,10 +12,13 @@ COPY data/ data/
 # Install cron
 RUN apt-get update && apt-get install -y cron && rm -rf /var/lib/apt/lists/*
 
+# Create non-root user for scraper work; cron itself must run as root
+RUN adduser --disabled-password --gecos "" cronuser && chown -R cronuser /app
+
 # Create cron job: every Wednesday at 06:00 UTC
 RUN echo "0 6 * * 3 cd /app && python scripts/weekly_scrape.py >> /var/log/nfl-scrape.log 2>&1" > /etc/cron.d/nfl-scrape \
     && chmod 0644 /etc/cron.d/nfl-scrape \
-    && crontab /etc/cron.d/nfl-scrape \
-    && touch /var/log/nfl-scrape.log
+    && crontab -u cronuser /etc/cron.d/nfl-scrape \
+    && touch /var/log/nfl-scrape.log && chown cronuser /var/log/nfl-scrape.log
 
 CMD ["cron", "-f"]

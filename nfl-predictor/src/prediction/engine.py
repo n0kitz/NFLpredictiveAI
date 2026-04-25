@@ -74,6 +74,7 @@ class PredictionEngine:
         is_playoff: bool = False,
         week: Any = 0,
         use_ml: bool = False,
+        use_ensemble: bool = False,
     ) -> Prediction:
         """
         Predict the outcome of a game between two teams.
@@ -129,8 +130,23 @@ class PredictionEngine:
 
         # Calculate base win probability.
         # ML is only used when explicitly requested AND the model is loaded.
+        # Ensemble blends weighted-sum (60%) + ML (40%) when ML is available.
         # Default: weighted-sum (always active).
-        if use_ml:
+        if use_ensemble and self._use_ml:
+            ws_prob, _, ws_factors = self._calculate_probability(
+                home_metrics, away_metrics, h2h_data
+            )
+            ml_prob, _, ml_factors = self._calculate_ml_probability(
+                home_metrics, away_metrics, home_id, away_id,
+                is_playoff=is_playoff, week=week,
+                vegas_implied_prob=vegas_implied_prob,
+                h2h_data=h2h_data,
+                season=current_season,
+            )
+            home_prob = round(0.60 * ws_prob + 0.40 * ml_prob, 4)
+            away_prob = 1.0 - home_prob
+            key_factors = [f"Model: Ensemble (60% weighted-sum + 40% ML)"] + ws_factors[1:]
+        elif use_ml:
             if not self._use_ml:
                 raise RuntimeError(
                     "ML model requested but not loaded. "
@@ -208,11 +224,13 @@ class PredictionEngine:
             "active_model":               "weighted_sum",
             "ml_model_loaded":            self._use_ml,
             "ml_available":               self._ml_model is not None,
+            "ensemble_available":         self._use_ml,
             # Use FEATURE_NAMES as the canonical source (34 after vegas removal)
             "feature_count":              len(FEATURE_NAMES),
             "model_file_exists":          MODEL_PATH.exists(),
             "ml_oos_accuracy":            0.668 if self._use_ml else None,
             "weighted_sum_oos_accuracy":  0.672,
+            "ensemble_oos_accuracy":      None,  # updated after retrain + eval
             "recommendation":             "weighted_sum performs better on 2023-2024 OOS data",
             "spread_model_loaded":        self._spread_model is not None,
             "spread_model_mae":           None,  # updated after retrain

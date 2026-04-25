@@ -11,6 +11,11 @@ services:
       - PYTHONUNBUFFERED=1
       - ODDS_API_KEY=${ODDS_API_KEY:-}
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.5"
 
   frontend:
     build:
@@ -21,6 +26,11 @@ services:
     depends_on:
       - api
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+          cpus: "0.5"
 
   # Automated weekly scraper — runs every Wednesday at 06:00 UTC
   cron:
@@ -32,6 +42,11 @@ services:
     environment:
       - ODDS_API_KEY=${ODDS_API_KEY:-}
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: "2.0"
 
   # Manual one-off scrape (run with: docker compose run scraper)
   scraper:

@@ -28,6 +28,7 @@ export default function Season() {
   const [games, setGames] = useState<Game[]>([]);
   const [standings, setStandings] = useState<Standing[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<'standings' | 'games' | 'playoff'>('standings');
 
   useEffect(() => {
@@ -41,6 +42,7 @@ export default function Season() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setError(null);
 
     async function load() {
       try {
@@ -93,8 +95,8 @@ export default function Season() {
         });
         st.sort((a, b) => b.winPct - a.winPct);
         setStandings(st);
-      } catch {
-        // ignore
+      } catch (err: unknown) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load season data');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -120,6 +122,7 @@ export default function Season() {
 
   return (
     <div>
+      {error && <p className="text-red-400 mb-4">{error}</p>}
       <div className="flex items-center gap-5 mb-8 animate-fade-up">
         <div>
           <div className="flex items-center gap-3 mb-3">

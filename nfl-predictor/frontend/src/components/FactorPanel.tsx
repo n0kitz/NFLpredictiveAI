@@ -46,6 +46,8 @@ export default function FactorPanel({ homeAbbr, awayAbbr, factors, onChange }: P
     <div className="rounded-lg border border-border bg-surface-850 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
+        aria-controls="factor-panel-content"
         className="w-full px-5 py-3 flex items-center justify-between hover:bg-surface-800/50 transition-colors"
       >
         <span className="font-display text-[11px] font-semibold text-text-muted uppercase tracking-[0.2em]">
@@ -60,7 +62,7 @@ export default function FactorPanel({ homeAbbr, awayAbbr, factors, onChange }: P
       </button>
 
       {expanded && (
-        <div className="px-5 pb-5 space-y-3 border-t border-border pt-4">
+        <div id="factor-panel-content" className="px-5 pb-5 space-y-3 border-t border-border pt-4">
           {factors.map((f, idx) => (
             <div key={idx} className="flex items-center gap-3 flex-wrap">
               {/* Factor type */}

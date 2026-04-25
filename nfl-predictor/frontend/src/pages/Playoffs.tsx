@@ -41,6 +41,7 @@ export default function Playoffs() {
   const [bracket, setBracket] = useState<BracketState>(EMPTY_BRACKET);
   const [loading, setLoading] = useState(false);
   const [simulated, setSimulated] = useState(false);
+  const [simError, setSimError] = useState<string | null>(null);
 
   const teams = teamList?.teams ?? [];
   const afcTeams = teams.filter((t) => t.conference === 'AFC');
@@ -62,6 +63,7 @@ export default function Playoffs() {
   const simulate = useCallback(async () => {
     if (!allSeeded) return;
     setLoading(true);
+    setSimError(null);
 
     async function predictMatch(home: string, away: string): Promise<MatchupResult> {
       const p = await api.predictGet(away, home);
@@ -106,8 +108,8 @@ export default function Playoffs() {
 
       setBracket(result);
       setSimulated(true);
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      setSimError(err instanceof Error ? err.message : 'Simulation failed');
     } finally {
       setLoading(false);
     }
@@ -130,6 +132,8 @@ export default function Playoffs() {
           Seed 14 teams, then simulate the entire playoff bracket.
         </p>
       </div>
+
+      {simError && <p className="text-red-400 mb-4">{simError}</p>}
 
       {/* Seeding */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 animate-fade-up stagger-1">

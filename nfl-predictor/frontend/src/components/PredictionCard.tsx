@@ -1,7 +1,66 @@
 import { Link } from 'react-router-dom';
-import type { Prediction } from '../api/types';
+import type { Prediction, VegasContext, ConditionsSummary } from '../api/types';
 import { getTeamColors, teamBgTint } from '../theme/teamColors';
 import TeamLogo from './TeamLogo';
+
+function VegasPanel({ vegas }: { vegas: VegasContext }) {
+  if (!vegas.home_implied_prob && !vegas.spread) return null;
+  return (
+    <div className="mt-3 pt-3 border-t border-border">
+      <p className="text-[10px] uppercase tracking-[0.15em] text-text-muted font-semibold mb-2">Vegas Lines</p>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        {vegas.spread !== null && (
+          <span className="text-text-secondary">Spread: <span className="text-text-primary font-semibold">{vegas.spread > 0 ? '+' : ''}{vegas.spread}</span></span>
+        )}
+        {vegas.over_under !== null && (
+          <span className="text-text-secondary">O/U: <span className="text-text-primary font-semibold">{vegas.over_under}</span></span>
+        )}
+        {vegas.home_implied_prob !== null && (
+          <span className="text-text-secondary">Home implied: <span className="text-text-primary font-semibold">{Math.round(vegas.home_implied_prob * 100)}%</span></span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ConditionsPanel({ conditions, homeAbbr, awayAbbr }: { conditions: ConditionsSummary; homeAbbr: string; awayAbbr: string }) {
+  const hasInjuries = conditions.home_injuries.length > 0 || conditions.away_injuries.length > 0;
+  const weather = conditions.weather;
+  if (!hasInjuries && !weather) return null;
+  return (
+    <div className="mt-3 pt-3 border-t border-border space-y-2">
+      <p className="text-[10px] uppercase tracking-[0.15em] text-text-muted font-semibold">Game Conditions</p>
+      {weather && !weather.is_dome && (
+        <div className="flex flex-wrap gap-x-3 text-xs text-text-secondary">
+          <span>{weather.condition}</span>
+          {weather.temperature_c !== null && <span>{Math.round(weather.temperature_c)}°C</span>}
+          {weather.wind_speed_kmh !== null && <span>Wind {Math.round(weather.wind_speed_kmh)} km/h</span>}
+          {weather.is_adverse && <span className="text-yellow-400 font-semibold">⚠ Adverse</span>}
+        </div>
+      )}
+      {hasInjuries && (
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          {conditions.home_injuries.length > 0 && (
+            <div>
+              <p className="text-[10px] text-text-muted mb-0.5">{homeAbbr} Out/Doubtful</p>
+              {conditions.home_injuries.slice(0, 3).map((inj) => (
+                <p key={inj.player_name} className="text-text-secondary truncate">{inj.player_name} <span className="text-loss text-[10px]">{inj.injury_status}</span></p>
+              ))}
+            </div>
+          )}
+          {conditions.away_injuries.length > 0 && (
+            <div>
+              <p className="text-[10px] text-text-muted mb-0.5">{awayAbbr} Out/Doubtful</p>
+              {conditions.away_injuries.slice(0, 3).map((inj) => (
+                <p key={inj.player_name} className="text-text-secondary truncate">{inj.player_name} <span className="text-loss text-[10px]">{inj.injury_status}</span></p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface Props {
   prediction: Prediction;
@@ -125,6 +184,11 @@ export default function PredictionCard({ prediction, homeAbbr, awayAbbr, compact
             {prediction.predicted_winner.split(' ').pop()}
           </span>
         </div>
+
+        {prediction.vegas_context && <VegasPanel vegas={prediction.vegas_context} />}
+        {prediction.conditions && (
+          <ConditionsPanel conditions={prediction.conditions} homeAbbr={homeAbbr} awayAbbr={awayAbbr} />
+        )}
       </div>
     </div>
   );

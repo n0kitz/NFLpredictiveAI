@@ -17,9 +17,15 @@ Full-stack NFL game prediction application. Python FastAPI backend with 35 years
 nfl-predictor/
 ├── src/
 │   ├── api/
-│   │   ├── app.py             # FastAPI app, all route handlers
-│   │   ├── schemas.py         # Pydantic request/response models
-│   │   └── deps.py            # Dependency injection (DB per request)
+│   │   ├── app.py             # FastAPI thin wrapper: middleware + include_router (~40 lines)
+│   │   ├── schemas.py         # Pydantic request/response models (with Field max_length constraints)
+│   │   ├── deps.py            # Dependency injection (DB per request)
+│   │   └── routers/           # Domain routers (split from app.py)
+│   │       ├── teams.py       # /api/teams/* (9 endpoints)
+│   │       ├── games.py       # /api/games/* (3 endpoints)
+│   │       ├── predictions.py # /api/predict/* + /api/predictions/* (5 endpoints)
+│   │       ├── fantasy.py     # /api/fantasy/* (10 endpoints)
+│   │       └── misc.py        # health, accuracy, factors, model info, scrape, players, seasons
 │   ├── cli/main.py            # CLI interface (still works standalone)
 │   ├── database/
 │   │   ├── db.py              # SQLite connection, CRUD, per-request factory
@@ -27,7 +33,7 @@ nfl-predictor/
 │   │   └── schema.sql         # Schema: teams, games, game_factors, team_season_stats, prediction_history
 │   ├── prediction/
 │   │   ├── engine.py          # Core prediction (weighted probability calc + bye week rest)
-│   │   ├── metrics.py         # TeamMetrics, exponential decay, strength/form, SOS, dynamic HFA, rest_days
+│   │   ├── metrics.py         # TeamMetrics + TTL cache (1h); league-avg defaults for missing adv stats
 │   │   ├── factors.py         # GameFactor adjustments (-5 to +5 impact)
 │   │   ├── backtester.py      # Replay historical games to measure accuracy
 │   │   ├── fantasy_scorer.py  # FantasyScorer: projections, start-sit, trade analysis, draft rankings, power rankings, trade values
@@ -49,19 +55,20 @@ nfl-predictor/
 │   │   ├── api/types.ts       # TypeScript types matching Pydantic schemas
 │   │   ├── hooks/useApi.ts    # React hooks: useTeams, useTeamProfile, usePrediction, useH2H, usePlayer
 │   │   ├── theme/teamColors.ts # All 32 team colors, gradient/tint helpers
-│   │   ├── components/        # Layout (+ PlayerSearch in navbar), PredictionCard, TeamSelector, Spinner, TrendChart, FactorPanel, PlayerModal, ExplanationPanel, DataBadge
-│   │   └── pages/             # Dashboard, Predict, Teams, TeamDetail, Compare, Season, History, Playoffs, PlayerPage, FantasyPage
+│   │   │   ├── components/        # Layout, PredictionCard, TeamSelector, Spinner, TrendChart, FactorPanel, PlayerModal, ExplanationPanel, DataBadge, ErrorBoundary
+│   │   └── pages/             # Dashboard, Predict, Teams, TeamDetail, Compare, Season, History, Playoffs, PlayerPage, FantasyPage, NotFound
 │   ├── vite.config.ts         # Dev proxy /api → localhost:8000
 │   └── package.json
 ├── tests/
 │   ├── test_basic.py          # Team mappings, DB, metrics, helpers (14 tests)
-│   ├── test_api.py            # All API endpoints via TestClient (33 tests, incl. roster/player/fantasy)
+│   ├── test_api.py            # All API endpoints via TestClient (38 tests, incl. roster/player/fantasy)
 │   ├── test_prediction.py     # Prediction engine, metrics, backtester, feature builder, SHAP (20 tests)
 │   ├── test_scraper.py        # HTML parsing, team mapping resolution (11 tests)
 │   ├── test_roster.py         # Player upsert, roster entry, season stats, starters ordering (4 tests)
 │   ├── test_injury_scraper.py # InjuryScraper, ESPN_TEAM_MAP, STADIUM_COORDS (10 tests)
 │   ├── test_weather_scraper.py# WeatherScraper dome logic, WMO mapping (12 tests)
 │   ├── test_fantasy.py        # FantasyScorer: matchup, projections, start-sit, trade, draft (18 tests)
+│   ├── test_api_extended.py   # 42 tests: history, fantasy endpoints, seasons, adversarial inputs
 │   └── fixtures/              # Sample PFR HTML for scraper tests
 ├── scripts/weekly_scrape.py   # Wednesday cron scrape + enrichment + odds + conditions + roster update
 ├── scripts/fetch_conditions.py# One-off injury + weather fetch for upcoming games
@@ -186,6 +193,14 @@ Replace `YYYY` with the season year (e.g. 2025).
 
 ## Architecture Notes
 - CLI uses singleton DB; API uses per-request DB via FastAPI Depends
+- API routers in `src/api/routers/` — `app.py` is a ~40-line thin wrapper (5 `include_router` calls)
+- Schema init lazy: runs once per DB path via `_initialized_paths` set; no overhead on subsequent requests
+- `calculate_team_metrics()` TTL-cached (1h) keyed on `(team_id, season)`; bypassed when `cutoff_date` given
+- `TeamMetrics` defaults: `third_down_pct=0.40`, `yards_per_play=5.5`, `redzone_efficiency=0.55`, `sack_rate_allowed=0.065`
+- Input validation: `Query(ge=1, le=N)` on all limit params; `Field(max_length=...)` on list fields in schemas
+- ErrorBoundary wraps entire route tree; lazy imports + Suspense for all heavy pages; NotFound at `path="*"`
+- `PredictionCard` surfaces `vegas_context` (spread/O/U/implied probs) and `conditions` (injuries/weather) inline
+- Dashboard dynamically sources matchups from upcoming games API; falls back to hardcoded if <4 found
 - Prediction weights: 25% record, 20% strength, 15% form, 15% SOS, 15% splits, 10% H2H
 - Dynamic home field advantage: team-specific HFA from historical home/away win rate differential (capped 0-10%)
 - Bye week rest: +1.5% bonus when a team has ≥10 rest days vs opponent's ≤8
@@ -198,7 +213,7 @@ Replace `YYYY` with the season year (e.g. 2025).
 - Scraper has cloudscraper fallback: if requests gets 403, it retries with cloudscraper automatically
 - Cron container runs weekly_scrape.py every Wednesday 06:00 UTC (enriches predictions + odds + conditions)
 - Frontend uses Recharts for trend charts on TeamDetail page
-- 128 pytest tests across 8 test files (API, prediction, scraper, basic, roster, injury_scraper, weather_scraper, fantasy)
+- 183 pytest tests across 9 test files (API, prediction, scraper, basic, roster, injury_scraper, weather_scraper, fantasy, api_extended)
 - ML model (GradientBoostingClassifier, **35 features**, trained 2013-2022): needs retraining after feature vector expansion
 - Feature vector: 32 base + vegas_home_implied_prob + home_qb_epa_per_play + away_qb_epa_per_play = 35 total
 - Weighted-sum default: 67.2% OOS accuracy on 2023-2024. ML only activates with `?model=ml`
@@ -273,6 +288,16 @@ Replace `YYYY` with the season year (e.g. 2025).
 - Fixed `import_player_season_stats`: merges `import_seasonal_data` with `import_seasonal_rosters` on player_id+season
 - Fixed `search_players` API: `sqlite3.Row` uses bracket access `r["col"]`, not `.get()`
 - Weekly cron now includes roster update step
+
+### Wave 4 — Security, modularization, resilience, performance (2026-04-24)
+- **API modularization**: `app.py` 1894→40 lines; 5 domain routers in `src/api/routers/`
+- **Security**: bounded `Query(ge=1,le=N)` params; `Field(max_length=)` list constraints; global exception handler (no stack trace leak); health endpoint no longer exposes db path; CORS restricted to GET/POST/DELETE
+- **DB optimizations**: lazy schema init (`_initialized_paths`); `find_team` merged to single OR query; `enrich_prediction_history` N+1→single JOIN; 6 new indexes (roster, player_stats, fantasy, games, predictions)
+- **Metrics TTL cache**: `calculate_team_metrics` cached 1h; league-average defaults for missing adv stats
+- **Frontend resilience**: `ErrorBoundary`, `NotFound` page, route-level lazy imports + `Suspense`, all 12 silent catches replaced with error state, timer cleanup on unmount
+- **Feature surfaces**: `PredictionCard` shows vegas context + conditions; Dashboard sources live upcoming games
+- **Test coverage**: `test_api_extended.py` adds 42 tests (183 total); adversarial inputs never return 500
+- **Accessibility**: ARIA on `PlayerModal` (dialog), `FactorPanel` (expanded/controls), `PlayerSearch` (listbox/option)
 
 ### Wave 3 — Fantasy module + enhancements (last session, 2026-04-17)
 - **`src/prediction/fantasy_scorer.py`** — `FantasyScorer` class: `generate_weekly_projections`, `start_sit_recommendation`, `analyze_trade`, `generate_draft_rankings`, `get_power_rankings`, `get_trade_values`

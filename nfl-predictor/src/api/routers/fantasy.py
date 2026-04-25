@@ -110,7 +110,8 @@ def get_fantasy_projections(
     if not rows:
         scorer.generate_weekly_projections(season, week)
         rows = db.get_fantasy_projections(season, week, position, scoring)
-    boom_bust = scorer.bulk_boom_bust(season - 1)
+    player_ids = [r["player_id"] for r in rows]
+    boom_bust = scorer.bulk_boom_bust(season - 1, player_ids=player_ids)
     bye_by_team = db.get_bye_weeks(season)
     return [_proj_row_to_entry(r, week, season, boom_bust, bye_by_team) for r in rows]
 
@@ -161,9 +162,11 @@ def get_waiver_wire(
         scorer.generate_weekly_projections(season, week)
         rows = db.get_fantasy_projections(season, week, position, scoring)
     sorted_rows = sorted(rows, key=lambda r: float(r["opportunity_score"] or 0), reverse=True)
-    boom_bust = scorer.bulk_boom_bust(season - 1)
+    visible_rows = sorted_rows[:limit]
+    player_ids = [r["player_id"] for r in visible_rows]
+    boom_bust = scorer.bulk_boom_bust(season - 1, player_ids=player_ids)
     bye_by_team = db.get_bye_weeks(season)
-    return [_proj_row_to_entry(r, week, season, boom_bust, bye_by_team) for r in sorted_rows[:limit]]
+    return [_proj_row_to_entry(r, week, season, boom_bust, bye_by_team) for r in visible_rows]
 
 
 @router.get("/api/fantasy/draft-rankings", response_model=List[DraftRankingEntry])
@@ -179,7 +182,10 @@ def get_draft_rankings(
     if not rows:
         scorer.generate_draft_rankings(season, scoring)
         rows = db.get_draft_rankings(season, scoring, position)
-    boom_bust = scorer.bulk_boom_bust(season - 1)
+    boom_bust = scorer.bulk_boom_bust(
+        season - 1,
+        player_ids=[r["player_id"] for r in rows],
+    )
     rankings = []
     for r in rows:
         keys = r.keys()

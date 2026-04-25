@@ -343,6 +343,26 @@ class TestBoomBustCalc:
 
 
 @pytest.mark.skipif(not db_available, reason="Real database not found")
+class TestBulkBoomBustFilter:
+    def test_empty_player_ids_returns_empty(self, real_scorer):
+        """Empty player_ids list short-circuits without scanning DB."""
+        assert real_scorer.bulk_boom_bust(2024, player_ids=[]) == {}
+
+    def test_player_ids_filter_subset(self, real_scorer, real_db):
+        """Result only contains player_ids requested (when they have data)."""
+        # Pick a small set of player_ids that exist in weekly stats
+        rows = real_db.fetchall(
+            "SELECT DISTINCT player_id FROM player_weekly_stats WHERE season = 2024 LIMIT 5"
+        )
+        ids = [r["player_id"] for r in rows]
+        if not ids:
+            pytest.skip("No 2024 weekly data")
+        result = real_scorer.bulk_boom_bust(2024, player_ids=ids)
+        for pid in result.keys():
+            assert pid in ids, f"unexpected player_id {pid} in filtered result"
+
+
+@pytest.mark.skipif(not db_available, reason="Real database not found")
 class TestByeWeekDerivation:
     def test_returns_dict(self, real_db):
         byes = real_db.get_bye_weeks(2024)

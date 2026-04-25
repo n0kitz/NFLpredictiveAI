@@ -542,16 +542,28 @@ class FantasyScorer:
 
     # ── Boom/bust bulk helper ───────────────────────────────────────────────
 
-    def bulk_boom_bust(self, season: int) -> Dict[int, Dict[str, float]]:
-        """Compute boom/bust pct for every player with weekly data in a season."""
-        rows = self.db.fetchall(
-            """
-            SELECT player_id, fantasy_points_ppr, snaps, snap_pct
-            FROM player_weekly_stats
-            WHERE season = ?
-            """,
-            (season,),
+    def bulk_boom_bust(
+        self,
+        season: int,
+        player_ids: Optional[List[int]] = None,
+    ) -> Dict[int, Dict[str, float]]:
+        """Compute boom/bust pct for every player with weekly data in a season.
+
+        Pass `player_ids` to restrict the scan to a known set (avoids loading
+        the full season's weekly rows on each request-path call).
+        """
+        if player_ids is not None and not player_ids:
+            return {}
+        query = (
+            "SELECT player_id, fantasy_points_ppr, snaps, snap_pct "
+            "FROM player_weekly_stats WHERE season = ?"
         )
+        params: List[Any] = [season]
+        if player_ids is not None:
+            placeholders = ", ".join("?" for _ in player_ids)
+            query += f" AND player_id IN ({placeholders})"
+            params.extend(player_ids)
+        rows = self.db.fetchall(query, tuple(params))
         by_player: Dict[int, list] = {}
         for r in rows:
             by_player.setdefault(r['player_id'], []).append(r)

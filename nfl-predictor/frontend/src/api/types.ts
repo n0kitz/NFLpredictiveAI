@@ -291,6 +291,8 @@ export interface PlayerProfile {
   headshot_url: string | null;
   team_abbr: string | null;
   current_stats: PlayerStatsEntry | null;
+  boom_pct: number | null;
+  bust_pct: number | null;
 }
 
 export interface PlayerSearchResult {
@@ -363,6 +365,9 @@ export interface FantasyProjection {
   floor_ppr: number | null;
   ceiling_ppr: number | null;
   contributions: FantasyContribution[];
+  boom_pct: number | null;
+  bust_pct: number | null;
+  bye_week: number | null;
 }
 
 export interface StartSitPlayer {
@@ -395,6 +400,32 @@ export interface DraftRanking {
   projected_season_points: number;
   season: number;
   scoring_format: string;
+  vbd: number | null;
+  boom_pct: number | null;
+  bust_pct: number | null;
+}
+
+export interface PlayerWeekCell {
+  week: number;
+  is_bye: boolean;
+  snaps: number;
+  snap_pct: number;
+  routes: number;
+  targets: number;
+  target_share: number;
+  rec_yards: number;
+  rush_yards: number;
+  pass_yards: number;
+  fantasy_points_ppr: number;
+  fantasy_points_standard: number;
+  opponent_abbr: string | null;
+  is_home: boolean;
+}
+
+export interface PlayerWeeklyStatsResponse {
+  player_id: number;
+  season: number;
+  weeks: PlayerWeekCell[];
 }
 
 export interface TradePlayer {

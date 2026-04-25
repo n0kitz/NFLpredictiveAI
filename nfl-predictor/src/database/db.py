@@ -39,6 +39,8 @@ MIGRATIONS: List[str] = [
     # v8: edge_pick flag on prediction_history for value picks tracking
     "ALTER TABLE prediction_history ADD COLUMN edge_pick INTEGER DEFAULT 0",
     "ALTER TABLE prediction_history ADD COLUMN model_edge REAL",
+    # v10: VBD column on draft_rankings (Fantasy Depth Pack)
+    "ALTER TABLE draft_rankings ADD COLUMN vbd REAL",
 ]
 
 
@@ -1525,16 +1527,48 @@ class Database:
             """
             INSERT OR REPLACE INTO draft_rankings
                 (season, scoring_format, player_id, overall_rank, position_rank,
-                 tier, adp, projected_season_points)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 tier, adp, projected_season_points, vbd)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data['season'], data['scoring_format'], data['player_id'],
                 data.get('overall_rank'), data.get('position_rank'),
                 data.get('tier'), data.get('adp'),
                 data.get('projected_season_points', 0.0),
+                data.get('vbd'),
             ),
         )
+
+    def get_bye_weeks(self, season: int) -> Dict[int, int]:
+        """Return {team_id: bye_week} for a season. Bye = week 1..N with no regular-season game."""
+        rows = self.fetchall(
+            """
+            SELECT team_id, CAST(week AS INTEGER) AS week_int FROM (
+                SELECT home_team_id AS team_id, week FROM games
+                WHERE season = ? AND game_type = 'regular'
+                UNION ALL
+                SELECT away_team_id AS team_id, week FROM games
+                WHERE season = ? AND game_type = 'regular'
+            )
+            """,
+            (season, season),
+        )
+        played: Dict[int, set] = {}
+        for r in rows:
+            wk = r['week_int']
+            if wk is None:
+                continue
+            played.setdefault(r['team_id'], set()).add(int(wk))
+        max_week = max((w for weeks in played.values() for w in weeks), default=0)
+        if max_week < 14:
+            return {}
+        result: Dict[int, int] = {}
+        for team_id, weeks in played.items():
+            for w in range(1, max_week + 1):
+                if w not in weeks:
+                    result[team_id] = w
+                    break
+        return result
 
     def get_draft_rankings(
         self,

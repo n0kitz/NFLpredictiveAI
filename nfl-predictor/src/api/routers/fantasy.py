@@ -158,22 +158,30 @@ def get_draft_rankings(
 ):
     from ...prediction.fantasy_scorer import FantasyScorer
     rows = db.get_draft_rankings(season, scoring, position)
+    scorer = FantasyScorer(db)
     if not rows:
-        scorer = FantasyScorer(db)
         scorer.generate_draft_rankings(season, scoring)
         rows = db.get_draft_rankings(season, scoring, position)
-    return [
-        DraftRankingEntry(
-            player_id=r["player_id"], full_name=r.get("full_name", ""),
-            position=r.get("position"), team_abbr=r.get("team_abbr"),
-            headshot_url=r.get("headshot_url"),
+    boom_bust = scorer._bulk_boom_bust(season - 1)
+    rankings = []
+    for r in rows:
+        keys = r.keys()
+        bb = boom_bust.get(r["player_id"]) or {}
+        rankings.append(DraftRankingEntry(
+            player_id=r["player_id"],
+            full_name=r["full_name"] if "full_name" in keys else "",
+            position=r["position"] if "position" in keys else None,
+            team_abbr=r["team_abbr"] if "team_abbr" in keys else None,
+            headshot_url=r["headshot_url"] if "headshot_url" in keys else None,
             overall_rank=r["overall_rank"], position_rank=r["position_rank"],
             tier=r["tier"], adp=r["adp"],
             projected_season_points=r["projected_season_points"],
             season=r["season"], scoring_format=r["scoring_format"],
-        )
-        for r in rows
-    ]
+            vbd=r["vbd"] if "vbd" in keys else None,
+            boom_pct=bb.get("boom_pct"),
+            bust_pct=bb.get("bust_pct"),
+        ))
+    return rankings
 
 
 @router.post("/api/fantasy/roster")

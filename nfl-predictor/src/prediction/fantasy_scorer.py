@@ -37,6 +37,41 @@ _FANTASY_POSITIONS = ('QB', 'RB', 'WR', 'TE', 'K')
 # Tier boundaries (cumulative player count thresholds)
 _TIER_BOUNDARIES = [12, 36, 60, 84, 108, 132, 156, 180]
 
+# Replacement-level position rank for VBD (12-team league assumption)
+_REPLACEMENT_LEVEL: Dict[str, int] = {
+    'QB': 12,
+    'RB': 30,
+    'WR': 36,
+    'TE': 12,
+    'K': 12,
+}
+
+# Boom/bust thresholds (multipliers of player's season average PPR points)
+_BOOM_THRESHOLD = 1.5
+_BUST_THRESHOLD = 0.5
+
+
+def calc_boom_bust_from_rows(rows: List[Any]) -> Optional[Dict[str, float]]:
+    """
+    Compute boom/bust percentages from a list of weekly rows for one player.
+
+    Each row must have fantasy_points_ppr and snaps. Weeks with snaps=0 are skipped.
+    Returns None when fewer than 4 active weeks (sample too small).
+    """
+    pts = [float(r['fantasy_points_ppr'] or 0) for r in rows if (r['snaps'] or 0) > 0]
+    if len(pts) < 4:
+        return None
+    avg = sum(pts) / len(pts)
+    if avg <= 0:
+        return None
+    boom = sum(1 for p in pts if p >= _BOOM_THRESHOLD * avg)
+    bust = sum(1 for p in pts if p <= _BUST_THRESHOLD * avg)
+    return {
+        'boom_pct': round(100.0 * boom / len(pts), 1),
+        'bust_pct': round(100.0 * bust / len(pts), 1),
+        'weeks_played': len(pts),
+    }
+
 
 class FantasyScorer:
     """Generate fantasy projections, draft rankings, trade analysis, and start/sit advice."""
@@ -302,6 +337,12 @@ class FantasyScorer:
             if row['opening_spread'] is not None:
                 spread_by_game[row['game_id']] = float(row['opening_spread'])
 
+        # ── 7. Boom/bust % from prior season weekly stats (bulk) ─────────────
+        boom_bust_by_player = self._bulk_boom_bust(season - 1)
+
+        # ── 8. Bye weeks per team ────────────────────────────────────────────
+        bye_by_team = self.db.get_bye_weeks(season)
+
         # Pre-warm ML model cache (one joblib load per position)
         model_cache = get_player_model_cache()
         ml_positions = {pos: model_cache.get_model(pos) is not None
@@ -435,6 +476,7 @@ class FantasyScorer:
                     if feats.get('weeks_of_experience', 0) >= 4 and injury_status is None:
                         confidence = 'high'
 
+            bb = boom_bust_by_player.get(player_id) or {}
             proj: Dict[str, Any] = {
                 'player_id':            player_id,
                 'full_name':            name,
@@ -456,6 +498,9 @@ class FantasyScorer:
                 'floor_ppr':            floor_ppr,
                 'ceiling_ppr':          ceiling_ppr,
                 'contributions':        contributions,
+                'boom_pct':             bb.get('boom_pct'),
+                'bust_pct':             bb.get('bust_pct'),
+                'bye_week':             bye_by_team.get(team_id),
             }
 
             self.db.upsert_fantasy_projection({
@@ -482,6 +527,28 @@ class FantasyScorer:
             "Generated %d projections for season %s week %s", len(results), season, week
         )
         return results
+
+    # ── Boom/bust bulk helper ───────────────────────────────────────────────
+
+    def _bulk_boom_bust(self, season: int) -> Dict[int, Dict[str, float]]:
+        """Compute boom/bust pct for every player with weekly data in a season."""
+        rows = self.db.fetchall(
+            """
+            SELECT player_id, fantasy_points_ppr, snaps
+            FROM player_weekly_stats
+            WHERE season = ?
+            """,
+            (season,),
+        )
+        by_player: Dict[int, list] = {}
+        for r in rows:
+            by_player.setdefault(r['player_id'], []).append(r)
+        result: Dict[int, Dict[str, float]] = {}
+        for pid, rs in by_player.items():
+            bb = calc_boom_bust_from_rows(rs)
+            if bb is not None:
+                result[pid] = bb
+        return result
 
     # ── Draft rankings ───────────────────────────────────────────────────────
 
@@ -567,6 +634,20 @@ class FantasyScorer:
 
         scored.sort(key=lambda x: x['adj_score'], reverse=True)
 
+        # Replacement-level baseline points per position (for VBD)
+        # Walk scored list once, capture nth-ranked player's adj_score per position
+        replacement_pts: Dict[str, float] = {}
+        pos_rank_walk: Dict[str, int] = {}
+        for entry in scored:
+            pos = entry['position'] or 'OTH'
+            pos_rank_walk[pos] = pos_rank_walk.get(pos, 0) + 1
+            cutoff = _REPLACEMENT_LEVEL.get(pos)
+            if cutoff and pos_rank_walk[pos] == cutoff:
+                replacement_pts[pos] = float(entry['adj_score'])
+
+        # Boom/bust from prior season weekly data (same as projections)
+        boom_bust_by_player = self._bulk_boom_bust(prev_season)
+
         pos_rank_counter: Dict[str, int] = {}
         results: List[Dict[str, Any]] = []
 
@@ -582,6 +663,9 @@ class FantasyScorer:
                     break
 
             adp = float(overall_rank)
+            replacement = replacement_pts.get(pos, 0.0)
+            vbd = round(max(0.0, float(entry['adj_score']) - replacement), 1)
+            bb = boom_bust_by_player.get(entry['player_id']) or {}
 
             ranking: Dict[str, Any] = {
                 'player_id':               entry['player_id'],
@@ -594,6 +678,9 @@ class FantasyScorer:
                 'tier':                    tier,
                 'adp':                     adp,
                 'projected_season_points': round(entry['season_pts'], 1),
+                'vbd':                     vbd,
+                'boom_pct':                bb.get('boom_pct'),
+                'bust_pct':                bb.get('bust_pct'),
                 'season':                  season,
                 'scoring_format':          scoring_format,
             }
@@ -608,6 +695,7 @@ class FantasyScorer:
                 'tier':                    tier,
                 'adp':                     adp,
                 'projected_season_points': round(entry['season_pts'], 1),
+                'vbd':                     vbd,
             })
 
         self.db.commit()

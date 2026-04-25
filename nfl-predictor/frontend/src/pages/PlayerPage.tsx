@@ -1,6 +1,8 @@
 import { useParams, Link } from 'react-router-dom';
 import { usePlayer } from '../hooks/useApi';
 import Spinner from '../components/Spinner';
+import PlayerWeeklyHeatmap from '../components/PlayerWeeklyHeatmap';
+import BoomBustBadge from '../components/BoomBustBadge';
 import { getTeamColors } from '../theme/teamColors';
 
 function fmtHeight(cm: number | null): string {
@@ -116,6 +118,7 @@ export default function PlayerPage() {
                   {player.status}
                 </span>
               )}
+              <BoomBustBadge boomPct={player.boom_pct} bustPct={player.bust_pct} size="md" />
             </div>
 
             {/* Bio grid */}
@@ -221,6 +224,10 @@ export default function PlayerPage() {
           No season stats on record.
         </div>
       )}
+
+      <div className="mt-6">
+        <PlayerWeeklyHeatmap playerId={player.player_id} position={player.position} />
+      </div>
     </div>
   );
 }

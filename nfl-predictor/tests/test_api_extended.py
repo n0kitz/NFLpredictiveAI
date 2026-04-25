@@ -176,6 +176,43 @@ class TestTeamExtended:
         assert "players" in data
 
 
+# ── Player weekly stats endpoint (Fantasy Depth Pack) ─────────────────────────
+
+class TestPlayerWeeklyStats:
+    def _any_player_id(self):
+        from src.database.db import Database
+        db = Database(DEFAULT_DB_PATH)
+        try:
+            row = db.fetchone("SELECT player_id FROM players LIMIT 1")
+            return row["player_id"] if row else None
+        finally:
+            db.close()
+
+    def test_404_unknown_player(self):
+        r = client.get("/api/players/999999999/weekly-stats?season=2024")
+        assert r.status_code == 404
+
+    def test_known_player_returns_shape(self):
+        pid = self._any_player_id()
+        if pid is None:
+            pytest.skip("No players in DB")
+        r = client.get(f"/api/players/{pid}/weekly-stats?season=2024")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["player_id"] == pid
+        assert data["season"] == 2024
+        assert isinstance(data["weeks"], list)
+        for cell in data["weeks"]:
+            assert "week" in cell
+            assert "is_bye" in cell
+            assert "snap_pct" in cell
+            assert "fantasy_points_ppr" in cell
+
+    def test_season_validation(self):
+        r = client.get("/api/players/1/weekly-stats?season=1800")
+        assert r.status_code == 422
+
+
 # ── Factors CRUD ──────────────────────────────────────────────────────────────
 
 class TestFactorsCRUD:

@@ -16,6 +16,7 @@ from ..schemas import (
     FactorRequest, FactorResponse, FactorListResponse,
     PlayerProfile, PlayerStatsEntry, PlayerSearchResult,
     ValuePick, ValuePicksResponse, ValuePickHistoryItem, ValuePickHistoryResponse,
+    PlayerWeeklyStatsResponse, PlayerWeekCell,
 )
 from ...prediction.backtester import Backtester
 from ...prediction.factors import FactorAdjuster
@@ -222,6 +223,19 @@ def get_player(player_id: int, db=Depends(get_db)):
         if team_row:
             team_abbr = team_row["abbreviation"]
 
+    # Boom/bust from prior season weekly stats
+    from datetime import datetime
+    from ...prediction.fantasy_scorer import calc_boom_bust_from_rows
+    prev_season = datetime.now().year - 1
+    weekly_rows = db.fetchall(
+        """
+        SELECT fantasy_points_ppr, snaps FROM player_weekly_stats
+        WHERE player_id = ? AND season = ?
+        """,
+        (player_id, prev_season),
+    )
+    bb = calc_boom_bust_from_rows(weekly_rows) if weekly_rows else None
+
     return PlayerProfile(
         player_id=d["player_id"], espn_id=d.get("espn_id"),
         full_name=d.get("full_name", ""), first_name=d.get("first_name"),
@@ -231,7 +245,81 @@ def get_player(player_id: int, db=Depends(get_db)):
         college=d.get("college"), experience_years=d.get("experience_years", 0),
         status=d.get("status"), headshot_url=d.get("headshot_url"),
         team_abbr=team_abbr, current_stats=stats,
+        boom_pct=bb.get("boom_pct") if bb else None,
+        bust_pct=bb.get("bust_pct") if bb else None,
     )
+
+
+@router.get(
+    "/api/players/{player_id}/weekly-stats",
+    response_model=PlayerWeeklyStatsResponse,
+    tags=["roster"],
+)
+def get_player_weekly_stats(
+    player_id: int,
+    season: int = Query(..., ge=1990, le=2100),
+    db=Depends(get_db),
+):
+    if not db.get_player_by_id(player_id):
+        raise HTTPException(status_code=404, detail=f"Player {player_id} not found")
+
+    rows = db.fetchall(
+        """
+        SELECT pws.week, pws.snaps, pws.snap_pct, pws.routes, pws.targets,
+               pws.target_share, pws.rec_yards, pws.rush_yards, pws.pass_yards,
+               pws.fantasy_points_ppr, pws.fantasy_points_standard,
+               pws.is_home, pws.team_id, pws.opponent_team_id,
+               opp.abbreviation AS opponent_abbr
+        FROM player_weekly_stats pws
+        LEFT JOIN teams opp ON opp.team_id = pws.opponent_team_id
+        WHERE pws.player_id = ? AND pws.season = ?
+        ORDER BY pws.week ASC
+        """,
+        (player_id, season),
+    )
+    by_week = {r["week"]: r for r in rows}
+
+    # Determine player's team in this season for bye derivation
+    team_row = db.fetchone(
+        "SELECT team_id FROM roster_entries WHERE player_id = ? AND season = ? LIMIT 1",
+        (player_id, season),
+    )
+    bye_week: Optional[int] = None
+    if team_row:
+        byes = db.get_bye_weeks(season)
+        bye_week = byes.get(team_row["team_id"])
+
+    max_week = max(list(by_week.keys()) + ([bye_week] if bye_week else []) + [0])
+    if max_week == 0:
+        return PlayerWeeklyStatsResponse(player_id=player_id, season=season, weeks=[])
+
+    cells: List[PlayerWeekCell] = []
+    for w in range(1, max_week + 1):
+        r = by_week.get(w)
+        if r is not None:
+            cells.append(PlayerWeekCell(
+                week=w,
+                is_bye=False,
+                snaps=int(r["snaps"] or 0),
+                snap_pct=float(r["snap_pct"] or 0),
+                routes=int(r["routes"] or 0),
+                targets=int(r["targets"] or 0),
+                target_share=float(r["target_share"] or 0),
+                rec_yards=int(r["rec_yards"] or 0),
+                rush_yards=int(r["rush_yards"] or 0),
+                pass_yards=int(r["pass_yards"] or 0),
+                fantasy_points_ppr=float(r["fantasy_points_ppr"] or 0),
+                fantasy_points_standard=float(r["fantasy_points_standard"] or 0),
+                opponent_abbr=r["opponent_abbr"],
+                is_home=bool(r["is_home"]),
+            ))
+        else:
+            cells.append(PlayerWeekCell(
+                week=w,
+                is_bye=(bye_week is not None and w == bye_week),
+            ))
+
+    return PlayerWeeklyStatsResponse(player_id=player_id, season=season, weeks=cells)
 
 
 @router.get("/api/seasons/{year}/playoff-picture", tags=["seasons"])

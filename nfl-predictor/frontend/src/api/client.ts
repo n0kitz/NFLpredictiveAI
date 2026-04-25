@@ -13,6 +13,7 @@ import type {
   FantasyProjection, StartSitResult, DraftRanking, TradeAnalysis,
   PlayoffPicture, TeamUpcoming, PowerRankings, TradeValues, RosterImportResult,
   ValuePicksResponse, ValuePickHistoryResponse, TeamScheduleResponse, SimulationResult,
+  PlayerWeeklyStatsResponse,
 } from './types';
 
 const BASE = '/api';
@@ -102,6 +103,8 @@ export const api = {
   getPlayer: (playerId: number) => get<PlayerProfile>(`/players/${playerId}`),
   searchPlayers: (query: string) =>
     get<PlayerSearchResult[]>(`/players/search?q=${encodeURIComponent(query)}`),
+  getPlayerWeeklyStats: (playerId: number, season: number) =>
+    get<PlayerWeeklyStatsResponse>(`/players/${playerId}/weekly-stats?season=${season}`),
 
   // Fantasy — leaderboard (existing)
   getFantasyTop: (position?: string, season = 2024, scoring = 'ppr', limit = 50) => {

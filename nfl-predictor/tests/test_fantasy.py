@@ -321,7 +321,7 @@ class TestBoomBustCalc:
         from src.prediction.fantasy_scorer import calc_boom_bust_from_rows
         # Avg = 10. Boom (>=15): 2 of 10 = 20%. Bust (<=5): 2 of 10 = 20%.
         rows = [
-            {'fantasy_points_ppr': v, 'snaps': 50}
+            {'fantasy_points_ppr': v, 'snaps': 50, 'snap_pct': 0.8}
             for v in [16.0, 17.0, 10.0, 11.0, 9.0, 12.0, 8.0, 11.0, 4.0, 2.0]
         ]
         result = calc_boom_bust_from_rows(rows)
@@ -329,6 +329,17 @@ class TestBoomBustCalc:
         assert result['weeks_played'] == 10
         assert result['boom_pct'] == 20.0
         assert result['bust_pct'] == 20.0
+
+    def test_counts_when_only_snap_pct_filled(self):
+        """Importer leaves snaps=0; rows count as played when snap_pct>0."""
+        from src.prediction.fantasy_scorer import calc_boom_bust_from_rows
+        rows = [
+            {'fantasy_points_ppr': v, 'snaps': 0, 'snap_pct': 0.7}
+            for v in [16.0, 17.0, 10.0, 11.0, 9.0, 12.0]
+        ]
+        result = calc_boom_bust_from_rows(rows)
+        assert result is not None
+        assert result['weeks_played'] == 6
 
 
 @pytest.mark.skipif(not db_available, reason="Real database not found")

@@ -51,14 +51,26 @@ _BOOM_THRESHOLD = 1.5
 _BUST_THRESHOLD = 0.5
 
 
+def _played_week(r: Any) -> bool:
+    """A weekly row counts as 'played' when either snaps>0 or snap_pct>0.
+
+    The current importer leaves snaps=0 for rows where only snap_pct is populated,
+    so checking both keeps boom/bust working regardless of which column is filled.
+    """
+    keys = r.keys() if hasattr(r, 'keys') else r
+    snaps = (r['snaps'] if 'snaps' in keys else 0) or 0
+    snap_pct = (r['snap_pct'] if 'snap_pct' in keys else 0) or 0
+    return snaps > 0 or snap_pct > 0
+
+
 def calc_boom_bust_from_rows(rows: List[Any]) -> Optional[Dict[str, float]]:
     """
     Compute boom/bust percentages from a list of weekly rows for one player.
 
-    Each row must have fantasy_points_ppr and snaps. Weeks with snaps=0 are skipped.
+    Counts weeks where snaps>0 or snap_pct>0 (importer fills only one of the two).
     Returns None when fewer than 4 active weeks (sample too small).
     """
-    pts = [float(r['fantasy_points_ppr'] or 0) for r in rows if (r['snaps'] or 0) > 0]
+    pts = [float(r['fantasy_points_ppr'] or 0) for r in rows if _played_week(r)]
     if len(pts) < 4:
         return None
     avg = sum(pts) / len(pts)
@@ -338,7 +350,7 @@ class FantasyScorer:
                 spread_by_game[row['game_id']] = float(row['opening_spread'])
 
         # ── 7. Boom/bust % from prior season weekly stats (bulk) ─────────────
-        boom_bust_by_player = self._bulk_boom_bust(season - 1)
+        boom_bust_by_player = self.bulk_boom_bust(season - 1)
 
         # ── 8. Bye weeks per team ────────────────────────────────────────────
         bye_by_team = self.db.get_bye_weeks(season)
@@ -530,11 +542,11 @@ class FantasyScorer:
 
     # ── Boom/bust bulk helper ───────────────────────────────────────────────
 
-    def _bulk_boom_bust(self, season: int) -> Dict[int, Dict[str, float]]:
+    def bulk_boom_bust(self, season: int) -> Dict[int, Dict[str, float]]:
         """Compute boom/bust pct for every player with weekly data in a season."""
         rows = self.db.fetchall(
             """
-            SELECT player_id, fantasy_points_ppr, snaps
+            SELECT player_id, fantasy_points_ppr, snaps, snap_pct
             FROM player_weekly_stats
             WHERE season = ?
             """,
@@ -646,7 +658,7 @@ class FantasyScorer:
                 replacement_pts[pos] = float(entry['adj_score'])
 
         # Boom/bust from prior season weekly data (same as projections)
-        boom_bust_by_player = self._bulk_boom_bust(prev_season)
+        boom_bust_by_player = self.bulk_boom_bust(prev_season)
 
         pos_rank_counter: Dict[str, int] = {}
         results: List[Dict[str, Any]] = []
@@ -663,8 +675,12 @@ class FantasyScorer:
                     break
 
             adp = float(overall_rank)
-            replacement = replacement_pts.get(pos, 0.0)
-            vbd = round(max(0.0, float(entry['adj_score']) - replacement), 1)
+            replacement = replacement_pts.get(pos)
+            vbd = (
+                round(max(0.0, float(entry['adj_score']) - replacement), 1)
+                if replacement is not None
+                else None
+            )
             bb = boom_bust_by_player.get(entry['player_id']) or {}
 
             ranking: Dict[str, Any] = {

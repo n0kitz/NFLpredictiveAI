@@ -1497,7 +1497,7 @@ class Database:
             return self.fetchall(
                 f"""
                 SELECT fp.*, p.full_name, p.position, p.headshot_url,
-                       t.abbreviation AS team_abbr
+                       t.abbreviation AS team_abbr, re.team_id AS team_id
                 FROM fantasy_projections fp
                 JOIN players p ON fp.player_id = p.player_id
                 LEFT JOIN roster_entries re ON re.player_id = p.player_id AND re.season = fp.season
@@ -1510,7 +1510,7 @@ class Database:
         return self.fetchall(
             f"""
             SELECT fp.*, p.full_name, p.position, p.headshot_url,
-                   t.abbreviation AS team_abbr
+                   t.abbreviation AS team_abbr, re.team_id AS team_id
             FROM fantasy_projections fp
             JOIN players p ON fp.player_id = p.player_id
             LEFT JOIN roster_entries re ON re.player_id = p.player_id AND re.season = fp.season

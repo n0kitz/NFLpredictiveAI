@@ -21,7 +21,9 @@ function fmtPct(p: number): string {
 
 function tooltip(c: PlayerWeekCell): string {
   if (c.is_bye) return `Week ${c.week}: BYE`;
-  if (c.snaps === 0) return `Week ${c.week}: did not play`;
+  if (c.snaps === 0 && c.snap_pct === 0 && c.fantasy_points_ppr === 0) {
+    return `Week ${c.week}: no data`;
+  }
   const opp = c.opponent_abbr ? (c.is_home ? `vs ${c.opponent_abbr}` : `@ ${c.opponent_abbr}`) : '';
   return [
     `Week ${c.week} ${opp}`,
@@ -59,13 +61,16 @@ export default function PlayerWeeklyHeatmap({ playerId, position, defaultSeason 
 
   const showTargetShare = ['WR', 'TE', 'RB'].includes((position ?? '').toUpperCase());
 
+  const hasSnapData = (c: PlayerWeekCell) =>
+    !c.is_bye && Number.isFinite(c.snap_pct) && c.snap_pct > 0;
+
   const snapCells = data.weeks.map((c) => ({
     week: c.week,
     value: c.snap_pct,
     rawLabel: c.is_bye ? '' : (c.snap_pct > 0 ? Math.round(c.snap_pct * 100).toString() : '·'),
     tooltip: tooltip(c),
     isBye: c.is_bye,
-    isMissing: !c.is_bye && c.snaps === 0,
+    isMissing: !hasSnapData(c),
   }));
 
   const targetCells = data.weeks.map((c) => ({
@@ -74,7 +79,7 @@ export default function PlayerWeeklyHeatmap({ playerId, position, defaultSeason 
     rawLabel: c.is_bye ? '' : (c.target_share > 0 ? Math.round(c.target_share * 100).toString() : '·'),
     tooltip: tooltip(c),
     isBye: c.is_bye,
-    isMissing: !c.is_bye && c.targets === 0,
+    isMissing: false,
   }));
 
   return (

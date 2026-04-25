@@ -223,17 +223,21 @@ def get_player(player_id: int, db=Depends(get_db)):
         if team_row:
             team_abbr = team_row["abbreviation"]
 
-    # Boom/bust from prior season weekly stats
-    from datetime import datetime
+    # Boom/bust from the latest available season in weekly stats (data-driven, not clock-driven)
     from ...prediction.fantasy_scorer import calc_boom_bust_from_rows
-    prev_season = datetime.now().year - 1
-    weekly_rows = db.fetchall(
-        """
-        SELECT fantasy_points_ppr, snaps FROM player_weekly_stats
-        WHERE player_id = ? AND season = ?
-        """,
-        (player_id, prev_season),
+    latest_season_row = db.fetchone(
+        "SELECT MAX(season) AS season FROM player_weekly_stats WHERE player_id = ?",
+        (player_id,),
     )
+    weekly_rows = []
+    if latest_season_row and latest_season_row["season"] is not None:
+        weekly_rows = db.fetchall(
+            """
+            SELECT fantasy_points_ppr, snaps, snap_pct FROM player_weekly_stats
+            WHERE player_id = ? AND season = ?
+            """,
+            (player_id, latest_season_row["season"]),
+        )
     bb = calc_boom_bust_from_rows(weekly_rows) if weekly_rows else None
 
     return PlayerProfile(
@@ -279,15 +283,41 @@ def get_player_weekly_stats(
     )
     by_week = {r["week"]: r for r in rows}
 
-    # Determine player's team in this season for bye derivation
-    team_row = db.fetchone(
-        "SELECT team_id FROM roster_entries WHERE player_id = ? AND season = ? LIMIT 1",
-        (player_id, season),
-    )
+    # Determine player's team in this season for bye derivation.
+    # Prefer the team_id present in weekly rows (matches the data we're returning);
+    # tie-break by most frequent, then latest week, then smallest team_id.
+    team_counts: dict = {}
+    team_last_week: dict = {}
+    for r in rows:
+        tid = r["team_id"]
+        if tid is None:
+            continue
+        team_counts[tid] = team_counts.get(tid, 0) + 1
+        team_last_week[tid] = max(team_last_week.get(tid, 0), r["week"])
+    selected_team_id: Optional[int] = None
+    if team_counts:
+        selected_team_id = min(
+            team_counts.keys(),
+            key=lambda tid: (-team_counts[tid], -team_last_week.get(tid, 0), tid),
+        )
+    else:
+        # Fallback to roster_entries — pick most-frequent (handles mid-season trades)
+        team_row = db.fetchone(
+            """
+            SELECT team_id FROM roster_entries
+            WHERE player_id = ? AND season = ? AND team_id IS NOT NULL
+            GROUP BY team_id
+            ORDER BY COUNT(*) DESC, team_id ASC
+            LIMIT 1
+            """,
+            (player_id, season),
+        )
+        if team_row:
+            selected_team_id = team_row["team_id"]
     bye_week: Optional[int] = None
-    if team_row:
+    if selected_team_id is not None:
         byes = db.get_bye_weeks(season)
-        bye_week = byes.get(team_row["team_id"])
+        bye_week = byes.get(selected_team_id)
 
     max_week = max(list(by_week.keys()) + ([bye_week] if bye_week else []) + [0])
     if max_week == 0:

@@ -1,6 +1,12 @@
 # NFL Game Prediction System
 
+## Skills
+
+### /caveman
 Respond like a caveman. No articles, no filler words. Short. Direct. Code speaks for itself. If me ask for code, give code. No explain unless me ask.
+
+### /promptimprover
+@promptimprover/SKILL.md
 
 ## Project Overview
 Full-stack NFL game prediction application. Python FastAPI backend with 35 years of historical data (1990-2025) from Pro Football Reference. React + TypeScript frontend with dark-mode UI, team colors, and dual all-time/last-season stats. Dockerized with automated weekly data updates.

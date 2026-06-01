@@ -3,10 +3,16 @@
 ## Skills
 
 ### /caveman
-Respond like a caveman. No articles, no filler words. Short. Direct. Code speaks for itself. If me ask for code, give code. No explain unless me ask.
+@caveman/SKILL.md
 
 ### /promptimprover
 @promptimprover/SKILL.md
+
+### /nfl-predictive-ai
+@nfl-predictive-ai/SKILL.md
+
+### /wissensdatenbank-capture
+@wissensdatenbank-capture/SKILL.md
 
 ## Project Overview
 Full-stack NFL game prediction application. Python FastAPI backend with 35 years of historical data (1990-2025) from Pro Football Reference. React + TypeScript frontend with dark-mode UI, team colors, and dual all-time/last-season stats. Dockerized with automated weekly data updates.
@@ -43,7 +49,7 @@ nfl-predictor/
 │   │   ├── factors.py         # GameFactor adjustments (-5 to +5 impact)
 │   │   ├── backtester.py      # Replay historical games to measure accuracy
 │   │   ├── fantasy_scorer.py  # FantasyScorer: projections, start-sit, trade analysis, draft rankings, power rankings, trade values
-│   │   ├── feature_builder.py # Feature vector builder (35 features)
+│   │   ├── feature_builder.py # Feature vector builder (34 features — docstring says 35, stale)
 │   │   ├── ml_model.py        # ML wrapper (GradientBoostingClassifier + spread regressor)
 │   │   └── explainer.py       # SHAP explainer for PredictionExplanation
 │   ├── scraper/
@@ -220,8 +226,9 @@ Replace `YYYY` with the season year (e.g. 2025).
 - Cron container runs weekly_scrape.py every Wednesday 06:00 UTC (enriches predictions + odds + conditions)
 - Frontend uses Recharts for trend charts on TeamDetail page
 - 183 pytest tests across 9 test files (API, prediction, scraper, basic, roster, injury_scraper, weather_scraper, fantasy, api_extended)
-- ML model (GradientBoostingClassifier, **35 features**, trained 2013-2022): needs retraining after feature vector expansion
-- Feature vector: 32 base + vegas_home_implied_prob + home_qb_epa_per_play + away_qb_epa_per_play = 35 total
+- ML model (GradientBoostingClassifier, **34 features**, trained 2013-2022): needs retraining after feature vector expansion
+- Feature vector: `feature_builder.py` FEATURE_NAMES list has **34** entries (docstring says 35 — stale); `explainer.py` FEATURE_LABELS also stale (references old names like `home_qb_epa_per_play`) — pending fix in Wave 5 Phase 3
+- `models.py` dataclasses: only `Team, Game, GameFactor, TeamSeasonStats, Prediction` — all other DB entities (Player, RosterEntry, InjuryReport, GameWeather, GameOdds) are raw `sqlite3.Row` dicts
 - Weighted-sum default: 67.2% OOS accuracy on 2023-2024. ML only activates with `?model=ml`
 - `sqlite3.Row` objects: use bracket access `r["col"]` not `.get()` — `.get()` is not supported
 
@@ -290,7 +297,7 @@ Replace `YYYY` with the season year (e.g. 2025).
 - `RosterScraper` (ESPN API); `import_rosters.py` with 3-tier matching (exact/lastname/fuzzy)
 - `/api/teams/{id}/roster`, `/api/players/{id}`, `/api/players/search`, `/api/fantasy/top` endpoints
 - PlayerModal overlay + PlayerPage + navbar PlayerSearch in frontend
-- Feature vector expanded to 35: added vegas_home_implied_prob (#33), home_qb_epa_per_play (#34), away_qb_epa_per_play (#35)
+- Feature vector expanded: added vegas_home_implied_prob, home_starter_qb_epa_l4, away_starter_qb_epa_l4 — actual FEATURE_NAMES count is **34** (explainer.py FEATURE_LABELS still stale with old names)
 - Fixed `import_player_season_stats`: merges `import_seasonal_data` with `import_seasonal_rosters` on player_id+season
 - Fixed `search_players` API: `sqlite3.Row` uses bracket access `r["col"]`, not `.get()`
 - Weekly cron now includes roster update step
@@ -326,10 +333,42 @@ Replace `YYYY` with the season year (e.g. 2025).
 ```bash
 cd nfl-predictor
 python scripts/import_advanced_stats.py   # Populate QB EPA + team advanced stats
-python scripts/train_model.py             # Retrain ML model with 35-feature vector
+python scripts/train_model.py             # Retrain ML model with 34-feature vector (fix explainer labels first — Wave 5 Phase 3)
 python scripts/import_rosters.py          # Import rosters + player season stats (Step1: ESPN, Step2: nfl_data_py)
 # Review data/unmatched_players.txt after roster import to assess matching quality
 ```
+
+## Known Issues (from 2026-05 audit)
+
+Issues found in full codebase audit — track progress in Wave 5 plan:
+`/Users/normenkitzmann/.claude/plans/immutable-munching-elephant.md`
+
+| Severity | Issue | Location | Phase |
+|----------|-------|----------|-------|
+| HIGH | `KFold` → temporal leakage in player ML | `player_ml_model.py:51` | 3 |
+| HIGH | Schema duplicated in `db.py` inline + `schema.sql` — can drift | `db.py:80-320` | 2 |
+| HIGH | `_fatal_error` never set → always reports success | `weekly_scrape.py:48` | 1 |
+| HIGH | N+1 query in power rankings (~256 queries/req) | `routers/fantasy.py:248` | 2 |
+| HIGH | FEATURE_LABELS stale in explainer | `explainer.py:10-46` | 3 |
+| MED | No retry on any HTTP scraper | all scrapers | 4 |
+| MED | No concurrent execution lock on cron | `weekly_scrape.py` | 4 |
+| MED | `datetime.utcnow()` deprecated (3.12+) | `db.py`, `injury_scraper.py`, `odds_scraper.py` | 1 |
+| MED | No centralized config — settings scattered across 15+ files | multiple | 1 |
+| MED | Port 8000 exposed directly in docker-compose | `docker-compose.yml:9` | 1 |
+| MED | Missing dataclasses for 12+ DB entities (raw dicts) | `models.py` | 2 |
+| MED | f-string SQL column interpolation (fragile) | `db.py:1343` | 2 |
+| LOW | No frontend tests at all (zero vitest setup) | `frontend/` | 5 |
+| LOW | 6+ hardcoded `2024`/`2025` year values in frontend | multiple | 5 |
+| LOW | `FantasyPage.tsx` is 1213 lines — needs splitting | `FantasyPage.tsx` | 5 |
+| LOW | Missing CSP header in nginx | `nginx.conf` | 1 |
+| LOW | No CI/CD pipeline | — | 7 |
+
+## Wave 5 — Active Improvement Work (started 2026-05-11)
+
+7-phase improvement plan covering security, stability, ML correctness, frontend quality, observability, and CI/CD.
+See plan: `/Users/normenkitzmann/.claude/plans/immutable-munching-elephant.md`
+
+**Recommended execution order:** Phase 1 → 2 → 3 → CI (7.1) → 4 → 5 → 6 → 7 (rest)
 
 ## graphify
 

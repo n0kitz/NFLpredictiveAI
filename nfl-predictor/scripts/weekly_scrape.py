@@ -6,7 +6,6 @@ Designed to be run via cron every Wednesday.
 """
 
 import logging
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from datetime import timedelta
 
+from src.config import settings
 from src.database.db import create_database
 from src.scraper.pfr_scraper import PFRScraper
 from src.scraper.schedule_scraper import ScheduleScraper
@@ -45,7 +45,10 @@ def main():
     logger.info(f"Weekly scrape: seasons {start}–{end}")
 
     db = create_database()
-    _fatal_error: str = ""
+    # Fatal errors mark the run as failed in the scrape log. The core purpose of
+    # this job is scraping games, so a total failure of the season-scrape loop is
+    # fatal; downstream enrichment steps are best-effort (logged, non-fatal).
+    fatal_errors: list = []
 
     # Step 0: Fetch upcoming schedule from ESPN (fast, no Cloudflare issues)
     try:
@@ -62,6 +65,7 @@ def main():
     scraper.initialize_teams()
 
     # Force re-scrape current season (don't skip completed)
+    seasons_scraped_ok = 0
     for season in range(start, end + 1):
         logger.info(f"Scraping season {season}...")
         try:
@@ -70,11 +74,17 @@ def main():
                 inserted, skipped = scraper.store_games(games)
                 db.calculate_team_season_stats(season)
                 db.update_scrape_status(season, 'full', 'completed')
+                seasons_scraped_ok += 1
                 logger.info(f"Season {season}: {inserted} inserted, {skipped} skipped")
             else:
                 logger.warning(f"No games found for season {season}")
         except Exception as e:
             logger.error(f"Error scraping season {season}: {e}")
+            fatal_errors.append(f"season {season}: {e}")
+
+    # If every season-scrape attempt failed, the run did not achieve its purpose.
+    if seasons_scraped_ok == 0:
+        fatal_errors.append("no seasons scraped successfully")
 
     # Enrich prediction history with completed game results
     try:
@@ -85,7 +95,7 @@ def main():
         logger.error(f"Error enriching prediction history: {e}")
 
     # Fetch upcoming odds (silently skip if ODDS_API_KEY not set)
-    odds_api_key = os.environ.get("ODDS_API_KEY", "").strip()
+    odds_api_key = settings.odds_api_key
     if odds_api_key:
         try:
             odds_scraper = OddsScraper()
@@ -252,16 +262,20 @@ def main():
         logger.error(f"Fantasy projection generation failed (non-fatal): {e}")
 
     # Write scrape log (success or failure)
+    fatal_error = "; ".join(fatal_errors)
     try:
         db.write_scrape_log(
-            success=not bool(_fatal_error),
-            error_message=_fatal_error or None,
+            success=not fatal_errors,
+            error_message=fatal_error or None,
             seasons_scraped=f"{start}-{end}",
         )
     except Exception as e:
         logger.warning(f"Failed to write scrape log: {e}")
 
     db.close()
+    if fatal_errors:
+        logger.error(f"Weekly scrape finished WITH ERRORS: {fatal_error}")
+        sys.exit(1)
     logger.info("Weekly scrape complete.")
 
 

@@ -245,28 +245,67 @@ def get_power_rankings(
     season: int = Query(2024),
     db=Depends(get_db),
 ):
+    # Bulk-load everything _compute needs ONCE, then score in Python.
+    # Previously this ran ~5 queries per team (≈256 queries/request); now 3.
+    teams = db.fetchall(
+        """
+        SELECT team_id, name, city, abbreviation, conference
+        FROM teams WHERE (active_from IS NULL OR active_from <= ?)
+          AND (active_until IS NULL OR active_until >= ?)
+        """,
+        (season, season),
+    )
+    completed = db.fetchall(
+        """
+        SELECT home_team_id, away_team_id, home_score, away_score, winner_id, week, date
+        FROM games WHERE season=? AND game_type='regular' AND home_score IS NOT NULL
+        ORDER BY date DESC
+        """,
+        (season,),
+    )
+    upcoming = db.fetchall(
+        """
+        SELECT home_team_id, away_team_id, week, date
+        FROM games WHERE season=? AND home_score IS NULL
+        ORDER BY date ASC
+        """,
+        (season,),
+    )
+    adv_rows = db.fetchall(
+        "SELECT team_id, season, yards_per_play FROM team_advanced_stats ORDER BY season DESC"
+    )
+
+    # Index games per team (lists preserve the SQL date ordering).
+    completed_by_team: dict = {}
+    for g in completed:
+        completed_by_team.setdefault(g["home_team_id"], []).append(g)
+        completed_by_team.setdefault(g["away_team_id"], []).append(g)
+    upcoming_by_team: dict = {}
+    for g in upcoming:  # date ASC → first appended is the earliest upcoming game
+        upcoming_by_team.setdefault(g["home_team_id"], []).append(g)
+        upcoming_by_team.setdefault(g["away_team_id"], []).append(g)
+
+    # yards_per_play for the season, with fallback to the most recent season.
+    ypp_season: dict = {}
+    ypp_latest: dict = {}
+    for r in adv_rows:  # season DESC → first seen per team is the latest
+        if r["team_id"] not in ypp_latest:
+            ypp_latest[r["team_id"]] = r["yards_per_play"]
+        if r["season"] == season and r["team_id"] not in ypp_season:
+            ypp_season[r["team_id"]] = r["yards_per_play"]
+
+    def _wk(g) -> int:
+        try:
+            return int(g["week"])
+        except (TypeError, ValueError):
+            return 0
+
     def _compute(target_week: int) -> dict:
-        teams = db.fetchall(
-            """
-            SELECT team_id, name, city, abbreviation, conference
-            FROM teams WHERE (active_from IS NULL OR active_from <= ?)
-              AND (active_until IS NULL OR active_until >= ?)
-            """,
-            (season, season),
-        )
         scored = []
         for t in teams:
             tid = t["team_id"]
-            recent = db.fetchall(
-                """
-                SELECT home_team_id, away_team_id, home_score, away_score, winner_id
-                FROM games WHERE season=? AND game_type='regular'
-                  AND (home_team_id=? OR away_team_id=?) AND home_score IS NOT NULL
-                  AND CAST(week AS INTEGER) < ?
-                ORDER BY date DESC LIMIT 4
-                """,
-                (season, tid, tid, target_week),
-            )
+            tgames = completed_by_team.get(tid, [])
+            recent = [g for g in tgames if _wk(g) < target_week][:4]
             wins = sum(1 for g in recent if g["winner_id"] == tid)
             form = wins / max(len(recent), 1) if recent else 0.5
             pt_diff = sum(
@@ -276,37 +315,19 @@ def get_power_rankings(
             )
             pt_norm = max(-1.0, min(1.0, pt_diff / 60.0))
 
-            adv = db.fetchone(
-                "SELECT yards_per_play FROM team_advanced_stats WHERE team_id=? AND season=?",
-                (tid, season),
-            ) or db.fetchone(
-                "SELECT yards_per_play FROM team_advanced_stats WHERE team_id=? ORDER BY season DESC LIMIT 1",
-                (tid,),
-            )
+            ypp = ypp_season.get(tid)
+            if ypp is None:
+                ypp = ypp_latest.get(tid)
             adv_score = 0.5
-            if adv and adv["yards_per_play"]:
-                adv_score = min(1.0, max(0.0, (float(adv["yards_per_play"]) - 3.5) / 3.5))
+            if ypp:
+                adv_score = min(1.0, max(0.0, (float(ypp) - 3.5) / 3.5))
 
-            nxt = db.fetchone(
-                """
-                SELECT home_team_id, away_team_id FROM games
-                WHERE season=? AND (home_team_id=? OR away_team_id=?)
-                  AND CAST(week AS INTEGER) >= ? AND home_score IS NULL
-                ORDER BY date ASC LIMIT 1
-                """,
-                (season, tid, tid, target_week),
-            )
             opp_str = 0.5
-            if nxt:
+            nxt_games = [g for g in upcoming_by_team.get(tid, []) if _wk(g) >= target_week]
+            if nxt_games:
+                nxt = nxt_games[0]
                 opp_id = nxt["away_team_id"] if nxt["home_team_id"] == tid else nxt["home_team_id"]
-                opp_r = db.fetchall(
-                    """
-                    SELECT winner_id FROM games WHERE season=? AND game_type='regular'
-                      AND (home_team_id=? OR away_team_id=?) AND home_score IS NOT NULL
-                    ORDER BY date DESC LIMIT 4
-                    """,
-                    (season, opp_id, opp_id),
-                )
+                opp_r = completed_by_team.get(opp_id, [])[:4]
                 if opp_r:
                     opp_str = sum(1 for g in opp_r if g["winner_id"] == opp_id) / len(opp_r)
 

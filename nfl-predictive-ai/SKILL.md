@@ -27,7 +27,7 @@ description: >
 - **`explainer.py` FEATURE_LABELS**: stale — references old names (`home_qb_epa_per_play`) not matching current feature names (`home_starter_qb_epa_l4`) — causes silent SHAP label mismatches
 - **`_fatal_error` in `weekly_scrape.py`**: never actually set — always reports success regardless of step failures
 - **`player_ml_model.py`**: uses `KFold` (temporal leakage) — should be `TimeSeriesSplit`
-- **`db.py` schema**: inline `CREATE TABLE` statements (~240 lines) duplicate `schema.sql` — only `db.py` inline actually executes; `schema.sql` is reference only (for now)
+- **`db.py` schema**: ✅ FIXED 2026-06-24 — `schema.sql` is now the single source; `connection` init runs `executescript(schema.sql)` + `run_migrations`. Inline duplicate deleted. Add new tables to `schema.sql`; add ALTERs to `MIGRATIONS` list in `db.py`.
 - **`models.py`**: only has dataclasses for `Team, Game, GameFactor, TeamSeasonStats, Prediction` — all other entities (Player, RosterEntry, InjuryReport, etc.) are raw `sqlite3.Row` dicts
 - **No retry on scrapers**: transient HTTP failures cause silent data gaps
 - **Power rankings endpoint**: ~256 DB queries per request (N+1 pattern) — `src/api/routers/fantasy.py` `_compute()`
@@ -51,8 +51,8 @@ Plan file: `/Users/normenkitzmann/.claude/plans/immutable-munching-elephant.md`
 
 | Phase | Focus | Status |
 |-------|-------|--------|
-| 1 | Config centralization + quick security wins | Pending |
-| 2 | DB layer hardening (schema dedup, transactions, N+1) | Pending |
+| 1 | Config centralization + quick security wins | ✅ Done 2026-06-24 — `src/config.py`; cron `_fatal_error` fixed; `utcnow` removed; port 8000 unpublished; nginx CSP |
+| 2 | DB layer hardening (schema dedup, transactions, N+1) | ✅ Done 2026-06-24 — schema.sql single source (fixes fresh-DB bug), power-rankings N+1 256→4, 5 dataclasses, f-string SQL whitelisted |
 | 3 | ML pipeline correctness (TimeSeriesSplit, versioning, SHAP) | Pending |
 | 4 | Scraper resilience + cron safety | Pending |
 | 5 | Frontend quality + component library | Pending |

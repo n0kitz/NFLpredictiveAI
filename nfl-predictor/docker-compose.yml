@@ -5,8 +5,13 @@ services:
       dockerfile: Dockerfile.api
     volumes:
       - ./data:/app/data
-    ports:
-      - "8000:8000"
+    # API is NOT published to the host — it is reached only through the frontend
+    # nginx reverse proxy (/api/ -> api:8000) over the internal compose network.
+    # For direct local access during debugging, uncomment the ports block below.
+    # ports:
+    #   - "127.0.0.1:8000:8000"
+    expose:
+      - "8000"
     environment:
       - PYTHONUNBUFFERED=1
       - ODDS_API_KEY=${ODDS_API_KEY:-}

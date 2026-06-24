@@ -2,7 +2,7 @@
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import requests
@@ -123,7 +123,7 @@ class OddsScraper:
             resp.headers.get("x-requests-used")
         )
 
-        fetched_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        fetched_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         results: list[dict] = []
 
         for game in resp.json():

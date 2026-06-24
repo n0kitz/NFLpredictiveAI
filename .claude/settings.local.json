@@ -19,7 +19,14 @@
       "Bash(npx tsc *)",
       "Bash(mkdir -p /Users/normenkitzmann/IdeaProjects/NFL/nfl-predictor/promptimprover/references)",
       "Bash(cp /Users/normenkitzmann/IdeaProjects/siedler7_revamp/SettlersX/promptimprover/SKILL.md /Users/normenkitzmann/IdeaProjects/NFL/nfl-predictor/promptimprover/)",
-      "Bash(cp /Users/normenkitzmann/IdeaProjects/siedler7_revamp/SettlersX/promptimprover/references/patterns.md /Users/normenkitzmann/IdeaProjects/siedler7_revamp/SettlersX/promptimprover/references/science.md /Users/normenkitzmann/IdeaProjects/siedler7_revamp/SettlersX/promptimprover/references/templates.md /Users/normenkitzmann/IdeaProjects/siedler7_revamp/SettlersX/promptimprover/references/tool-routing.md /Users/normenkitzmann/IdeaProjects/NFL/nfl-predictor/promptimprover/references/)"
+      "Bash(cp /Users/normenkitzmann/IdeaProjects/siedler7_revamp/SettlersX/promptimprover/references/patterns.md /Users/normenkitzmann/IdeaProjects/siedler7_revamp/SettlersX/promptimprover/references/science.md /Users/normenkitzmann/IdeaProjects/siedler7_revamp/SettlersX/promptimprover/references/templates.md /Users/normenkitzmann/IdeaProjects/siedler7_revamp/SettlersX/promptimprover/references/tool-routing.md /Users/normenkitzmann/IdeaProjects/NFL/nfl-predictor/promptimprover/references/)",
+      "Bash(grep -rn \"KFold\\\\|TimeSeriesSplit\" src/prediction/player_ml_model.py)",
+      "Bash(grep -n \"_fatal_error\" scripts/weekly_scrape.py)",
+      "Bash(grep -rln \"utcnow\" src/)",
+      "Bash(ls src/config.py src/settings.py)",
+      "Bash(grep -c '\".*\"' src/prediction/feature_builder.py)",
+      "Bash(git stash *)",
+      "Bash(grep -v \"Warning\\\\|warn\\\\|numpy\\\\|^$\")"
     ]
   }
 }

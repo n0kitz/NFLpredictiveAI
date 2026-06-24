@@ -1,7 +1,7 @@
 """Fetch NFL injury reports from ESPN's public API (no auth required)."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import requests
@@ -115,7 +115,7 @@ class InjuryScraper:
             logger.warning("Unexpected error fetching injuries: %s", exc)
             return []
 
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         results: list[dict] = []
 
         # ESPN returns either data["injuries"] or data["items"]

@@ -368,6 +368,12 @@ CREATE INDEX IF NOT EXISTS idx_odds_teams ON game_odds(home_team_id, away_team_i
 CREATE INDEX IF NOT EXISTS idx_weekly_qb ON weekly_qb_starts(team_id, season, week DESC);
 CREATE INDEX IF NOT EXISTS idx_inj_team ON injury_reports(team_id, report_date DESC);
 CREATE INDEX IF NOT EXISTS idx_pred_hist_teams ON prediction_history(home_team_id, away_team_id);
+CREATE INDEX IF NOT EXISTS idx_games_season_type ON games(season, game_type);
+CREATE INDEX IF NOT EXISTS idx_prediction_history_correct ON prediction_history(correct);
+CREATE INDEX IF NOT EXISTS idx_roster_team_season ON roster_entries(team_id, season);
+CREATE INDEX IF NOT EXISTS idx_player_stats_player_season ON player_season_stats(player_id, season);
+CREATE INDEX IF NOT EXISTS idx_fantasy_proj_season_week ON fantasy_projections(season, week);
+CREATE INDEX IF NOT EXISTS idx_draft_rankings_season_scoring ON draft_rankings(season, scoring_format);
 
 -- Views for common queries
 

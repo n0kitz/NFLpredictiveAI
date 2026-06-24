@@ -8,8 +8,10 @@ from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
-# Default database path
-DEFAULT_DB_PATH = Path(__file__).parent.parent.parent / "data" / "nfl.db"
+from ..config import settings
+
+# Default database path (overridable via DB_PATH env — see src/config.py)
+DEFAULT_DB_PATH = settings.db_path
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
 # Tracks which db_paths have already had schema setup run.
@@ -76,248 +78,12 @@ class Database:
             # Schema init runs once per db path (not per request)
             if str(self.db_path) in _initialized_paths:
                 return self._connection
-            # Ensure advanced-stats table exists for both fresh and existing DBs
-            self._connection.execute("""
-                CREATE TABLE IF NOT EXISTS team_advanced_stats (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    team_id INTEGER NOT NULL,
-                    season INTEGER NOT NULL,
-                    turnover_margin REAL DEFAULT 0,
-                    third_down_pct REAL DEFAULT 0,
-                    redzone_efficiency REAL DEFAULT 0,
-                    yards_per_play REAL DEFAULT 0,
-                    sack_rate_allowed REAL DEFAULT 0,
-                    qb_epa_per_play REAL DEFAULT 0,
-                    UNIQUE(team_id, season),
-                    FOREIGN KEY (team_id) REFERENCES teams(team_id)
-                )
-            """)
-            self._connection.execute("""
-                CREATE TABLE IF NOT EXISTS game_odds (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    game_id INTEGER,
-                    external_game_id TEXT,
-                    home_team_id INTEGER,
-                    away_team_id INTEGER,
-                    game_date TEXT,
-                    opening_spread REAL,
-                    over_under REAL,
-                    home_implied_prob REAL,
-                    away_implied_prob REAL,
-                    fetched_at TEXT,
-                    FOREIGN KEY (game_id) REFERENCES games(game_id),
-                    UNIQUE(external_game_id)
-                )
-            """)
-            self._connection.execute("""
-                CREATE TABLE IF NOT EXISTS injury_reports (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    team_id INTEGER NOT NULL,
-                    player_name TEXT NOT NULL,
-                    position TEXT NOT NULL,
-                    injury_status TEXT NOT NULL,
-                    report_date TEXT NOT NULL,
-                    UNIQUE(team_id, player_name, report_date),
-                    FOREIGN KEY (team_id) REFERENCES teams(team_id)
-                )
-            """)
-            self._connection.execute("""
-                CREATE TABLE IF NOT EXISTS game_weather (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    game_id INTEGER,
-                    home_team_id INTEGER,
-                    game_date TEXT NOT NULL,
-                    is_dome INTEGER NOT NULL DEFAULT 0,
-                    temperature_c REAL,
-                    wind_speed_kmh REAL,
-                    precipitation_mm REAL,
-                    weather_code INTEGER,
-                    condition TEXT,
-                    is_adverse INTEGER NOT NULL DEFAULT 0,
-                    fetched_at TEXT,
-                    UNIQUE(home_team_id, game_date),
-                    FOREIGN KEY (game_id) REFERENCES games(game_id),
-                    FOREIGN KEY (home_team_id) REFERENCES teams(team_id)
-                )
-            """)
-            # Roster tables
-            self._connection.execute("""
-                CREATE TABLE IF NOT EXISTS players (
-                    player_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    espn_id TEXT UNIQUE,
-                    full_name TEXT NOT NULL,
-                    first_name TEXT,
-                    last_name TEXT,
-                    position TEXT,
-                    jersey_number TEXT,
-                    date_of_birth TEXT,
-                    height_cm REAL,
-                    weight_kg REAL,
-                    college TEXT,
-                    experience_years INTEGER DEFAULT 0,
-                    status TEXT DEFAULT 'Active',
-                    headshot_url TEXT,
-                    created_at TEXT,
-                    updated_at TEXT
-                )
-            """)
-            self._connection.execute("""
-                CREATE TABLE IF NOT EXISTS roster_entries (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    player_id INTEGER NOT NULL,
-                    team_id INTEGER NOT NULL,
-                    season INTEGER NOT NULL,
-                    depth_position TEXT,
-                    is_starter INTEGER DEFAULT 0,
-                    roster_status TEXT,
-                    fetched_at TEXT,
-                    UNIQUE(player_id, team_id, season),
-                    FOREIGN KEY (player_id) REFERENCES players(player_id),
-                    FOREIGN KEY (team_id) REFERENCES teams(team_id)
-                )
-            """)
-            self._connection.execute("""
-                CREATE TABLE IF NOT EXISTS player_season_stats (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    player_id INTEGER NOT NULL,
-                    team_id INTEGER NOT NULL,
-                    season INTEGER NOT NULL,
-                    games_played INTEGER DEFAULT 0,
-                    pass_attempts INTEGER DEFAULT 0,
-                    pass_completions INTEGER DEFAULT 0,
-                    pass_yards INTEGER DEFAULT 0,
-                    pass_tds INTEGER DEFAULT 0,
-                    interceptions INTEGER DEFAULT 0,
-                    passer_rating REAL DEFAULT 0,
-                    rush_attempts INTEGER DEFAULT 0,
-                    rush_yards INTEGER DEFAULT 0,
-                    rush_tds INTEGER DEFAULT 0,
-                    yards_per_carry REAL DEFAULT 0,
-                    targets INTEGER DEFAULT 0,
-                    receptions INTEGER DEFAULT 0,
-                    rec_yards INTEGER DEFAULT 0,
-                    rec_tds INTEGER DEFAULT 0,
-                    yards_per_reception REAL DEFAULT 0,
-                    tackles INTEGER DEFAULT 0,
-                    sacks REAL DEFAULT 0,
-                    interceptions_def INTEGER DEFAULT 0,
-                    fantasy_points_ppr REAL DEFAULT 0,
-                    fantasy_points_standard REAL DEFAULT 0,
-                    UNIQUE(player_id, team_id, season),
-                    FOREIGN KEY (player_id) REFERENCES players(player_id),
-                    FOREIGN KEY (team_id) REFERENCES teams(team_id)
-                )
-            """)
-            # Fantasy module tables
-            self._connection.execute("""
-                CREATE TABLE IF NOT EXISTS fantasy_leagues (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    scoring_format TEXT NOT NULL DEFAULT 'ppr',
-                    roster_slots TEXT NOT NULL DEFAULT '{"QB":1,"RB":2,"WR":2,"TE":1,"FLEX":1,"BN":6}',
-                    waiver_type TEXT DEFAULT 'faab',
-                    season INTEGER NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            self._connection.execute("""
-                CREATE TABLE IF NOT EXISTS fantasy_rosters (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id),
-                    player_id INTEGER NOT NULL REFERENCES players(player_id),
-                    slot TEXT NOT NULL,
-                    acquired_week INTEGER,
-                    acquired_type TEXT,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            self._connection.execute("""
-                CREATE TABLE IF NOT EXISTS fantasy_projections (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    player_id INTEGER NOT NULL REFERENCES players(player_id),
-                    season INTEGER NOT NULL,
-                    week INTEGER NOT NULL,
-                    opponent_team_id INTEGER REFERENCES teams(team_id),
-                    projected_points_ppr REAL,
-                    projected_points_std REAL,
-                    matchup_score REAL,
-                    opportunity_score REAL,
-                    confidence TEXT DEFAULT 'medium',
-                    generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(player_id, season, week)
-                )
-            """)
-            self._connection.execute("""
-                CREATE TABLE IF NOT EXISTS player_weekly_stats (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    player_id INTEGER NOT NULL,
-                    season INTEGER NOT NULL,
-                    week INTEGER NOT NULL,
-                    team_id INTEGER,
-                    opponent_team_id INTEGER,
-                    position TEXT,
-                    is_home INTEGER DEFAULT 0,
-                    snaps INTEGER DEFAULT 0,
-                    snap_pct REAL DEFAULT 0,
-                    routes INTEGER DEFAULT 0,
-                    route_pct REAL DEFAULT 0,
-                    targets INTEGER DEFAULT 0,
-                    receptions INTEGER DEFAULT 0,
-                    rec_yards INTEGER DEFAULT 0,
-                    rec_tds INTEGER DEFAULT 0,
-                    target_share REAL DEFAULT 0,
-                    air_yards INTEGER DEFAULT 0,
-                    adot REAL DEFAULT 0,
-                    rush_attempts INTEGER DEFAULT 0,
-                    rush_yards INTEGER DEFAULT 0,
-                    rush_tds INTEGER DEFAULT 0,
-                    pass_attempts INTEGER DEFAULT 0,
-                    pass_completions INTEGER DEFAULT 0,
-                    pass_yards INTEGER DEFAULT 0,
-                    pass_tds INTEGER DEFAULT 0,
-                    interceptions INTEGER DEFAULT 0,
-                    fantasy_points_ppr REAL DEFAULT 0,
-                    fantasy_points_standard REAL DEFAULT 0,
-                    UNIQUE(player_id, season, week)
-                )
-            """)
-            self._connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_player_weekly_season_week ON player_weekly_stats(season, week)"
-            )
-            self._connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_player_weekly_player ON player_weekly_stats(player_id, season, week DESC)"
-            )
-            self._connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_player_weekly_opp ON player_weekly_stats(opponent_team_id, season, week)"
-            )
-            self._connection.execute("""
-                CREATE TABLE IF NOT EXISTS draft_rankings (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    season INTEGER NOT NULL,
-                    scoring_format TEXT NOT NULL,
-                    player_id INTEGER NOT NULL REFERENCES players(player_id),
-                    overall_rank INTEGER,
-                    position_rank INTEGER,
-                    tier INTEGER,
-                    adp REAL,
-                    projected_season_points REAL,
-                    notes TEXT,
-                    UNIQUE(season, scoring_format, player_id)
-                )
-            """)
-            # Indexes for tables defined inline above (safe to add here)
-            self._connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_roster_team_season ON roster_entries(team_id, season)"
-            )
-            self._connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_player_stats_player_season ON player_season_stats(player_id, season)"
-            )
-            self._connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_fantasy_proj_season_week ON fantasy_projections(season, week)"
-            )
-            self._connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_draft_rankings_season_scoring ON draft_rankings(season, scoring_format)"
-            )
+            # Single source of truth: schema.sql defines ALL tables, indexes and
+            # views (idempotent CREATE ... IF NOT EXISTS). Running it here creates
+            # core tables on a fresh DB *before* migrations apply, and is a no-op
+            # on an existing DB. MIGRATIONS only carries incremental ALTERs.
+            with open(SCHEMA_PATH, "r") as f:
+                self._connection.executescript(f.read())
             self._connection.commit()
             self.run_migrations(self._connection)
             _initialized_paths.add(str(self.db_path))
@@ -394,13 +160,7 @@ class Database:
 
         with self.transaction():
             self.connection.executescript(schema_sql)
-            # Performance indexes for tables defined in schema.sql
-            self.connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_games_season_type ON games(season, game_type)"
-            )
-            self.connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_prediction_history_correct ON prediction_history(correct)"
-            )
+        self.run_migrations(self.connection)
 
         logger.info("Database schema initialized successfully")
 
@@ -1101,8 +861,8 @@ class Database:
 
     def upsert_player(self, player_data: Dict[str, Any]) -> int:
         """Insert or update a player record. Returns player_id."""
-        from datetime import datetime as _dt
-        now = _dt.utcnow().isoformat()
+        from datetime import datetime as _dt, timezone
+        now = _dt.now(timezone.utc).isoformat()
         existing = self.get_player_by_espn_id(str(player_data.get('espn_id', '')))
         if existing:
             self.execute(
@@ -1163,7 +923,7 @@ class Database:
 
     def upsert_roster_entry(self, entry: Dict[str, Any]) -> None:
         """Insert or update a roster entry."""
-        from datetime import datetime as _dt
+        from datetime import datetime as _dt, timezone
         self.execute(
             """
             INSERT INTO roster_entries
@@ -1183,7 +943,7 @@ class Database:
                 entry.get('depth_position'),
                 1 if entry.get('is_starter') else 0,
                 entry.get('roster_status', 'Active'),
-                entry.get('fetched_at', _dt.utcnow().isoformat()),
+                entry.get('fetched_at', _dt.now(timezone.utc).isoformat()),
             ),
         )
 
@@ -1348,7 +1108,9 @@ class Database:
         limit: int = 50,
     ) -> List[sqlite3.Row]:
         """Get top fantasy players at a position (or all positions) for a season."""
-        pts_col = 'fantasy_points_ppr' if scoring == 'ppr' else 'fantasy_points_standard'
+        # Whitelist column names — never interpolate caller-supplied strings raw.
+        _PTS_COLS = {'ppr': 'fantasy_points_ppr', 'standard': 'fantasy_points_standard'}
+        pts_col = _PTS_COLS.get(scoring, 'fantasy_points_ppr')
         base = f"""
             SELECT p.player_id, p.full_name, p.position, p.headshot_url,
                    t.abbreviation as team_abbr,
@@ -1624,7 +1386,7 @@ class Database:
 
     def upsert_fantasy_roster(self, data: Dict[str, Any]) -> None:
         """Insert or replace a fantasy roster entry."""
-        from datetime import datetime as _dt
+        from datetime import datetime as _dt, timezone
         self.execute(
             """
             INSERT OR REPLACE INTO fantasy_rosters
@@ -1634,7 +1396,7 @@ class Database:
             (
                 data['league_id'], data['player_id'], data['slot'],
                 data.get('acquired_week'), data.get('acquired_type'),
-                _dt.utcnow().isoformat(),
+                _dt.now(timezone.utc).isoformat(),
             ),
         )
 

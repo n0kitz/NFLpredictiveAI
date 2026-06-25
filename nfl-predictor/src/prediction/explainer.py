@@ -3,11 +3,18 @@
 import logging
 from typing import Any, Dict, List, Optional
 
+from .feature_builder import FEATURE_NAMES
+
 logger = logging.getLogger(__name__)
 
 # ── Feature label mapping ─────────────────────────────────────────────────────
 
-FEATURE_LABELS: Dict[str, str] = {
+# Human-readable labels keyed by raw feature name. Pretty names are looked up
+# below; any feature without an explicit entry falls back to a title-cased name.
+# FEATURE_LABELS is derived from FEATURE_NAMES (the single source of truth in
+# feature_builder) so it can never drift out of sync — adding/renaming a feature
+# there is reflected here automatically.
+_PRETTY_LABELS: Dict[str, str] = {
     "home_win_pct":              "Home Win %",
     "away_win_pct":              "Away Win %",
     "home_weighted_win_pct":     "Home Weighted Win %",
@@ -40,9 +47,13 @@ FEATURE_LABELS: Dict[str, str] = {
     "is_playoff":                "Playoff Game",
     "week_of_season":            "Week of Season",
     "home_dynamic_hfa":          "Home Field Advantage",
-    "vegas_home_implied_prob":   "Vegas Implied Probability",
-    "home_qb_epa_per_play":      "Home QB EPA/Play",
-    "away_qb_epa_per_play":      "Away QB EPA/Play",
+    "home_starter_qb_epa_l4":    "Home Starter QB EPA (L4)",
+    "away_starter_qb_epa_l4":    "Away Starter QB EPA (L4)",
+}
+
+FEATURE_LABELS: Dict[str, str] = {
+    name: _PRETTY_LABELS.get(name, name.replace("_", " ").title())
+    for name in FEATURE_NAMES
 }
 
 # ── Singleton explainer cache ─────────────────────────────────────────────────

@@ -161,6 +161,18 @@ class TestFeatureBuilder:
         for name in FEATURE_NAMES:
             assert name in feat, f"Missing feature key: {name}"
 
+    def test_feature_labels_match_feature_names(self):
+        """explainer.FEATURE_LABELS must stay in sync with FEATURE_NAMES (no drift)."""
+        from src.prediction.explainer import FEATURE_LABELS
+
+        assert list(FEATURE_LABELS.keys()) == list(FEATURE_NAMES), (
+            "FEATURE_LABELS keys must equal FEATURE_NAMES exactly and in order"
+        )
+        assert len(FEATURE_LABELS) == len(FEATURE_NAMES)
+        # Stale pre-rename keys must not reappear.
+        for stale in ("vegas_home_implied_prob", "home_qb_epa_per_play", "away_qb_epa_per_play"):
+            assert stale not in FEATURE_LABELS, f"stale label key resurfaced: {stale}"
+
     def test_ml_model_fallback(self, db):
         """Engine._use_ml is consistent with whether the model actually loaded."""
         from src.prediction.ml_model import MODEL_PATH, load_model

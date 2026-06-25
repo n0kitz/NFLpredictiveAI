@@ -192,7 +192,7 @@ def feature_dict_to_array(feature_dict: Dict[str, float]) -> np.ndarray:
     Missing keys default to 0.0.
 
     Returns:
-        np.ndarray of shape (35,), dtype float64.
+        np.ndarray of shape (34,), dtype float64.
     """
     return np.array([feature_dict.get(name, 0.0) for name in FEATURE_NAMES], dtype=np.float64)
 

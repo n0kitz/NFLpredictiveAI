@@ -21,6 +21,14 @@ typing-extensions==4.15.0
 nfl-data-py==0.3.2
 pandas==3.0.1
 
+# Numerics — numpy pinned <2 to match the ABI of scipy 1.13 / scikit-learn 1.4.2,
+# which are built against numpy 1.x. pandas 3.0 supports numpy 1.26+, so 1.26.x
+# satisfies the whole stack. NOTE: the active anaconda base env may have numpy 2.x
+# (causes "numpy.core.multiarray failed to import"); reinstall into a clean venv:
+#   python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+numpy>=1.26,<2
+scipy==1.13.1
+
 # ML model
 scikit-learn==1.4.2
 joblib==1.4.2

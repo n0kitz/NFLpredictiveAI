@@ -48,7 +48,7 @@ def train_position_model(
         raise ValueError(f"No training samples for position {position}")
 
     from sklearn.ensemble import GradientBoostingRegressor
-    from sklearn.model_selection import KFold, cross_val_score
+    from sklearn.model_selection import TimeSeriesSplit, cross_val_score
     import joblib
 
     reg = GradientBoostingRegressor(
@@ -60,10 +60,13 @@ def train_position_model(
         random_state=42,
     )
 
-    # KFold CV for MAE reporting
+    # Time-ordered CV for MAE reporting. KFold(shuffle=True) leaked the future
+    # into training folds (a player-week could train on later weeks of the same
+    # season). build_training_rows() returns rows ordered by season, then week,
+    # so TimeSeriesSplit honours chronology — each fold trains only on the past.
     n_splits = min(5, max(2, X.shape[0] // 50))
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
-    cv_scores = cross_val_score(reg, X, y, cv=kf, scoring='neg_mean_absolute_error')
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    cv_scores = cross_val_score(reg, X, y, cv=tscv, scoring='neg_mean_absolute_error')
     mae = float(-cv_scores.mean())
     std = float(cv_scores.std())
 

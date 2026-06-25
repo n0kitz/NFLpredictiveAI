@@ -147,7 +147,7 @@ def build_training_dataset_with_spread(db) -> Tuple[np.ndarray, np.ndarray]:
 
     Ties and blowouts (|diff| > 45) are excluded.
     Returns:
-        X: float64 array of shape (n_samples, 35)
+        X: float64 array of shape (n_samples, 34)
         y: float array of shape (n_samples,) — home - away point differential
     """
     games = db.fetchall(
@@ -354,6 +354,18 @@ def load_model() -> Tuple[Optional[object], Optional[list]]:
         import joblib
         model = joblib.load(MODEL_PATH)
         feature_names = json.loads(FEATURES_PATH.read_text())
+        # Version guard: the saved feature list must match the current builder
+        # exactly (same names, same order). A mismatch means the model was trained
+        # on a different feature vector — serving it would silently map values to
+        # the wrong features. Refuse and fall back to the weighted-sum engine.
+        if list(feature_names) != list(FEATURE_NAMES):
+            logger.warning(
+                "ML model feature list (%d) does not match current builder (%d) — "
+                "model is stale, falling back to weighted-sum. Retrain with "
+                "scripts/train_model.py.",
+                len(feature_names), len(FEATURE_NAMES),
+            )
+            return None, None
         logger.info("ML model loaded from %s (%d features)", MODEL_PATH, len(feature_names))
         return model, feature_names
     except Exception as exc:

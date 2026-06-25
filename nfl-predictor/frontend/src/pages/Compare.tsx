@@ -11,6 +11,7 @@ import H2HTimeline from '../components/H2HTimeline';
 import TeamLogo from '../components/TeamLogo';
 import { getTeamColors } from '../theme/teamColors';
 import { api } from '../api/client';
+import { CURRENT_SEASON } from '../config';
 import type { Prediction, TeamMetrics, UpcomingGame, SimulationResult } from '../api/types';
 
 export default function Compare() {
@@ -210,7 +211,7 @@ function ScheduleColumn({ abbr, color, season }: { abbr: string; color: string; 
 
   useEffect(() => {
     setLoading(true);
-    api.getTeamUpcoming(abbr, season ?? 2025, 4)
+    api.getTeamUpcoming(abbr, season ?? CURRENT_SEASON, 4)
       .then((r) => setGames(r.games))
       .catch(() => setGames([]))
       .finally(() => setLoading(false));
@@ -497,8 +498,8 @@ function CompareBody({ t1, t2 }: { t1: string; t2: string }) {
           </div>
         </div>
         <div className="flex gap-6">
-          <ScheduleColumn abbr={t1} color={c1} season={2025} />
-          <ScheduleColumn abbr={t2} color={c2} season={2025} />
+          <ScheduleColumn abbr={t1} color={c1} season={CURRENT_SEASON} />
+          <ScheduleColumn abbr={t2} color={c2} season={CURRENT_SEASON} />
         </div>
       </div>
     </div>

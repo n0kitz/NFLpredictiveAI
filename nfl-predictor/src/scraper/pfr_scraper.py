@@ -18,6 +18,7 @@ except ImportError:
     _HAS_CLOUDSCRAPER = False
 
 from ..database.db import Database, get_database
+from .http import get_with_retry
 from .team_mappings import (
     TeamMappings, CURRENT_TEAMS, PFR_TEAM_ABBR_MAP,
     get_team_abbr_for_year
@@ -114,7 +115,9 @@ class PFRScraper:
 
         try:
             logger.debug(f"Fetching: {url}")
-            response = session.get(url, timeout=30)
+            # Retries transient errors (timeouts/5xx); 4xx (incl. 403) returns
+            # immediately so the cloudscraper fallback below still triggers.
+            response = get_with_retry(url, timeout=30, session=session)
             response.raise_for_status()
             return BeautifulSoup(response.text, 'html.parser')
         except requests.exceptions.HTTPError as e:
@@ -124,7 +127,7 @@ class PFRScraper:
                     self._use_cloudscraper = True
                     self._rate_limit_wait()
                     try:
-                        response = self._cs_session.get(url, timeout=30)
+                        response = get_with_retry(url, timeout=30, session=self._cs_session)
                         response.raise_for_status()
                         return BeautifulSoup(response.text, 'html.parser')
                     except requests.RequestException as e2:

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { SEASON_COUNT, SEASON_RANGE_LABEL } from '../config';
 
 export type DataSource =
   | 'espn'
@@ -18,12 +19,12 @@ interface Config {
 
 const SOURCE: Record<DataSource, Config> = {
   'espn':        { label: 'ESPN',     color: 'text-red-400',    bg: 'bg-red-500/10',    tooltip: 'Scraped from ESPN public API (injuries, rosters, player data)' },
-  'pfr':         { label: 'PFR',      color: 'text-yellow-400', bg: 'bg-yellow-500/10', tooltip: 'Pro Football Reference — historical game data (1990–2025)' },
+  'pfr':         { label: 'PFR',      color: 'text-yellow-400', bg: 'bg-yellow-500/10', tooltip: `Pro Football Reference — historical game data (${SEASON_RANGE_LABEL})` },
   'nfl-data-py': { label: 'nfl-data', color: 'text-blue-400',   bg: 'bg-blue-500/10',   tooltip: 'nfl_data_py — play-by-play, QB EPA, advanced team stats' },
   'open-meteo':  { label: 'Weather',  color: 'text-cyan-400',   bg: 'bg-cyan-500/10',   tooltip: 'Open-Meteo forecast API (no auth) — temperature, wind, precipitation' },
   'odds-api':    { label: 'Vegas',    color: 'text-green-400',  bg: 'bg-green-500/10',  tooltip: 'The Odds API — Vegas lines (display-only, never used in predictions)' },
-  'calculated':  { label: 'Calc',     color: 'text-text-muted', bg: 'bg-surface-700',   tooltip: 'Derived from 35 seasons of historical game data in the local database' },
-  'ml-model':    { label: 'GBM',      color: 'text-accent',     bg: 'bg-accent/10',     tooltip: 'Gradient Boosting Machine — 35 features, 67.2% OOS accuracy (2023–2024)' },
+  'calculated':  { label: 'Calc',     color: 'text-text-muted', bg: 'bg-surface-700',   tooltip: `Derived from ${SEASON_COUNT} seasons of historical game data in the local database` },
+  'ml-model':    { label: 'GBM',      color: 'text-accent',     bg: 'bg-accent/10',     tooltip: 'Gradient Boosting Machine — 34 features, 67.2% OOS accuracy (2023–2024)' },
 };
 
 export default function DataBadge({ source }: { source: DataSource }) {

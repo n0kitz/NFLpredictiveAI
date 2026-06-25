@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
+from .http import get_with_retry
 from .injury_scraper import ESPN_TEAM_MAP  # reuse existing mapping
 
 logger = logging.getLogger(__name__)
@@ -69,7 +70,9 @@ class ScheduleScraper:
             "dates": season,
         }
         try:
-            resp = self._session.get(_ESPN_SCOREBOARD, params=params, timeout=_REQUEST_TIMEOUT)
+            resp = get_with_retry(
+                _ESPN_SCOREBOARD, params=params, timeout=_REQUEST_TIMEOUT, session=self._session
+            )
             resp.raise_for_status()
         except requests.RequestException as exc:
             logger.warning("ESPN scoreboard request failed (week=%d, season=%d): %s", week, season, exc)

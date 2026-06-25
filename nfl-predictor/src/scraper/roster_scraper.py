@@ -10,6 +10,8 @@ from typing import Dict, List, Optional, Any
 
 import requests
 
+from .http import get_with_retry
+
 logger = logging.getLogger(__name__)
 
 # ESPN team ID → internal abbreviation mapping (all 32 current teams)
@@ -73,7 +75,7 @@ class RosterScraper:
 
         url = ESPN_ROSTER_URL.format(espn_id=espn_id)
         try:
-            resp = self._session.get(url, timeout=15)
+            resp = get_with_retry(url, timeout=15, session=self._session)
             resp.raise_for_status()
             data = resp.json()
         except Exception as exc:
@@ -112,7 +114,7 @@ class RosterScraper:
         """
         url = ESPN_PLAYER_STATS_URL.format(espn_id=espn_id, season=season)
         try:
-            resp = self._session.get(url, timeout=15)
+            resp = get_with_retry(url, timeout=15, session=self._session)
             resp.raise_for_status()
             data = resp.json()
             return self._parse_athlete_stats(data)

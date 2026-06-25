@@ -5,8 +5,9 @@ import type { Game, PlayoffPicture, PlayoffTeamEntry } from '../api/types';
 import Spinner from '../components/Spinner';
 import PlayoffBracket from '../components/PlayoffBracket';
 import { getTeamColors } from '../theme/teamColors';
+import { ALL_SEASONS, CURRENT_SEASON } from '../config';
 
-const YEARS = Array.from({ length: 2025 - 1990 + 1 }, (_, i) => 2025 - i);
+const YEARS = ALL_SEASONS;
 
 interface Standing {
   abbr: string;
@@ -24,7 +25,7 @@ interface Standing {
 export default function Season() {
   const { year: paramYear } = useParams<{ year?: string }>();
   const navigate = useNavigate();
-  const [year, setYear] = useState(paramYear ? Number(paramYear) : 2025);
+  const [year, setYear] = useState(paramYear ? Number(paramYear) : CURRENT_SEASON);
   const [games, setGames] = useState<Game[]>([]);
   const [standings, setStandings] = useState<Standing[]>([]);
   const [loading, setLoading] = useState(true);

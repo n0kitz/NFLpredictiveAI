@@ -7,6 +7,8 @@ from typing import Optional
 
 import requests
 
+from .http import get_with_retry
+
 logger = logging.getLogger(__name__)
 
 # The Odds API full team name → our internal abbreviation
@@ -100,7 +102,7 @@ class OddsScraper:
             return []
 
         try:
-            resp = requests.get(
+            resp = get_with_retry(
                 f"{_BASE}/sports/americanfootball_nfl/odds",
                 params={
                     "apiKey":      api_key,
@@ -198,7 +200,7 @@ class OddsScraper:
             return []
 
         try:
-            resp = requests.get(
+            resp = get_with_retry(
                 f"{_BASE}/sports/americanfootball_nfl/scores",
                 params={
                     "apiKey":   api_key,

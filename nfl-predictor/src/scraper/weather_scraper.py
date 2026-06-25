@@ -5,6 +5,7 @@ from typing import Optional
 
 import requests
 
+from .http import get_with_retry
 from .injury_scraper import STADIUM_COORDS
 
 logger = logging.getLogger(__name__)
@@ -74,7 +75,7 @@ class WeatherScraper:
             }
 
         try:
-            resp = requests.get(
+            resp = get_with_retry(
                 _OPEN_METEO_URL,
                 params={
                     "latitude":    lat,

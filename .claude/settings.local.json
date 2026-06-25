@@ -26,7 +26,9 @@
       "Bash(ls src/config.py src/settings.py)",
       "Bash(grep -c '\".*\"' src/prediction/feature_builder.py)",
       "Bash(git stash *)",
-      "Bash(grep -v \"Warning\\\\|warn\\\\|numpy\\\\|^$\")"
+      "Bash(grep -v \"Warning\\\\|warn\\\\|numpy\\\\|^$\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

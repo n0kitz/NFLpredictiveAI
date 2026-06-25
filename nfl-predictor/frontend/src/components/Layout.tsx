@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import type { PlayerSearchResult } from '../api/types';
 import Ticker from './Ticker';
+import { SEASON_COUNT, SEASON_RANGE_LABEL } from '../config';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard' },
@@ -203,7 +204,7 @@ export default function Layout() {
               </span>
             )}
             <span className="text-[11px] text-text-muted">
-              35 seasons &middot; 1990&ndash;2025
+              {SEASON_COUNT} seasons &middot; {SEASON_RANGE_LABEL}
             </span>
           </div>
         </div>

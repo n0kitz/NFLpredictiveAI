@@ -15,6 +15,7 @@ import type {
   ValuePicksResponse, ValuePickHistoryResponse, TeamScheduleResponse, SimulationResult,
   PlayerWeeklyStatsResponse,
 } from './types';
+import { CURRENT_SEASON, LAST_COMPLETED_SEASON, ACCURACY_SEASONS } from '../config';
 
 const BASE = '/api';
 
@@ -86,7 +87,7 @@ export const api = {
     get<H2H>(`/h2h/${encodeURIComponent(team1)}/${encodeURIComponent(team2)}?limit=${limit}`),
 
   // Accuracy
-  getAccuracy: (seasons = '2024,2025') =>
+  getAccuracy: (seasons = ACCURACY_SEASONS) =>
     get<AccuracyStats>(`/accuracy?seasons=${encodeURIComponent(seasons)}`),
 
   // Prediction history
@@ -107,26 +108,26 @@ export const api = {
     get<PlayerWeeklyStatsResponse>(`/players/${playerId}/weekly-stats?season=${season}`),
 
   // Fantasy — leaderboard (existing)
-  getFantasyTop: (position?: string, season = 2024, scoring = 'ppr', limit = 50) => {
+  getFantasyTop: (position?: string, season = LAST_COMPLETED_SEASON, scoring = 'ppr', limit = 50) => {
     const params = new URLSearchParams({ season: String(season), scoring, limit: String(limit) });
     if (position) params.set('position', position);
     return get<FantasyLeaderboard>(`/fantasy/top?${params}`);
   },
 
   // Fantasy — extended
-  getFantasyProjections: (week: number, season = 2024, position = 'all', scoring = 'ppr') =>
+  getFantasyProjections: (week: number, season = LAST_COMPLETED_SEASON, position = 'all', scoring = 'ppr') =>
     get<FantasyProjection[]>(
       `/fantasy/projections?week=${week}&season=${season}&position=${encodeURIComponent(position)}&scoring=${scoring}`
     ),
-  getStartSit: (player1Id: number, player2Id: number, week: number, season = 2024) =>
+  getStartSit: (player1Id: number, player2Id: number, week: number, season = LAST_COMPLETED_SEASON) =>
     get<StartSitResult>(
       `/fantasy/start-sit?player1_id=${player1Id}&player2_id=${player2Id}&week=${week}&season=${season}`
     ),
-  getWaiverWire: (week: number, season = 2024, scoring = 'ppr', position = 'all', limit = 30) =>
+  getWaiverWire: (week: number, season = LAST_COMPLETED_SEASON, scoring = 'ppr', position = 'all', limit = 30) =>
     get<FantasyProjection[]>(
       `/fantasy/waiver?week=${week}&season=${season}&scoring=${scoring}&position=${encodeURIComponent(position)}&limit=${limit}`
     ),
-  getDraftRankings: (season = 2025, scoring = 'ppr', position = 'all') =>
+  getDraftRankings: (season = CURRENT_SEASON, scoring = 'ppr', position = 'all') =>
     get<DraftRanking[]>(
       `/fantasy/draft-rankings?season=${season}&scoring=${scoring}&position=${encodeURIComponent(position)}`
     ),
@@ -142,17 +143,17 @@ export const api = {
     get<PlayoffPicture>(`/seasons/${year}/playoff-picture`),
 
   // Team upcoming schedule
-  getTeamUpcoming: (id: string, season = 2025, limit = 4) =>
+  getTeamUpcoming: (id: string, season = CURRENT_SEASON, limit = 4) =>
     get<TeamUpcoming>(`/teams/${encodeURIComponent(id)}/upcoming?season=${season}&limit=${limit}`),
 
   // Fantasy extended
-  getFantasyPowerRankings: (week: number, season = 2024) =>
+  getFantasyPowerRankings: (week: number, season = LAST_COMPLETED_SEASON) =>
     get<PowerRankings>(`/fantasy/power-rankings?week=${week}&season=${season}`),
 
-  getFantasyTradeValues: (week: number, season = 2024) =>
+  getFantasyTradeValues: (week: number, season = LAST_COMPLETED_SEASON) =>
     get<TradeValues>(`/fantasy/trade-values?week=${week}&season=${season}`),
 
-  importRosterByNames: (names: string[], season = 2024) =>
+  importRosterByNames: (names: string[], season = LAST_COMPLETED_SEASON) =>
     post<RosterImportResult>('/fantasy/roster/import-by-names', { names, season }),
 
   // Value picks

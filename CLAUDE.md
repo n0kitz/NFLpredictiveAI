@@ -49,7 +49,7 @@ nfl-predictor/
 │   │   ├── factors.py         # GameFactor adjustments (-5 to +5 impact)
 │   │   ├── backtester.py      # Replay historical games to measure accuracy
 │   │   ├── fantasy_scorer.py  # FantasyScorer: projections, start-sit, trade analysis, draft rankings, power rankings, trade values
-│   │   ├── feature_builder.py # Feature vector builder (34 features — docstring says 35, stale)
+│   │   ├── feature_builder.py # Feature vector builder (34 features; docstrings corrected)
 │   │   ├── ml_model.py        # ML wrapper (GradientBoostingClassifier + spread regressor)
 │   │   └── explainer.py       # SHAP explainer for PredictionExplanation
 │   ├── scraper/
@@ -225,10 +225,10 @@ Replace `YYYY` with the season year (e.g. 2025).
 - Scraper has cloudscraper fallback: if requests gets 403, it retries with cloudscraper automatically
 - Cron container runs weekly_scrape.py every Wednesday 06:00 UTC (enriches predictions + odds + conditions)
 - Frontend uses Recharts for trend charts on TeamDetail page
-- 183 pytest tests across 9 test files (API, prediction, scraper, basic, roster, injury_scraper, weather_scraper, fantasy, api_extended)
-- ML model (GradientBoostingClassifier, **34 features**, trained 2013-2022): needs retraining after feature vector expansion
-- Feature vector: `feature_builder.py` FEATURE_NAMES list has **34** entries (docstring says 35 — stale); `explainer.py` FEATURE_LABELS also stale (references old names like `home_qb_epa_per_play`) — pending fix in Wave 5 Phase 3
-- `models.py` dataclasses: only `Team, Game, GameFactor, TeamSeasonStats, Prediction` — all other DB entities (Player, RosterEntry, InjuryReport, GameWeather, GameOdds) are raw `sqlite3.Row` dicts
+- 202 backend pytest tests (11 files; +test_player_ml, +test_http_retry) + 9 frontend vitest tests (`frontend/` — config + DataBadge). 2 backend fails = numpy ABI env only.
+- ML model (GradientBoostingClassifier, **34 features**, trained 2013-2022): `load_model()` refuses a model whose feature list ≠ current builder (falls back to weighted-sum). Retrain still deferred (numpy env).
+- Feature vector: `feature_builder.py` FEATURE_NAMES = **34** entries (docstrings corrected); `explainer.py` FEATURE_LABELS now **derived from FEATURE_NAMES** (drift-proof, test-guarded).
+- `models.py` dataclasses: `Team, Game, GameFactor, TeamSeasonStats, Prediction` + opt-in `Player, RosterEntry, InjuryReport, GameWeather, GameOdds` (with `from_row`); DB layer still returns raw `sqlite3.Row` by default.
 - Weighted-sum default: 67.2% OOS accuracy on 2023-2024. ML only activates with `?model=ml`
 - `sqlite3.Row` objects: use bracket access `r["col"]` not `.get()` — `.get()` is not supported
 
@@ -332,8 +332,11 @@ Replace `YYYY` with the season year (e.g. 2025).
 ## Pending Data Operations (run after code changes)
 ```bash
 cd nfl-predictor
+# Use a clean venv first — requirements pin numpy<2 (anaconda base has numpy 2.x):
+#   python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 python scripts/import_advanced_stats.py   # Populate QB EPA + team advanced stats
-python scripts/train_model.py             # Retrain ML model with 34-feature vector (fix explainer labels first — Wave 5 Phase 3)
+python scripts/train_model.py             # Retrain ML model (34-feature vector; explainer labels already fixed)
+python scripts/train_player_models.py     # Retrain per-position fantasy models (now TimeSeriesSplit)
 python scripts/import_rosters.py          # Import rosters + player season stats (Step1: ESPN, Step2: nfl_data_py)
 # Review data/unmatched_players.txt after roster import to assess matching quality
 ```
@@ -343,32 +346,48 @@ python scripts/import_rosters.py          # Import rosters + player season stats
 Issues found in full codebase audit — track progress in Wave 5 plan:
 `/Users/normenkitzmann/.claude/plans/immutable-munching-elephant.md`
 
-| Severity | Issue | Location | Phase |
-|----------|-------|----------|-------|
-| HIGH | `KFold` → temporal leakage in player ML | `player_ml_model.py:51` | 3 |
-| HIGH | Schema duplicated in `db.py` inline + `schema.sql` — can drift | `db.py:80-320` | 2 |
-| HIGH | `_fatal_error` never set → always reports success | `weekly_scrape.py:48` | 1 |
-| HIGH | N+1 query in power rankings (~256 queries/req) | `routers/fantasy.py:248` | 2 |
-| HIGH | FEATURE_LABELS stale in explainer | `explainer.py:10-46` | 3 |
-| MED | No retry on any HTTP scraper | all scrapers | 4 |
-| MED | No concurrent execution lock on cron | `weekly_scrape.py` | 4 |
-| MED | `datetime.utcnow()` deprecated (3.12+) | `db.py`, `injury_scraper.py`, `odds_scraper.py` | 1 |
-| MED | No centralized config — settings scattered across 15+ files | multiple | 1 |
-| MED | Port 8000 exposed directly in docker-compose | `docker-compose.yml:9` | 1 |
-| MED | Missing dataclasses for 12+ DB entities (raw dicts) | `models.py` | 2 |
-| MED | f-string SQL column interpolation (fragile) | `db.py:1343` | 2 |
-| LOW | No frontend tests at all (zero vitest setup) | `frontend/` | 5 |
-| LOW | 6+ hardcoded `2024`/`2025` year values in frontend | multiple | 5 |
-| LOW | `FantasyPage.tsx` is 1213 lines — needs splitting | `FantasyPage.tsx` | 5 |
-| LOW | Missing CSP header in nginx | `nginx.conf` | 1 |
-| LOW | No CI/CD pipeline | — | 7 |
+| Severity | Issue | Location | Phase | Status |
+|----------|-------|----------|-------|--------|
+| HIGH | `KFold` → temporal leakage in player ML | `player_ml_model.py` | 3 | ✅ → TimeSeriesSplit |
+| HIGH | Schema duplicated in `db.py` inline + `schema.sql` — can drift | `db.py` | 2 | ✅ schema.sql single source |
+| HIGH | `_fatal_error` never set → always reports success | `weekly_scrape.py` | 1 | ✅ accumulator + exit 1 |
+| HIGH | N+1 query in power rankings (~256 queries/req) | `routers/fantasy.py` | 2 | ✅ ~256→~4 (bulk-load) |
+| HIGH | FEATURE_LABELS stale in explainer | `explainer.py` | 3 | ✅ derived from FEATURE_NAMES |
+| MED | No retry on any HTTP scraper | all scrapers | 4 | ✅ `scraper/http.get_with_retry` |
+| MED | No concurrent execution lock on cron | `weekly_scrape.py` | 4 | ✅ `fcntl` singleton lock |
+| MED | `datetime.utcnow()` deprecated (3.12+) | `db.py`, `injury_scraper.py`, `odds_scraper.py` | 1 | ✅ → `now(timezone.utc)` |
+| MED | No centralized config — settings scattered across 15+ files | multiple | 1 | ✅ `src/config.py` |
+| MED | Port 8000 exposed directly in docker-compose | `docker-compose.yml` | 1 | ✅ nginx-only + `expose` |
+| MED | Missing dataclasses for 12+ DB entities (raw dicts) | `models.py` | 2 | ✅ 5 key entities added (opt-in) |
+| MED | f-string SQL column interpolation (fragile) | `db.py` | 2 | ✅ whitelist dict |
+| LOW | No frontend tests at all (zero vitest setup) | `frontend/` | 5 | ✅ vitest+RTL, 9 tests |
+| LOW | hardcoded `2024`/`2025` year values in frontend | multiple | 5 | ✅ `frontend/src/config.ts` |
+| LOW | `FantasyPage.tsx` is 1213 lines — needs splitting | `FantasyPage.tsx` | 5 | ✅ 67-line shell + `pages/fantasy/` |
+| LOW | Missing CSP header in nginx | `nginx.conf` | 1 | ✅ CSP added |
+| LOW | No CI/CD pipeline | — | 7 | ⬜ pending |
 
-## Wave 5 — Active Improvement Work (started 2026-05-11)
+**ML model retrain** (deferred, user-owned): clean venv (`numpy<2` per requirements) then `python scripts/train_model.py` + `train_player_models.py`. Active anaconda env has numpy 2.x → 2 `test_player_ml` tests fail with `numpy.core.multiarray failed to import` until reinstall.
+
+## Wave 5 — Improvement Work (started 2026-05-11)
 
 7-phase improvement plan covering security, stability, ML correctness, frontend quality, observability, and CI/CD.
 See plan: `/Users/normenkitzmann/.claude/plans/immutable-munching-elephant.md`
 
 **Recommended execution order:** Phase 1 → 2 → 3 → CI (7.1) → 4 → 5 → 6 → 7 (rest)
+
+**Progress (2026-06-25):**
+| Phase | Focus | Status |
+|-------|-------|--------|
+| 1 | Config centralization + quick security wins | ✅ Done (commit `b8e3624`) |
+| 2 | DB layer hardening (schema dedup, N+1, dataclasses) | ✅ Done (commit `b8e3624`) |
+| 3 | ML correctness (TimeSeriesSplit, SHAP labels, load guard) | ✅ Code done (commit `3757f90`); retrain deferred (env) |
+| 4 | Scraper resilience + cron safety | ✅ Done (uncommitted) |
+| 5 | Frontend quality (vitest, season config, FantasyPage split) | ✅ Done (uncommitted) |
+| 6 | Performance + observability | ⬜ Pending |
+| 7 | Documentation + CI/CD | ⬜ Pending (7.1 CI next) |
+
+- **Tests:** 202 backend (pytest, +19 since Wave 4) + 9 frontend (vitest). 2 backend fails = numpy ABI env only.
+- **New modules:** `src/config.py`, `src/scraper/http.py`, `frontend/src/config.ts`, `frontend/src/pages/fantasy/*`, `frontend/vitest.config.ts`.
 
 ## graphify
 

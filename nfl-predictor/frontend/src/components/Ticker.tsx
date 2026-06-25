@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { CURRENT_SEASON, SEASON_COUNT, SEASON_RANGE_LABEL } from '../config';
 
 interface TickerItem {
   text: string;
@@ -8,7 +9,7 @@ interface TickerItem {
 const FALLBACK: TickerItem[] = [
   { text: 'MODEL ONLINE' },
   { text: '9,400+ GAMES IN DATABASE' },
-  { text: '35 SEASONS OF DATA · 1990–2025' },
+  { text: `${SEASON_COUNT} SEASONS OF DATA · ${SEASON_RANGE_LABEL}` },
   { text: '32 ACTIVE NFL TEAMS' },
   { text: 'RUN A CUSTOM PREDICTION AT /PREDICT' },
   { text: 'EXPLORE TEAM STATS AT /TEAMS' },
@@ -27,7 +28,7 @@ export default function Ticker() {
       } catch { /* silent */ }
 
       try {
-        const acc = await api.getAccuracy('2025');
+        const acc = await api.getAccuracy(String(CURRENT_SEASON));
         if (acc.total_games > 0) {
           next.push({
             text: `${(acc.accuracy * 100).toFixed(1)}% SEASON ACCURACY · ${acc.correct_predictions}/${acc.total_games} GAMES`,
@@ -52,7 +53,7 @@ export default function Ticker() {
         }
       } catch { /* silent */ }
 
-      next.push({ text: '35 SEASONS OF NFL DATA · 1990–2025' });
+      next.push({ text: `${SEASON_COUNT} SEASONS OF NFL DATA · ${SEASON_RANGE_LABEL}` });
       next.push({ text: 'CUSTOM PREDICTIONS AT /PREDICT' });
 
       if (next.length >= 4) setItems(next);

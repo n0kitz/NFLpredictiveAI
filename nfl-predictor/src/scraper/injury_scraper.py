@@ -6,6 +6,8 @@ from typing import Optional
 
 import requests
 
+from .http import get_with_retry
+
 logger = logging.getLogger(__name__)
 
 # (latitude, longitude, is_dome) for each team's 2024 home stadium.
@@ -105,7 +107,7 @@ class InjuryScraper:
         Returns [] on any network error.
         """
         try:
-            resp = requests.get(_ESPN_INJURIES_URL, timeout=10)
+            resp = get_with_retry(_ESPN_INJURIES_URL, timeout=10)
             resp.raise_for_status()
             data = resp.json()
         except requests.RequestException as exc:

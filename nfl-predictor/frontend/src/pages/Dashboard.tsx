@@ -6,6 +6,7 @@ import { useAccuracy, useValuePicks } from '../hooks/useApi';
 import TeamLogo from '../components/TeamLogo';
 import Spinner from '../components/Spinner';
 import { getTeamColors } from '../theme/teamColors';
+import { CURRENT_SEASON } from '../config';
 
 const FEATURED_MATCHUPS: [string, string][] = [
   ['KC', 'PHI'],
@@ -65,7 +66,7 @@ function EditorialHeader({ accuracy, top }: { accuracy: AccuracyStats; top: Matc
         />
         <div>
           <div className="font-display text-[11px] font-bold tracking-[0.2em] text-accent mb-3">
-            2025 SEASON · MODEL BRIEFING
+            {CURRENT_SEASON} SEASON · MODEL BRIEFING
           </div>
           <h1 className="font-display text-5xl md:text-6xl lg:text-[76px] font-extrabold tracking-[-0.045em] leading-[0.92] m-0">
             <span style={{ color: winnerColors.primary }}>{shortName(winnerFullName)}</span> open as
@@ -101,7 +102,7 @@ function EditorialHeader({ accuracy, top }: { accuracy: AccuracyStats; top: Matc
           <span className="text-[0.5em] opacity-50">%</span>
         </div>
         <div className="text-[11px] text-text-muted">
-          {accuracy.correct_predictions}/{accuracy.total_games} games · 2025
+          {accuracy.correct_predictions}/{accuracy.total_games} games · {CURRENT_SEASON}
         </div>
         <div className="mt-1 h-1 rounded-full bg-surface-600 overflow-hidden">
           <div
@@ -367,7 +368,7 @@ export default function Dashboard() {
   const [matchups, setMatchups] = useState<MatchupResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { data: accuracy } = useAccuracy('2025');
+  const { data: accuracy } = useAccuracy(String(CURRENT_SEASON));
   const { data: valuePicks } = useValuePicks();
 
   useEffect(() => {

@@ -5,6 +5,8 @@ Scrapes the current and previous season to catch any updates.
 Designed to be run via cron every Wednesday.
 """
 
+import atexit
+import fcntl
 import logging
 import sys
 from datetime import datetime
@@ -37,7 +39,35 @@ def get_current_nfl_season() -> int:
     return now.year if now.month >= 9 else now.year - 1
 
 
+_LOCK_PATH = Path(__file__).parent.parent / "data" / ".weekly_scrape.lock"
+
+
+def _acquire_singleton_lock():
+    """Take an exclusive non-blocking file lock so two scrapes can't overlap.
+
+    Returns the open file descriptor on success, or None if another run already
+    holds the lock. The OS releases the flock when this process exits; we also
+    register an atexit close (which keeps a reference so the fd isn't GC'd).
+    """
+    _LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    fd = open(_LOCK_PATH, "w")
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fd.close()
+        return None
+    atexit.register(fd.close)
+    return fd
+
+
 def main():
+    if _acquire_singleton_lock() is None:
+        logger.warning(
+            "Another weekly scrape already holds %s — exiting to avoid overlap.",
+            _LOCK_PATH,
+        )
+        return
+
     current_season = get_current_nfl_season()
     start = current_season - 1  # Also refresh prior season for corrections
     end = current_season

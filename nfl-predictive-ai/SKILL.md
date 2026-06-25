@@ -29,11 +29,11 @@ description: >
 - **`player_ml_model.py`**: ✅ FIXED 2026-06-24 — now `TimeSeriesSplit` (was `KFold(shuffle=True)`). Training rows are chronologically ordered by `build_training_rows`. Player models need retrain to take effect (deferred, env-blocked).
 - **`db.py` schema**: ✅ FIXED 2026-06-24 — `schema.sql` is now the single source; `connection` init runs `executescript(schema.sql)` + `run_migrations`. Inline duplicate deleted. Add new tables to `schema.sql`; add ALTERs to `MIGRATIONS` list in `db.py`.
 - **`models.py`**: only has dataclasses for `Team, Game, GameFactor, TeamSeasonStats, Prediction` — all other entities (Player, RosterEntry, InjuryReport, etc.) are raw `sqlite3.Row` dicts
-- **No retry on scrapers**: transient HTTP failures cause silent data gaps
+- **Scraper HTTP retry**: ✅ FIXED 2026-06-25 — use `src.scraper.http.get_with_retry(url, ..., session=optional)` for all new HTTP calls (backoff+jitter, retries 429/5xx/conn-errors, honours Retry-After). Don't call `requests.get` directly in scrapers.
 - **Power rankings endpoint**: ~256 DB queries per request (N+1 pattern) — `src/api/routers/fantasy.py` `_compute()`
 - **`datetime.utcnow()`**: deprecated in Python 3.12 — used in `db.py` (3x), `injury_scraper.py`, `odds_scraper.py`
 - **Port 8000**: currently exposed directly in `docker-compose.yml` — should route through nginx only
-- **Hardcoded years**: `2024`/`2025` in 6+ frontend files — will go stale
+- **Hardcoded years**: ✅ FIXED 2026-06-25 — use `frontend/src/config.ts` (`CURRENT_SEASON`, `LAST_COMPLETED_SEASON`, `SEASON_RANGE_LABEL`, `recentSeasons(n)`, …). Don't hardcode years or `new Date().getFullYear()` (calendar ≠ NFL season).
 
 ## Architecture Conventions
 
@@ -54,8 +54,8 @@ Plan file: `/Users/normenkitzmann/.claude/plans/immutable-munching-elephant.md`
 | 1 | Config centralization + quick security wins | ✅ Done 2026-06-24 — `src/config.py`; cron `_fatal_error` fixed; `utcnow` removed; port 8000 unpublished; nginx CSP |
 | 2 | DB layer hardening (schema dedup, transactions, N+1) | ✅ Done 2026-06-24 — schema.sql single source (fixes fresh-DB bug), power-rankings N+1 256→4, 5 dataclasses, f-string SQL whitelisted |
 | 3 | ML pipeline correctness (TimeSeriesSplit, versioning, SHAP) | ✅ Code done 2026-06-24 — player KFold→TimeSeriesSplit, explainer labels drift-proof, load_model feature guard, numpy<2 pinned. Retrain+venv reinstall deferred (env-blocked) |
-| 4 | Scraper resilience + cron safety | Pending |
-| 5 | Frontend quality + component library | Pending |
+| 4 | Scraper resilience + cron safety | ✅ Done 2026-06-25 — shared `get_with_retry` (backoff+jitter+Retry-After) on all scrapers; cron `fcntl` singleton lock; 6 retry tests |
+| 5 | Frontend quality + component library | ✅ Done 2026-06-25 — vitest+RTL (9 tests), `src/config.ts` season config (de-hardcoded), FantasyPage 1213→67 lines (pages/fantasy/ modules) |
 | 6 | Performance + observability | Pending |
 | 7 | Documentation + CI/CD | Pending |
 
@@ -65,7 +65,7 @@ Check plan file for granular sub-tasks. Update Status as phases complete.
 
 - 183 tests, 9 files — all pass when `data/nfl.db` present
 - Tests with `pytestmark = pytest.mark.skipif(not DEFAULT_DB_PATH.exists(), ...)` skip silently without DB
-- No frontend tests at all (zero vitest/jest setup)
+- Frontend tests: ✅ vitest + RTL set up 2026-06-25 (`npm test` / `npm run test:watch`); config in `vitest.config.ts` (separate from vite.config). 9 tests so far — expand coverage.
 - `test_roster.py` inserts test data into real DB, never cleans up
 
 ## Key File Map

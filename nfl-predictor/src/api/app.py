@@ -1,6 +1,8 @@
 """FastAPI application for NFL Prediction System."""
 
 import logging
+import time
+import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,8 +11,10 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from ..config import settings
-from .routers import teams, games, predictions, fantasy, misc
+from ..observability import setup_logging, metrics
+from .routers import teams, games, predictions, fantasy, misc, matchup
 
+setup_logging()
 logger = logging.getLogger(__name__)
 
 # Global rate limiter — keyed by client IP
@@ -35,6 +39,32 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def observe_requests(request: Request, call_next):
+    """Assign a request id, time the request, record metrics, log structured line."""
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
+    start = time.perf_counter()
+    status = 500
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        response.headers["X-Request-ID"] = request_id
+        return response
+    finally:
+        duration_ms = (time.perf_counter() - start) * 1000.0
+        metrics.record_request(status, duration_ms)
+        logger.info(
+            "request",
+            extra={"extra_fields": {
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status": status,
+                "duration_ms": round(duration_ms, 2),
+            }},
+        )
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
     from fastapi.responses import JSONResponse
@@ -46,4 +76,5 @@ app.include_router(teams.router)
 app.include_router(games.router)
 app.include_router(predictions.router)
 app.include_router(fantasy.router)
+app.include_router(matchup.router)
 app.include_router(misc.router)

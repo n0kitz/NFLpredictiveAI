@@ -13,6 +13,19 @@ from ..database.models import Game, TeamSeasonStats
 # Key: (team_id, current_season) → (TeamMetrics, timestamp)
 _metrics_cache: Dict[tuple, Any] = {}
 _METRICS_TTL = 3600  # 1 hour
+_cache_hits = 0
+_cache_misses = 0
+
+
+def cache_stats() -> Dict[str, Any]:
+    """Team-metrics cache hit/miss stats (for /api/metrics observability)."""
+    total = _cache_hits + _cache_misses
+    return {
+        "hits": _cache_hits,
+        "misses": _cache_misses,
+        "entries": len(_metrics_cache),
+        "hit_rate": round(_cache_hits / total, 3) if total else 0.0,
+    }
 
 
 @dataclass
@@ -148,11 +161,14 @@ def calculate_team_metrics(
     cutoff_date: Optional[str] = None,
 ) -> 'TeamMetrics':
     # TTL cache — skip for historical cutoff queries (prediction engine uses cutoff_date)
+    global _cache_hits, _cache_misses
     if cutoff_date is None:
         cache_key = (team_id, current_season)
         cached = _metrics_cache.get(cache_key)
         if cached and (time.time() - cached[1]) < _METRICS_TTL:
+            _cache_hits += 1
             return cached[0]
+        _cache_misses += 1
         result = _calculate_team_metrics_impl(
             db, team_id, current_season, recent_games_count, seasons_to_analyze, cutoff_date
         )

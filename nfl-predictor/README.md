@@ -4,7 +4,7 @@ A Python-based NFL game prediction system that uses historical data to calculate
 
 ## Features
 
-- **Historical Data**: 35 years of NFL game data (1990-2024) scraped from Pro Football Reference
+- **Historical Data**: 36 seasons of NFL game data (1990-2025) scraped from Pro Football Reference
 - **Win Probability Predictions**: Calculate win percentages based on multiple weighted factors
 - **Natural Language Queries**: Ask questions in plain English
 - **Factor System**: Framework for adding custom game factors (injuries, weather, etc.)
@@ -37,11 +37,11 @@ python -m src.cli.main --init-db
 This will take some time due to rate limiting (respecting the source website):
 
 ```bash
-# Scrape all seasons (1990-2024) - takes several hours
+# Scrape all seasons (1990-2025) - takes several hours
 python -m src.cli.main --scrape
 
 # Or scrape specific years
-python -m src.cli.main --scrape --start 2020 --end 2024
+python -m src.cli.main --scrape --start 2020 --end 2025
 ```
 
 ### 3. Make Predictions
@@ -251,10 +251,32 @@ nfl-predictor/
 
 ## Technical Details
 
-- **Python**: 3.10+
+- **Python**: 3.12 (requirements pin `numpy<2` to match scipy/scikit-learn ABI — use a clean venv)
 - **Database**: SQLite (no external database required)
-- **Scraping**: BeautifulSoup4 with rate limiting (4s between requests)
+- **Scraping**: BeautifulSoup4 with rate limiting (4s); shared retry helper (`src/scraper/http.py`)
 - **Data Source**: Pro Football Reference
+- **Config**: all env reads centralized in `src/config.py` (`ENV`, `DB_PATH`, `ODDS_API_KEY`, `CORS_ORIGINS`, `PFR_RATE_LIMIT`)
+
+## Testing & CI
+
+```bash
+# Backend (pytest) — from nfl-predictor/
+python -m pytest -q                 # 256 tests (2 require numpy<2 venv)
+
+# Frontend (vitest) — from nfl-predictor/frontend/
+npm test                            # unit tests
+npm run build                       # tsc typecheck + vite build
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and every PR:
+- **Backend**: `ruff` (syntax/undefined-name lint) + `pytest`
+- **Frontend**: `eslint` (non-blocking) + `tsc` build + `vitest`
+
+## Observability
+
+- `GET /api/metrics` — request counts, latency (avg/max), status buckets, and team-metrics cache hit rate.
+- Structured JSON request logs (request id, method, path, status, duration) via `src/observability.py`.
+- Every response carries an `X-Request-ID` header (echoes a caller-supplied one if present).
 
 ## Handling Team Relocations
 

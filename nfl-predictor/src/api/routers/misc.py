@@ -70,6 +70,14 @@ def health_check(db=Depends(get_db)):
     )
 
 
+@router.get("/api/metrics", tags=["system"])
+def get_metrics():
+    """Process observability snapshot: request counts/latency + metrics-cache stats."""
+    from ...observability import metrics
+    from ...prediction.metrics import cache_stats
+    return {**metrics.snapshot(), "metrics_cache": cache_stats()}
+
+
 @router.get("/api/accuracy", response_model=AccuracyResponse, tags=["system"])
 @limiter.limit("5/minute")
 def get_accuracy(

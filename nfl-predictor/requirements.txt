@@ -34,6 +34,9 @@ scikit-learn==1.4.2
 joblib==1.4.2
 shap==0.51.0
 
+# Lineup optimizer (MILP)
+pulp>=2.7.0
+
 # Testing (development)
 pytest==7.4.4
 pytest-cov==7.1.0

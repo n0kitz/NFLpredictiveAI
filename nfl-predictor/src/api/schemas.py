@@ -1,7 +1,7 @@
 """Pydantic response/request schemas for the NFL API."""
 
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict
 from enum import Enum
 
 
@@ -715,3 +715,101 @@ class HealthResponse(BaseModel):
     last_scrape_ok: Optional[bool] = None
     last_scrape_error: Optional[str] = None
     data_updated_at: Optional[str] = None
+
+
+# ── Matchup Engine ─────────────────────────────────────
+
+class MatchupComponentScores(BaseModel):
+    dvp: float
+    ypp: float
+    pace: float
+    proe: float
+
+
+class MatchupGradeResponse(BaseModel):
+    player_id: int
+    full_name: str
+    position: Optional[str] = None
+    team_abbr: Optional[str] = None
+    opp_team_id: int
+    opp_team_abbr: Optional[str] = None
+    week: int
+    season: int
+    grade: str                          # A / B / C / D / F
+    score: float                        # 0–100
+    rank_vs_league: int                 # 1 = hardest matchup, 32 = easiest
+    explanation: str
+    dvp_6wk: float
+    avg_league_dvp: float
+    opp_ypp: float
+    pace: float
+    proe: float
+    component_scores: MatchupComponentScores
+
+
+# ── Lineup Optimizer ───────────────────────────────────
+
+class OptimizerPlayerInput(BaseModel):
+    player_id: int
+    full_name: str
+    position: str
+    team_id: int
+    team_abbr: str
+    projected_points: float
+    salary: int = 0
+    is_locked: bool = False
+    is_excluded: bool = False
+    headshot_url: Optional[str] = None
+    opponent_team_id: Optional[int] = None
+
+
+class OptimizeRequest(BaseModel):
+    players: List[OptimizerPlayerInput] = Field(..., max_length=400)
+    slots: Dict[str, int]
+    flex_positions: List[str] = ['RB', 'WR', 'TE']
+    salary_cap: Optional[int] = None
+    n_lineups: int = Field(20, ge=1, le=150)
+    correlations: bool = True
+    max_from_team: int = Field(8, ge=1, le=11)
+
+
+class OptimizeDFSRequest(BaseModel):
+    players: List[OptimizerPlayerInput] = Field(..., max_length=400)
+    site: str = 'dk'                             # 'dk' or 'fd'
+    n_lineups: int = Field(20, ge=1, le=150)
+    correlations: bool = True
+    locked_player_ids: List[int] = Field(default_factory=list, max_length=50)
+    excluded_player_ids: List[int] = Field(default_factory=list, max_length=400)
+
+
+class LineupPlayerOut(BaseModel):
+    player_id: int
+    full_name: str
+    position: str
+    team_abbr: str
+    headshot_url: Optional[str] = None
+    slot: str
+    projected_points: float
+    salary: int = 0
+
+
+class LineupResult(BaseModel):
+    rank: int
+    players: List[LineupPlayerOut]
+    projected_points: float
+    total_salary: int
+    correlation_bonus: float
+
+
+class ExposureEntry(BaseModel):
+    count: int
+    pct: float
+    full_name: str
+    position: str
+
+
+class OptimizeResponse(BaseModel):
+    lineups: List[LineupResult]
+    exposure: Dict[str, ExposureEntry]
+    total_lineups: int
+    slots: Dict[str, int]

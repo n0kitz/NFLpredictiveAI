@@ -29,7 +29,7 @@ Full-stack NFL game prediction application. Python FastAPI backend with 35 years
 nfl-predictor/
 ├── src/
 │   ├── api/
-│   │   ├── app.py             # FastAPI thin wrapper: middleware + include_router (~40 lines)
+│   │   ├── app.py             # FastAPI thin wrapper: CORS + observability middleware + 6 include_router (~70 lines)
 │   │   ├── schemas.py         # Pydantic request/response models (with Field max_length constraints)
 │   │   ├── deps.py            # Dependency injection (DB per request)
 │   │   └── routers/           # Domain routers (split from app.py)
@@ -37,7 +37,8 @@ nfl-predictor/
 │   │       ├── games.py       # /api/games/* (3 endpoints)
 │   │       ├── predictions.py # /api/predict/* + /api/predictions/* (5 endpoints)
 │   │       ├── fantasy.py     # /api/fantasy/* (10 endpoints)
-│   │       └── misc.py        # health, accuracy, factors, model info, scrape, players, seasons
+│   │       ├── matchup.py     # /api/fantasy/matchup + /optimize + /optimize/dfs (matchup engine + lineup optimizer)
+│   │       └── misc.py        # health, metrics, accuracy, factors, model info, scrape, players, seasons
 │   ├── cli/main.py            # CLI interface (still works standalone)
 │   ├── database/
 │   │   ├── db.py              # SQLite connection, CRUD, per-request factory
@@ -51,7 +52,9 @@ nfl-predictor/
 │   │   ├── fantasy_scorer.py  # FantasyScorer: projections, start-sit, trade analysis, draft rankings, power rankings, trade values
 │   │   ├── feature_builder.py # Feature vector builder (34 features; docstrings corrected)
 │   │   ├── ml_model.py        # ML wrapper (GradientBoostingClassifier + spread regressor)
-│   │   └── explainer.py       # SHAP explainer for PredictionExplanation
+│   │   ├── explainer.py       # SHAP explainer for PredictionExplanation
+│   │   ├── matchup_engine.py  # Advanced Matchup Engine: DvP/pace/PROE → A-F grade (from matchup branch)
+│   │   └── lineup_optimizer.py # MILP lineup optimizer (PuLP): season + DFS (DK/FD)
 │   ├── scraper/
 │   │   ├── pfr_scraper.py     # PFR scraper with resumable progress + --from-file
 │   │   ├── team_mappings.py   # 32 current + historical teams
@@ -59,7 +62,10 @@ nfl-predictor/
 │   │   ├── nfl_data_importer.py # nfl_data_py: QB EPA PBP, team advanced stats, player season stats
 │   │   ├── injury_scraper.py  # ESPN public API — STADIUM_COORDS, ESPN_TEAM_MAP, InjuryScraper
 │   │   ├── weather_scraper.py # Open-Meteo API — dome check, WMO codes, is_adverse
-│   │   └── odds_scraper.py    # The Odds API — OddsScraper (ODDS_API_KEY required)
+│   │   ├── odds_scraper.py    # The Odds API — OddsScraper (ODDS_API_KEY required)
+│   │   └── http.py            # get_with_retry: shared backoff/jitter/Retry-After helper for all scrapers
+│   ├── config.py             # Centralized settings (ENV, DB_PATH, ODDS_API_KEY, CORS_ORIGINS, PFR_RATE_LIMIT)
+│   ├── observability.py      # JSON logging + request-id/timing middleware + Metrics (powers /api/metrics)
 │   └── utils/helpers.py
 ├── frontend/
 │   ├── src/
@@ -81,12 +87,17 @@ nfl-predictor/
 │   ├── test_weather_scraper.py# WeatherScraper dome logic, WMO mapping (12 tests)
 │   ├── test_fantasy.py        # FantasyScorer: matchup, projections, start-sit, trade, draft (18 tests)
 │   ├── test_api_extended.py   # 42 tests: history, fantasy endpoints, seasons, adversarial inputs
+│   ├── test_player_ml.py      # Per-position player ML model (TimeSeriesSplit) — needs numpy<2 venv
+│   ├── test_http_retry.py     # scraper/http.get_with_retry: backoff, 5xx/429, Retry-After (6 tests)
+│   ├── test_observability.py  # Metrics + /api/metrics + X-Request-ID (3 tests)
+│   ├── test_matchup_engine.py # Advanced Matchup Engine: DvP/pace/PROE/grade
+│   ├── test_lineup_optimizer.py # MILP lineup optimizer (PuLP), season + DFS
 │   └── fixtures/              # Sample PFR HTML for scraper tests
 ├── scripts/weekly_scrape.py   # Wednesday cron scrape + enrichment + odds + conditions + roster update
 ├── scripts/fetch_conditions.py# One-off injury + weather fetch for upcoming games
 ├── scripts/import_rosters.py  # Step1: ESPN rosters → players+roster_entries; Step2: nfl_data_py → player_season_stats
 ├── scripts/import_advanced_stats.py # nfl_data_py PBP → team_advanced_stats + QB EPA
-├── scripts/train_model.py     # Train GradientBoostingClassifier (35 features) + spread regressor
+├── scripts/train_model.py     # Train GradientBoostingClassifier (34 features) + spread regressor
 ├── scripts/run_backtest.py    # Standalone backtest runner with report output
 ├── data/nfl.db                # SQLite database (9170+ games)
 ├── docker-compose.yml         # api + frontend + cron containers
@@ -120,6 +131,7 @@ docker compose run scraper               # One-off data scrape
 
 ## API Endpoints
 - `GET  /api/health` — DB status
+- `GET  /api/metrics` — observability: request counts/latency, status buckets, team-metrics cache hit rate
 - `GET  /api/teams` — All teams
 - `GET  /api/teams/{id}` — Team by abbr/name/city
 - `GET  /api/teams/{id}/stats` — Computed metrics (SOS, dynamic HFA, rest_days included)
@@ -149,6 +161,9 @@ docker compose run scraper               # One-off data scrape
 - `POST /api/fantasy/trade-analyze` — Trade analysis (body: `{give_player_ids, get_player_ids, week, season}`)
 - `GET  /api/fantasy/power-rankings` — Team power rankings (`?week=&season=`)
 - `GET  /api/fantasy/trade-values` — ROS trade value board (`?week=&season=`)
+- `GET  /api/fantasy/matchup/{player_id}` — Advanced Matchup Engine grade (A–F + 0-100 score: DvP/YPP/pace/PROE) vs scheduled opponent
+- `POST /api/fantasy/optimize` — Lineup Optimizer (MILP/PuLP): player pool + slot config → N optimal lineups + exposure
+- `POST /api/fantasy/optimize/dfs` — DFS optimizer for DraftKings/FanDuel (salary cap, lock/exclude)
 - `POST /api/fantasy/roster/import-by-names` — Match roster names to DB players (body: `{names, season}`)
 - `GET  /api/seasons/{year}/playoff-picture` — Playoff seeding by conference/division/wildcard
 - `GET  /api/teams/{id}/upcoming` — Next N scheduled games with difficulty rating (`?season=&limit=`)
@@ -205,7 +220,7 @@ Replace `YYYY` with the season year (e.g. 2025).
 
 ## Architecture Notes
 - CLI uses singleton DB; API uses per-request DB via FastAPI Depends
-- API routers in `src/api/routers/` — `app.py` is a ~40-line thin wrapper (5 `include_router` calls)
+- API routers in `src/api/routers/` — `app.py` is a ~70-line thin wrapper (6 `include_router` calls + CORS/observability middleware)
 - Schema init lazy: runs once per DB path via `_initialized_paths` set; no overhead on subsequent requests
 - `calculate_team_metrics()` TTL-cached (1h) keyed on `(team_id, season)`; bypassed when `cutoff_date` given
 - `TeamMetrics` defaults: `third_down_pct=0.40`, `yards_per_play=5.5`, `redzone_efficiency=0.55`, `sack_rate_allowed=0.065`
@@ -225,7 +240,7 @@ Replace `YYYY` with the season year (e.g. 2025).
 - Scraper has cloudscraper fallback: if requests gets 403, it retries with cloudscraper automatically
 - Cron container runs weekly_scrape.py every Wednesday 06:00 UTC (enriches predictions + odds + conditions)
 - Frontend uses Recharts for trend charts on TeamDetail page
-- 202 backend pytest tests (11 files; +test_player_ml, +test_http_retry) + 9 frontend vitest tests (`frontend/` — config + DataBadge). 2 backend fails = numpy ABI env only.
+- 256 backend pytest tests (13 files; +test_player_ml, +test_http_retry, +test_observability, +test_matchup_engine, +test_lineup_optimizer) + 9 frontend vitest tests. 2 backend fails = numpy ABI env only.
 - ML model (GradientBoostingClassifier, **34 features**, trained 2013-2022): `load_model()` refuses a model whose feature list ≠ current builder (falls back to weighted-sum). Retrain still deferred (numpy env).
 - Feature vector: `feature_builder.py` FEATURE_NAMES = **34** entries (docstrings corrected); `explainer.py` FEATURE_LABELS now **derived from FEATURE_NAMES** (drift-proof, test-guarded).
 - `models.py` dataclasses: `Team, Game, GameFactor, TeamSeasonStats, Prediction` + opt-in `Player, RosterEntry, InjuryReport, GameWeather, GameOdds` (with `from_row`); DB layer still returns raw `sqlite3.Row` by default.
@@ -269,6 +284,8 @@ Replace `YYYY` with the season year (e.g. 2025).
 - `players` — Player bio: espn_id, full_name, position, height/weight, college, experience, headshot_url
 - `roster_entries` — Player ↔ team ↔ season links: player_id, team_id, season, roster_status, fetched_at
 - `player_season_stats` — Per-player per-season: pass/rush/rec stats, passer_rating, fantasy_points_ppr/standard
+- `matchup_cache` — Advanced Matchup Engine grades (player×opp×season×week: grade, score, DvP/pace/PROE, components)
+- `user_rosters` — Lineup-optimizer player pool (user×player×season×week: salary, locked/excluded flags)
 
 ## Recent Changes (2026-04)
 
@@ -364,7 +381,7 @@ Issues found in full codebase audit — track progress in Wave 5 plan:
 | LOW | hardcoded `2024`/`2025` year values in frontend | multiple | 5 | ✅ `frontend/src/config.ts` |
 | LOW | `FantasyPage.tsx` is 1213 lines — needs splitting | `FantasyPage.tsx` | 5 | ✅ 67-line shell + `pages/fantasy/` |
 | LOW | Missing CSP header in nginx | `nginx.conf` | 1 | ✅ CSP added |
-| LOW | No CI/CD pipeline | — | 7 | ⬜ pending |
+| LOW | No CI/CD pipeline | — | 7 | ✅ `.github/workflows/ci.yml` |
 
 **ML model retrain** (deferred, user-owned): clean venv (`numpy<2` per requirements) then `python scripts/train_model.py` + `train_player_models.py`. Active anaconda env has numpy 2.x → 2 `test_player_ml` tests fail with `numpy.core.multiarray failed to import` until reinstall.
 
@@ -383,11 +400,15 @@ See plan: `/Users/normenkitzmann/.claude/plans/immutable-munching-elephant.md`
 | 3 | ML correctness (TimeSeriesSplit, SHAP labels, load guard) | ✅ Code done (commit `3757f90`); retrain deferred (env) |
 | 4 | Scraper resilience + cron safety | ✅ Done (uncommitted) |
 | 5 | Frontend quality (vitest, season config, FantasyPage split) | ✅ Done (uncommitted) |
-| 6 | Performance + observability | ⬜ Pending |
-| 7 | Documentation + CI/CD | ⬜ Pending (7.1 CI next) |
+| 6 | Performance + observability (JSON logs, /api/metrics) | ✅ Done (uncommitted) |
+| 7 | Documentation + CI/CD (GitHub Actions, README) | ✅ Done (uncommitted) |
 
-- **Tests:** 202 backend (pytest, +19 since Wave 4) + 9 frontend (vitest). 2 backend fails = numpy ABI env only.
-- **New modules:** `src/config.py`, `src/scraper/http.py`, `frontend/src/config.ts`, `frontend/src/pages/fantasy/*`, `frontend/vitest.config.ts`.
+**All 7 phases complete (2026-06-26).** Remaining follow-ups: ML retrain (clean venv, user-owned); optional black/mypy + Docker image push.
+
+- **Tests:** 256 backend (pytest; +49 from matchup-engine branch port) + 9 frontend (vitest). 2 backend fails = numpy ABI env only (pass in CI's clean numpy<2 venv).
+- **New modules:** `src/config.py`, `src/observability.py`, `src/scraper/http.py`, `frontend/src/config.ts`, `frontend/src/pages/fantasy/*`, `frontend/vitest.config.ts`, `.github/workflows/ci.yml`.
+- **CI:** `.github/workflows/ci.yml` — backend (ruff high-signal + pytest), frontend (eslint non-blocking + tsc/vite build + vitest), on push-to-main + PRs.
+- **Observability:** `GET /api/metrics` (request counts/latency + cache hit rate); structured JSON logs + `X-Request-ID` via middleware.
 
 ## graphify
 

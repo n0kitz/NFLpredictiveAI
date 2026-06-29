@@ -261,25 +261,10 @@ def main():
     except Exception as e:
         logger.error(f"Weekly player stats import failed (non-fatal): {e}")
 
-    # Retrain per-position ML fantasy models (2018 → prior season)
-    try:
-        from src.prediction.player_features import POSITIONS, build_training_rows
-        from src.prediction.player_ml_model import train_position_model
-        train_seasons = list(range(2018, current_season))
-        if len(train_seasons) >= 2:
-            for pos in POSITIONS:
-                X, y = build_training_rows(db, train_seasons, pos)
-                if X.shape[0] >= 200:
-                    res = train_position_model(X, y, pos)
-                    logger.info(
-                        f"Retrained {pos}: MAE {res['cv_mae']} (n={res['n_training_samples']})"
-                    )
-                else:
-                    logger.warning(f"{pos}: not enough training rows ({X.shape[0]}) — keeping prior model")
-        else:
-            logger.info("Skipping ML retrain — insufficient training seasons")
-    except Exception as e:
-        logger.error(f"ML retrain failed (non-fatal): {e}")
+    # NOTE: Player-model retraining is intentionally MANUAL (decided 2026-06-29).
+    # Training is heavy and the cron writes artifacts to disk without review, so
+    # the weekly job only refreshes data + projections. To retrain, run from the
+    # clean venv:  python scripts/train_player_models.py
 
     # Generate fantasy projections for the current week (uses ML if loaded)
     try:

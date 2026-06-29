@@ -6,3 +6,6 @@ __pycache__/
 # Runtime artifacts
 .weekly_scrape.lock
 .DS_Store
+
+# Local git worktrees (never commit as gitlinks)
+.claude/worktrees/

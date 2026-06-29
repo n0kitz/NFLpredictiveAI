@@ -261,16 +261,17 @@ nfl-predictor/
 
 ```bash
 # Backend (pytest) — from nfl-predictor/
-python -m pytest -q                 # 256 tests (use a clean numpy<2 venv — see Technical Details)
+python -m pytest -q                 # 258 tests (use a clean numpy<2 venv — see Technical Details)
 
 # Frontend (vitest) — from nfl-predictor/frontend/
-npm test                            # unit tests
+npm test                            # 18 unit tests
 npm run build                       # tsc typecheck + vite build
 ```
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and every PR:
-- **Backend**: `ruff` (syntax/undefined-name lint) + `pytest`
+- **Backend**: `ruff` (syntax/undefined-name lint) + `black`/`mypy` (non-blocking) + `pytest`
 - **Frontend**: `eslint` (non-blocking) + `tsc` build + `vitest`
+- **Docker** (on `v*` tags only): builds + pushes `api`/`frontend`/`cron` images to GHCR
 
 ## Observability
 

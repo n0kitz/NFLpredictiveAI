@@ -154,7 +154,7 @@ docker compose run scraper               # One-off data scrape
 - `GET  /api/players/{player_id}` — Player detail + season stats (404 if not found)
 - `GET  /api/players/search` — Search players by name (`?q=`)
 - `GET  /api/fantasy/top` — Fantasy leaderboard (`?position=QB&season=2024`)
-- `GET  /api/fantasy/projections` — Weekly projections (`?week=&season=&position=&scoring=`)
+- `GET  /api/fantasy/projections` — Weekly projections (`?week=&season=&position=&scoring=`); response includes `opponent_team_id` (used by OptimizerTab for correlation stacks). Needs a `season` with roster data (currently 2025).
 - `GET  /api/fantasy/start-sit` — Start/sit recommendation (`?player1_id=&player2_id=&week=&season=`)
 - `GET  /api/fantasy/waiver` — Waiver wire suggestions (`?week=&season=&scoring=&position=&limit=`)
 - `GET  /api/fantasy/draft-rankings` — Draft rankings (`?season=&scoring=&position=`)
@@ -238,9 +238,9 @@ Replace `YYYY` with the season year (e.g. 2025).
 - Theme system: CSS variables for dark mode, teamColors.ts for team-specific styling
 - All team colors/styling are independent from component logic (swap theme without touching pages)
 - Scraper has cloudscraper fallback: if requests gets 403, it retries with cloudscraper automatically
-- Cron container runs weekly_scrape.py every Wednesday 06:00 UTC (enriches predictions + odds + conditions)
+- Cron container runs weekly_scrape.py every Wednesday 06:00 UTC (enriches predictions + odds + conditions + roster + weekly player stats + regenerates projections). Player-model **retrain is intentionally NOT in the cron** (manual only — run `scripts/train_player_models.py`; decided 2026-06-29).
 - Frontend uses Recharts for trend charts on TeamDetail page
-- 256 backend pytest tests (13 files; +test_player_ml, +test_http_retry, +test_observability, +test_matchup_engine, +test_lineup_optimizer) + 9 frontend vitest tests. 2 backend fails = numpy ABI env only.
+- 258 backend pytest tests (13 files; +test_player_ml, +test_http_retry, +test_observability, +test_matchup_engine, +test_lineup_optimizer) + 18 frontend vitest tests. All pass in the clean `.venv` (numpy<2); anaconda base (numpy 2.x) fails the player-ML tests.
 - ML model (GradientBoostingClassifier, **34 features**, trained 2013-2022): `load_model()` refuses a model whose feature list ≠ current builder (falls back to weighted-sum). Retrain still deferred (numpy env).
 - Feature vector: `feature_builder.py` FEATURE_NAMES = **34** entries (docstrings corrected); `explainer.py` FEATURE_LABELS now **derived from FEATURE_NAMES** (drift-proof, test-guarded).
 - `models.py` dataclasses: `Team, Game, GameFactor, TeamSeasonStats, Prediction` + opt-in `Player, RosterEntry, InjuryReport, GameWeather, GameOdds` (with `from_row`); DB layer still returns raw `sqlite3.Row` by default.
@@ -383,7 +383,7 @@ Issues found in full codebase audit — track progress in Wave 5 plan:
 | LOW | Missing CSP header in nginx | `nginx.conf` | 1 | ✅ CSP added |
 | LOW | No CI/CD pipeline | — | 7 | ✅ `.github/workflows/ci.yml` |
 
-**ML model retrain** ✅ DONE 2026-06-29: clean `.venv` (`numpy<2`; `shap==0.46.0` since 0.47+ needs numpy>=2; `httpx` for TestClient), then game/spread model (`train_model.py`, 34-feat, OOS 66.3%) + per-position player models (`train_player_models.py`, **16-feat**, QB/RB/WR/TE MAE 6.48/5.66/5.50/4.26 → `data/player_models/*`). Player retrain needed `import_player_weekly.py` first (player_weekly_stats was empty; 19,576 rows imported 2018-2024). All 256 backend tests pass in the clean venv. Active anaconda base still has numpy 2.x → use the `.venv`.
+**ML model retrain** ✅ DONE 2026-06-29: clean `.venv` (`numpy<2`; `shap==0.46.0` since 0.47+ needs numpy>=2; `httpx` for TestClient), then game/spread model (`train_model.py`, 34-feat, OOS 66.3%) + per-position player models (`train_player_models.py`, **16-feat**, QB/RB/WR/TE MAE 6.48/5.66/5.50/4.26 → `data/player_models/*`). Player retrain needed `import_player_weekly.py` first (player_weekly_stats was empty; 19,576 rows imported 2018-2024). All 258 backend tests pass in the clean venv. Active anaconda base still has numpy 2.x → use the `.venv`. **Retrain is now live + verified** (2026-06-29 sess2): `/api/model/info` reports ML loaded (game OOS 0.668), player projections serve `model_source: ml` (ml-v1-{pos}). ⚠️ Projections cache per (season,week) in `fantasy_projections` — if a stale anaconda-base server generated heuristic rows, the endpoint serves those first; `DELETE FROM fantasy_projections WHERE season=? AND week=?` + regenerate from the `.venv`. Projections need a season with roster data (currently 2025).
 
 ## Wave 5 — Improvement Work (started 2026-05-11)
 
@@ -397,7 +397,7 @@ See plan: `/Users/normenkitzmann/.claude/plans/immutable-munching-elephant.md`
 |-------|-------|--------|
 | 1 | Config centralization + quick security wins | ✅ Done (commit `b8e3624`) |
 | 2 | DB layer hardening (schema dedup, N+1, dataclasses) | ✅ Done (commit `b8e3624`) |
-| 3 | ML correctness (TimeSeriesSplit, SHAP labels, load guard) | ✅ Code done (commit `3757f90`); retrain deferred (env) |
+| 3 | ML correctness (TimeSeriesSplit, SHAP labels, load guard) | ✅ Code done (commit `3757f90`); retrain done + verified live 2026-06-29 |
 | 4 | Scraper resilience + cron safety | ✅ Done (uncommitted) |
 | 5 | Frontend quality (vitest, season config, FantasyPage split) | ✅ Done (uncommitted) |
 | 6 | Performance + observability (JSON logs, /api/metrics) | ✅ Done (uncommitted) |
@@ -405,11 +405,11 @@ See plan: `/Users/normenkitzmann/.claude/plans/immutable-munching-elephant.md`
 
 **All 7 phases complete (2026-06-26).** Post-Wave-5 (2026-06-29): matchup-engine fully integrated (backend ported earlier; **frontend matchup pill + Optimizer tab re-ported**), player feature vector **13→16**, ML models **retrained**, requirements numpy<2 conflict fixed.
 
-**▶️ NEXT STEPS:** see `/Users/normenkitzmann/.claude/plans/nfl-next-steps.md`. Summary: (0) always `source nfl-predictor/.venv/bin/activate` — anaconda base has numpy 2.x; (1) verify retrain is live (`/api/model/info`, `?model=ml`); (2) expose `opponent_team_id` on projections so OptimizerTab can build correlation stacks (currently `null`); (3) decide cron player-model retrain policy (ask user); (4) optional CI: black/mypy + eslint + Docker tag push; (5) optional: more frontend tests.
+**▶️ NEXT STEPS:** see `/Users/normenkitzmann/.claude/plans/nfl-next-steps.md`. **All 5 roadmap steps DONE 2026-06-29 sess2:** (0) always `source nfl-predictor/.venv/bin/activate` — anaconda base has numpy 2.x; (1) ✅ retrain verified live; (2) ✅ `opponent_team_id` exposed on projections → OptimizerTab; (3) ✅ cron player-model retrain made **manual** (removed weekly block; run `scripts/train_player_models.py`); (4) ✅ CI black/mypy non-blocking + Docker-on-`v*`-tag (GHCR); (5) ✅ frontend tests 9→18. ⚠️ 4 commits sit **local on `main`, unpushed** (`c09fdda`, `1c58cbc`, `a02c60b`, `89b00a5`) — `git push origin main` was blocked, needs explicit user OK.
 
-- **Tests:** 256 backend (pytest; +49 from matchup-engine branch port) + 9 frontend (vitest). **All 256 pass in the clean `.venv`** (numpy<2, shap 0.46, httpx). Anaconda base numpy 2.x fails the player-ML tests — use the `.venv`.
+- **Tests:** 258 backend (pytest; +49 from matchup-engine branch port) + 18 frontend (vitest). **All pass in the clean `.venv`** (numpy<2, shap 0.46, httpx). Anaconda base numpy 2.x fails the player-ML tests — use the `.venv`.
 - **New modules:** `src/config.py`, `src/observability.py`, `src/scraper/http.py`, `frontend/src/config.ts`, `frontend/src/pages/fantasy/*`, `frontend/vitest.config.ts`, `.github/workflows/ci.yml`.
-- **CI:** `.github/workflows/ci.yml` — backend (ruff high-signal + pytest), frontend (eslint non-blocking + tsc/vite build + vitest), on push-to-main + PRs.
+- **CI:** `.github/workflows/ci.yml` — backend (ruff high-signal + black/mypy non-blocking + pytest), frontend (eslint non-blocking + tsc/vite build + vitest), on push-to-main + PRs; plus a `docker` job that builds+pushes api/frontend/cron images to GHCR on `v*` tags only.
 - **Observability:** `GET /api/metrics` (request counts/latency + cache hit rate); structured JSON logs + `X-Request-ID` via middleware.
 
 ## graphify

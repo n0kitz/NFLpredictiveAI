@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
 
 # Cancel superseded runs on the same ref.
@@ -34,6 +35,16 @@ jobs:
       # "stop the build" subset. Style/formatting is intentionally not enforced.
       - name: Lint (ruff)
         run: pip install ruff && ruff check --select E9,F63,F7,F82 src scripts
+
+      # Style + types are reported but non-blocking for now — the codebase
+      # predates these checks; tighten to blocking once the backlog is clean.
+      - name: Format check (black)
+        run: pip install black && black --check src scripts tests
+        continue-on-error: true
+
+      - name: Type check (mypy)
+        run: pip install mypy && mypy --ignore-missing-imports src
+        continue-on-error: true
 
       - name: Run tests
         run: python -m pytest -q
@@ -68,3 +79,50 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+  # Build + publish Docker images to GHCR, but only when a version tag is
+  # pushed (e.g. v1.2.0). Regular branch/PR runs skip this job entirely.
+  docker:
+    name: Docker images (on tag)
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [backend, frontend]
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - image: api
+            dockerfile: nfl-predictor/Dockerfile.api
+          - image: frontend
+            dockerfile: nfl-predictor/Dockerfile.frontend
+          - image: cron
+            dockerfile: nfl-predictor/Dockerfile.cron
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/${{ matrix.image }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=sha
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: nfl-predictor
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

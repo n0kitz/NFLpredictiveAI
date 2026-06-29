@@ -44,6 +44,7 @@ def _proj_row_to_entry(
         position=d.get("position"),
         team_abbr=d.get("team_abbr"),
         headshot_url=d.get("headshot_url"),
+        opponent_team_id=d.get("opponent_team_id"),
         week=d.get("week", week),
         season=d.get("season", season),
         projected_points_ppr=d.get("projected_points_ppr") or 0.0,

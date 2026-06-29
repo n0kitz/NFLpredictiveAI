@@ -350,6 +350,7 @@ export interface FantasyProjection {
   position: string | null;
   team_abbr: string | null;
   headshot_url: string | null;
+  opponent_team_id: number | null;
   week: number;
   season: number;
   projected_points_ppr: number;

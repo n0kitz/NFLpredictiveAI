@@ -57,6 +57,16 @@ class TestFantasyEndpoints:
         r = client.get("/api/fantasy/projections?week=1&season=2024&scoring=ppr")
         assert r.status_code == 200
 
+    def test_projections_expose_opponent_team_id(self):
+        # 2025 has current rosters → projections are generated; the schema must
+        # always carry opponent_team_id so the lineup optimizer can build stacks.
+        r = client.get("/api/fantasy/projections?week=1&season=2025&position=QB&scoring=ppr")
+        assert r.status_code == 200
+        data = r.json()
+        assert isinstance(data, list)
+        if data:
+            assert "opponent_team_id" in data[0]
+
     def test_start_sit_requires_params(self):
         r = client.get("/api/fantasy/start-sit")
         assert r.status_code == 422

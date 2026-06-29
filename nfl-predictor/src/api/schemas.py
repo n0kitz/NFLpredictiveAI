@@ -510,6 +510,7 @@ class FantasyProjectionEntry(BaseModel):
     position: Optional[str] = None
     team_abbr: Optional[str] = None
     headshot_url: Optional[str] = None
+    opponent_team_id: Optional[int] = None
     week: int
     season: int
     projected_points_ppr: float = 0.0

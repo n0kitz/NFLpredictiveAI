@@ -42,8 +42,7 @@ export default function OptimizerTab() {
         is_locked: false,
         is_excluded: false,
         headshot_url: p.headshot_url ?? null,
-        // projection response doesn't expose opponent; optimizer treats null as "unknown"
-        opponent_team_id: null,
+        opponent_team_id: p.opponent_team_id ?? null,
       }));
 
       let res: OptimizeResponse;

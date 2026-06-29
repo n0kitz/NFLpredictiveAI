@@ -25,7 +25,7 @@ from src.prediction.player_ml_model import (
 # ── Feature builder ──────────────────────────────────────────────────────────
 
 def test_feature_names_length_matches_positions():
-    assert len(FEATURE_NAMES) == 13
+    assert len(FEATURE_NAMES) == 16  # Phase 2: added opp_pace, opp_proe, opp_pos_dvp_6wk
     assert POSITIONS == ('QB', 'RB', 'WR', 'TE')
 
 

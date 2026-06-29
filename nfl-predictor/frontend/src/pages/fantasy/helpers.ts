@@ -20,3 +20,15 @@ export function matchupColor(score: number): string {
   if (score <= 0.9) return 'var(--color-loss)';
   return 'var(--color-text-muted)';
 }
+
+// Letter-grade colour for the Advanced Matchup Engine (A best → F worst).
+export function gradeColor(grade: 'A' | 'B' | 'C' | 'D' | 'F'): string {
+  switch (grade) {
+    case 'A': return '#27ae60';
+    case 'B': return '#2ecc71';
+    case 'C': return '#f39c12';
+    case 'D': return '#e67e22';
+    case 'F': return '#e74c3c';
+    default:  return '#888';
+  }
+}

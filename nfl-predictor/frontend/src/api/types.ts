@@ -665,3 +665,101 @@ export interface SimulationResult {
   std_home_score: number;
   std_away_score: number;
 }
+
+// ── Matchup Grade (Advanced Matchup Engine) ──────────────────────────────────
+
+export interface MatchupComponentScores {
+  dvp: number;
+  ypp: number;
+  pace: number;
+  proe: number;
+}
+
+export interface MatchupGrade {
+  player_id: number;
+  full_name: string;
+  position: string | null;
+  team_abbr: string | null;
+  opp_team_id: number;
+  opp_team_abbr: string | null;
+  week: number;
+  season: number;
+  grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  score: number;
+  rank_vs_league: number;
+  explanation: string;
+  dvp_6wk: number;
+  avg_league_dvp: number;
+  opp_ypp: number;
+  pace: number;
+  proe: number;
+  component_scores: MatchupComponentScores;
+}
+
+// ── Lineup Optimizer (MILP) ──────────────────────────────────────────────────
+
+export interface OptimizerPlayerInput {
+  player_id: number;
+  full_name: string;
+  position: string;
+  team_id: number;
+  team_abbr: string;
+  projected_points: number;
+  salary: number;
+  is_locked: boolean;
+  is_excluded: boolean;
+  headshot_url: string | null;
+  opponent_team_id: number | null;
+}
+
+export interface LineupPlayerOut {
+  player_id: number;
+  full_name: string;
+  position: string;
+  team_abbr: string;
+  headshot_url: string | null;
+  slot: string;
+  projected_points: number;
+  salary: number;
+}
+
+export interface LineupResult {
+  rank: number;
+  players: LineupPlayerOut[];
+  projected_points: number;
+  total_salary: number;
+  correlation_bonus: number;
+}
+
+export interface ExposureEntry {
+  count: number;
+  pct: number;
+  full_name: string;
+  position: string;
+}
+
+export interface OptimizeResponse {
+  lineups: LineupResult[];
+  exposure: Record<string, ExposureEntry>;
+  total_lineups: number;
+  slots: Record<string, number>;
+}
+
+export interface OptimizeRequest {
+  players: OptimizerPlayerInput[];
+  slots: Record<string, number>;
+  flex_positions?: string[];
+  salary_cap?: number | null;
+  n_lineups?: number;
+  correlations?: boolean;
+  max_from_team?: number;
+}
+
+export interface OptimizeDFSRequest {
+  players: OptimizerPlayerInput[];
+  site: 'dk' | 'fd';
+  n_lineups?: number;
+  correlations?: boolean;
+  locked_player_ids?: number[];
+  excluded_player_ids?: number[];
+}

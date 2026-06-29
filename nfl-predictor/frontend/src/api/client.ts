@@ -14,6 +14,7 @@ import type {
   PlayoffPicture, TeamUpcoming, PowerRankings, TradeValues, RosterImportResult,
   ValuePicksResponse, ValuePickHistoryResponse, TeamScheduleResponse, SimulationResult,
   PlayerWeeklyStatsResponse,
+  MatchupGrade, OptimizeRequest, OptimizeDFSRequest, OptimizeResponse,
 } from './types';
 import { CURRENT_SEASON, LAST_COMPLETED_SEASON, ACCURACY_SEASONS } from '../config';
 
@@ -172,4 +173,14 @@ export const api = {
   // Monte Carlo simulation
   simulateGame: (homeTeam: string, awayTeam: string, n = 1000) =>
     post<SimulationResult>('/games/simulate', { home_team: homeTeam, away_team: awayTeam, n }),
+
+  // Advanced Matchup Engine — letter-grade for a player's scheduled matchup
+  getMatchupGrade: (playerId: number, week: number, season = CURRENT_SEASON) =>
+    get<MatchupGrade>(`/fantasy/matchup/${playerId}?week=${week}&season=${season}`),
+
+  // Lineup Optimizer (MILP)
+  optimizeLineup: (body: OptimizeRequest) =>
+    post<OptimizeResponse>('/fantasy/optimize', body),
+  optimizeDFS: (body: OptimizeDFSRequest) =>
+    post<OptimizeResponse>('/fantasy/optimize/dfs', body),
 };

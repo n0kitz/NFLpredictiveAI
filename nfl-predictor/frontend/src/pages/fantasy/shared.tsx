@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import type { FantasyProjection } from '../../api/types';
-import { POSITIONS, posColor, type PositionFilter } from './helpers';
+import type { FantasyProjection, MatchupGrade } from '../../api/types';
+import { api } from '../../api/client';
+import { POSITIONS, posColor, gradeColor, type PositionFilter } from './helpers';
 
 // Small presentational components shared across the Fantasy tabs.
 // Pure helpers (posColor, matchupColor, POSITIONS, PositionFilter) live in helpers.ts.
@@ -47,6 +48,39 @@ export function MLBadge({ projection }: { projection: FantasyProjection }) {
     <MTooltip text={tip}>
       <span className="text-[9px] font-display font-bold uppercase px-1.5 py-0.5 rounded bg-accent/15 text-accent">
         ML
+      </span>
+    </MTooltip>
+  );
+}
+
+// Advanced Matchup Engine grade pill (A–F) — fetches grade for one player/week.
+export function MatchupGradePill({
+  playerId, week, season,
+}: { playerId: number; week: number; season: number }) {
+  const [data, setData] = useState<MatchupGrade | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    api.getMatchupGrade(playerId, week, season)
+      .then((d) => { if (active) setData(d); })
+      .catch(() => { if (active) setData(null); })
+      .finally(() => { if (active) setLoaded(true); });
+    return () => { active = false; };
+  }, [playerId, week, season]);
+
+  if (!loaded) return <span className="text-[9px] text-text-muted px-1">…</span>;
+  if (!data) return null;
+
+  const color = gradeColor(data.grade);
+  const tip = `Grade ${data.grade} (${data.score}/100) vs ${data.opp_team_abbr ?? 'opp'}: ${data.explanation} Rank ${data.rank_vs_league}/32 (1=toughest).`;
+  return (
+    <MTooltip text={tip}>
+      <span
+        className="text-[9px] font-display font-bold uppercase px-1.5 py-0.5 rounded cursor-help"
+        style={{ color, background: `${color}22`, border: `1px solid ${color}55` }}
+      >
+        {data.grade}
       </span>
     </MTooltip>
   );

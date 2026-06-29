@@ -5,9 +5,10 @@ import WaiverTab from './fantasy/WaiverTab';
 import DraftTab from './fantasy/DraftTab';
 import TradeTabWithValues from './fantasy/TradeTab';
 import PowerRankingsTab from './fantasy/PowerRankingsTab';
+import OptimizerTab from './fantasy/OptimizerTab';
 import RosterImportHelper from './fantasy/RosterImportHelper';
 
-const TABS = ['Dashboard', 'Leaderboards', 'Waiver Wire', 'Draft', 'Trade Analyzer', 'Power Rankings'] as const;
+const TABS = ['Dashboard', 'Leaderboards', 'Waiver Wire', 'Draft', 'Trade Analyzer', 'Power Rankings', 'Optimizer'] as const;
 type Tab = typeof TABS[number];
 
 export default function FantasyPage() {
@@ -59,6 +60,7 @@ export default function FantasyPage() {
       {active === 'Draft'          && <DraftTab />}
       {active === 'Trade Analyzer' && <TradeTabWithValues />}
       {active === 'Power Rankings' && <PowerRankingsTab />}
+      {active === 'Optimizer'      && <OptimizerTab />}
     </div>
   );
 }

@@ -10,7 +10,7 @@ import DataBadge from '../../components/DataBadge';
 import { CURRENT_SEASON } from '../../config';
 import { posColor, matchupColor } from './helpers';
 import {
-  PosBadge, MTooltip, ConfBadge, MLBadge, Headshot,
+  PosBadge, MTooltip, ConfBadge, MLBadge, Headshot, MatchupGradePill,
 } from './shared';
 
 const DASH_POSITIONS = ['QB', 'RB', 'WR', 'TE'] as const;
@@ -123,6 +123,7 @@ export default function DashboardTab() {
                           <Headshot url={p.headshot_url} name={p.full_name} />
                           <span className="flex-1 text-xs text-text-secondary truncate">{p.full_name}</span>
                           {p.model_source === 'ml' && <MLBadge projection={p} />}
+                          <MatchupGradePill playerId={p.player_id} week={week} season={season} />
                           <MTooltip text={`${p.confidence === 'low' ? `Low confidence — ${p.injury_status ?? 'limited data'}` : p.confidence === 'high' ? 'Full stats, no injury concerns' : 'Based on season average'}`}>
                             <ConfBadge conf={p.confidence} />
                           </MTooltip>

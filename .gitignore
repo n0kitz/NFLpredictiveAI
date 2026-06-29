@@ -9,3 +9,7 @@ __pycache__/
 
 # Local git worktrees (never commit as gitlinks)
 .claude/worktrees/
+
+# Python virtualenvs
+.venv/
+venv/

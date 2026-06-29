@@ -32,7 +32,9 @@ scipy==1.13.1
 # ML model
 scikit-learn==1.4.2
 joblib==1.4.2
-shap==0.51.0
+# shap 0.47+ requires numpy>=2, which conflicts with the numpy<2 pin above.
+# 0.46.0 is the newest release with an unconstrained numpy requirement.
+shap==0.46.0
 
 # Lineup optimizer (MILP)
 pulp>=2.7.0
@@ -40,3 +42,4 @@ pulp>=2.7.0
 # Testing (development)
 pytest==7.4.4
 pytest-cov==7.1.0
+httpx==0.28.1  # required by starlette/fastapi TestClient

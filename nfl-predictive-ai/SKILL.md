@@ -17,7 +17,7 @@ description: >
 | DB | SQLite + WAL, `data/nfl.db`, `src/database/db.py`, schema in `schema.sql` |
 | ML | GradientBoostingClassifier, **34 features** (docstrings corrected), trained 2013-2022; `load_model()` guards feature mismatch |
 | Frontend | React 19 + TypeScript + Tailwind v4, `frontend/src/` |
-| Tests | pytest, 258 backend tests across 13 files + 18 frontend (vitest), `tests/` & `frontend/src/**/*.test.*` |
+| Tests | pytest, 258 backend tests across 14 files + 18 frontend (vitest), `tests/` & `frontend/src/**/*.test.*` |
 | Infra | Docker Compose: api + frontend + cron |
 
 ## Critical Gotchas (from 2026-05 audit)

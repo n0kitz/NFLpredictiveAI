@@ -240,7 +240,7 @@ Replace `YYYY` with the season year (e.g. 2025).
 - Scraper has cloudscraper fallback: if requests gets 403, it retries with cloudscraper automatically
 - Cron container runs weekly_scrape.py every Wednesday 06:00 UTC (enriches predictions + odds + conditions + roster + weekly player stats + regenerates projections). Player-model **retrain is intentionally NOT in the cron** (manual only — run `scripts/train_player_models.py`; decided 2026-06-29).
 - Frontend uses Recharts for trend charts on TeamDetail page
-- 258 backend pytest tests (13 files; +test_player_ml, +test_http_retry, +test_observability, +test_matchup_engine, +test_lineup_optimizer) + 18 frontend vitest tests. All pass in the clean `.venv` (numpy<2); anaconda base (numpy 2.x) fails the player-ML tests.
+- 258 backend pytest tests (14 files; +test_player_ml, +test_http_retry, +test_observability, +test_matchup_engine, +test_lineup_optimizer) + 18 frontend vitest tests. All pass in the clean `.venv` (numpy<2); anaconda base (numpy 2.x) fails the player-ML tests.
 - ML model (GradientBoostingClassifier, **34 features**, trained 2013-2022): `load_model()` refuses a model whose feature list ≠ current builder (falls back to weighted-sum). Retrain still deferred (numpy env).
 - Feature vector: `feature_builder.py` FEATURE_NAMES = **34** entries (docstrings corrected); `explainer.py` FEATURE_LABELS now **derived from FEATURE_NAMES** (drift-proof, test-guarded).
 - `models.py` dataclasses: `Team, Game, GameFactor, TeamSeasonStats, Prediction` + opt-in `Player, RosterEntry, InjuryReport, GameWeather, GameOdds` (with `from_row`); DB layer still returns raw `sqlite3.Row` by default.

@@ -47,9 +47,20 @@ description: >
 - All `Query(ge=1, le=N)` bounds on limit params; `Field(max_length=)` on list fields
 - `sqlite3.Row` everywhere in DB layer — no ORM
 
-## Active Improvement Plan (Wave 5, started 2026-05)
+## ▶️ NEXT STEPS (start here in a fresh session)
 
-Plan file: `/Users/normenkitzmann/.claude/plans/immutable-munching-elephant.md`
+**Plan file:** `/Users/normenkitzmann/.claude/plans/nfl-next-steps.md` (full detail). Current state: Wave 5 done, matchup engine fully integrated (backend+frontend), ML retrained, deps fixed, both branches deleted — all on `main`, clean tree.
+
+- **Env first:** `cd nfl-predictor && source .venv/bin/activate` (never anaconda base — numpy 2.x). requirements is self-consistent (numpy<2, shap 0.46, httpx).
+1. **Verify retrain is live** — `ENV=dev python run_api.py`; check `/api/model/info`, `/api/fantasy/projections?model=ml`, `/api/fantasy/matchup/{id}`.
+2. **Expose `opponent_team_id` on projections** — schema + fantasy_scorer + types + OptimizerTab (currently mapped `null`; blocks optimizer correlation/bring-back stacks).
+3. **Cron model-refresh policy** — `weekly_scrape.py` imports `player_weekly_stats` (current season) but does NOT retrain player models. **Ask user** before automating retrain (heavy + auto-commits artifacts).
+4. **CI hardening (optional)** — add black/mypy (non-blocking) + eslint step; Docker image push on tag.
+5. **Frontend tests (optional)** — only 9 vitest; cover OptimizerTab / MatchupGradePill / fantasy tabs.
+
+## Active Improvement Plan (Wave 5 — COMPLETE)
+
+Plan file: `/Users/normenkitzmann/.claude/plans/immutable-munching-elephant.md` (all 7 phases ✅)
 
 | Phase | Focus | Status |
 |-------|-------|--------|

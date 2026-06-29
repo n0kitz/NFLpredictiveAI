@@ -403,7 +403,9 @@ See plan: `/Users/normenkitzmann/.claude/plans/immutable-munching-elephant.md`
 | 6 | Performance + observability (JSON logs, /api/metrics) | ✅ Done (uncommitted) |
 | 7 | Documentation + CI/CD (GitHub Actions, README) | ✅ Done (uncommitted) |
 
-**All 7 phases complete (2026-06-26).** Post-Wave-5 (2026-06-29): matchup-engine fully integrated (backend ported earlier; **frontend matchup pill + Optimizer tab re-ported**), player feature vector **13→16**, ML models **retrained**, requirements numpy<2 conflict fixed. Remaining follow-ups: optional black/mypy + Docker image push.
+**All 7 phases complete (2026-06-26).** Post-Wave-5 (2026-06-29): matchup-engine fully integrated (backend ported earlier; **frontend matchup pill + Optimizer tab re-ported**), player feature vector **13→16**, ML models **retrained**, requirements numpy<2 conflict fixed.
+
+**▶️ NEXT STEPS:** see `/Users/normenkitzmann/.claude/plans/nfl-next-steps.md`. Summary: (0) always `source nfl-predictor/.venv/bin/activate` — anaconda base has numpy 2.x; (1) verify retrain is live (`/api/model/info`, `?model=ml`); (2) expose `opponent_team_id` on projections so OptimizerTab can build correlation stacks (currently `null`); (3) decide cron player-model retrain policy (ask user); (4) optional CI: black/mypy + eslint + Docker tag push; (5) optional: more frontend tests.
 
 - **Tests:** 256 backend (pytest; +49 from matchup-engine branch port) + 9 frontend (vitest). **All 256 pass in the clean `.venv`** (numpy<2, shap 0.46, httpx). Anaconda base numpy 2.x fails the player-ML tests — use the `.venv`.
 - **New modules:** `src/config.py`, `src/observability.py`, `src/scraper/http.py`, `frontend/src/config.ts`, `frontend/src/pages/fantasy/*`, `frontend/vitest.config.ts`, `.github/workflows/ci.yml`.

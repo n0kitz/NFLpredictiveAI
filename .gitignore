@@ -13,3 +13,7 @@ __pycache__/
 # Python virtualenvs
 .venv/
 venv/
+
+# SQLite transient files (WAL/SHM) — never commit
+nfl-predictor/data/nfl.db-wal
+nfl-predictor/data/nfl.db-shm

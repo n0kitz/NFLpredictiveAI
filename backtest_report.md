@@ -241,3 +241,45 @@ Delta of +0.5pp is within the ±1.5pp noise threshold (~570 games).
 statistically tied with weighted-sum on 2023–2024 OOS data.
 The 55–60% bucket is populated, the gap is gone, and the 80%+ under-confidence
 improved from −8.8pp to −6.3pp.
+
+## ML Model vs Weighted Sum (2023–2024 OOS)
+
+> Generated: 2026-06-29 10:00:38
+>
+> **Training**: CalibratedClassifierCV(isotonic, cv=5) on seasons 2013-2022 (2,696 games).
+> **Calibration**: Internal 5-fold (~539 games/fold) — no separate holdout.
+> **CV accuracy**: 65.9% ± 1.4% (TimeSeriesSplit, 5 folds on 2013-2022).
+> **OOS test seasons**: 2023, 2024 (never seen during training).
+
+### Accuracy Comparison
+
+| Metric | Weighted Sum | ML (GBM) | Delta |
+|---|---|---|---|
+| Regular season | 66.4% | 66.4% | +0.0 pp |
+| Playoffs | 65.4% | 65.4% | +0.0 pp |
+| All games | 66.3% | 66.3% | +0.0 pp |
+
+### Per-Season Regular Season
+
+| Season | Weighted Sum | ML (GBM) | Delta |
+|---|---|---|---|
+| 2023 | 64.0% | 64.0% | +0.0 pp |
+| 2024 | 68.8% | 68.8% | +0.0 pp |
+
+### Feature Set (34 features)
+
+The GBM uses a 34-feature vector built from `TeamMetrics` objects computed
+with `cutoff_date=game_date` to ensure no future data leakage:
+win%, weighted win%, PPG, PAG, point diff/game, SOS, form rating, strength
+rating, home/away splits, H2H win%, rest days, turnover margin, 3rd-down %,
+yards/play, red-zone efficiency, is_playoff, week, dynamic HFA,
+**home/away QB EPA per play** (from nfl_data_py PBP, 2013+).
+
+Model pipeline: GradientBoostingClassifier + isotonic CalibratedClassifierCV.
+
+### Spread Model
+
+Point-spread regressor (GradientBoostingRegressor, same feature set):
+CV MAE: 10.15 pts ± 0.35
+
+---

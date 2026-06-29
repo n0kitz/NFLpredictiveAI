@@ -1,0 +1,25 @@
+{
+  "version": "ml-v1",
+  "position": "WR",
+  "features": [
+    "rolling_4wk_ppr",
+    "rolling_8wk_ppr",
+    "season_ppg_ppr",
+    "snap_pct_4wk",
+    "target_share_4wk",
+    "adot_4wk",
+    "rush_att_4wk",
+    "opp_dvp_pts_4wk",
+    "opp_yards_per_play",
+    "vegas_team_total",
+    "is_home",
+    "weather_is_adverse",
+    "weeks_of_experience",
+    "opp_pace",
+    "opp_proe",
+    "opp_pos_dvp_6wk"
+  ],
+  "cv_mae": 5.5031,
+  "cv_std": 0.36,
+  "n_training_samples": 6014
+}

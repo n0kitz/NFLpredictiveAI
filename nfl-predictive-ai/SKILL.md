@@ -26,7 +26,9 @@ description: >
 - **Feature count**: `feature_builder.py` FEATURE_NAMES has **34** entries, not 35; docstring stale
 - **`explainer.py` FEATURE_LABELS**: ✅ FIXED 2026-06-24 — now derived from `FEATURE_NAMES` (`{name: pretty.get(name, ...) for name in FEATURE_NAMES}`), cannot drift. Guarded by `test_feature_labels_match_feature_names`.
 - **`_fatal_error` in `weekly_scrape.py`**: never actually set — always reports success regardless of step failures
-- **`player_ml_model.py`**: ✅ FIXED 2026-06-24 — now `TimeSeriesSplit` (was `KFold(shuffle=True)`). Training rows are chronologically ordered by `build_training_rows`. Player models need retrain to take effect (deferred, env-blocked).
+- **`player_ml_model.py`**: ✅ FIXED 2026-06-24 — now `TimeSeriesSplit` (was `KFold(shuffle=True)`). Training rows are chronologically ordered by `build_training_rows`. ✅ RETRAINED 2026-06-29 on the **16-feature** vector → `data/player_models/{QB,RB,WR,TE}_model.joblib` (meta records feature list).
+- **Player feature vector**: ✅ 16 features as of 2026-06-29 (`player_features.py`; was 13). Phase-2 additions `opp_pace`, `opp_proe`, `opp_pos_dvp_6wk` lazy-import from `matchup_engine`. `test_player_ml.py` asserts `len(FEATURE_NAMES)==16`. (Distinct from the **34-feature game** vector in `feature_builder.py`.)
+- **requirements / clean venv**: ✅ FIXED 2026-06-29 — `shap==0.46.0` (0.47+ forces numpy>=2, conflicting with the numpy<2 pin) + `httpx` added (starlette TestClient dep). A fresh `.venv` now installs and runs all 256 tests green; anaconda base numpy 2.x still fails player-ML tests, so always use the `.venv`.
 - **`db.py` schema**: ✅ FIXED 2026-06-24 — `schema.sql` is now the single source; `connection` init runs `executescript(schema.sql)` + `run_migrations`. Inline duplicate deleted. Add new tables to `schema.sql`; add ALTERs to `MIGRATIONS` list in `db.py`.
 - **`models.py`**: only has dataclasses for `Team, Game, GameFactor, TeamSeasonStats, Prediction` — all other entities (Player, RosterEntry, InjuryReport, etc.) are raw `sqlite3.Row` dicts
 - **Scraper HTTP retry**: ✅ FIXED 2026-06-25 — use `src.scraper.http.get_with_retry(url, ..., session=optional)` for all new HTTP calls (backoff+jitter, retries 429/5xx/conn-errors, honours Retry-After). Don't call `requests.get` directly in scrapers.
@@ -53,7 +55,7 @@ Plan file: `/Users/normenkitzmann/.claude/plans/immutable-munching-elephant.md`
 |-------|-------|--------|
 | 1 | Config centralization + quick security wins | ✅ Done 2026-06-24 — `src/config.py`; cron `_fatal_error` fixed; `utcnow` removed; port 8000 unpublished; nginx CSP |
 | 2 | DB layer hardening (schema dedup, transactions, N+1) | ✅ Done 2026-06-24 — schema.sql single source (fixes fresh-DB bug), power-rankings N+1 256→4, 5 dataclasses, f-string SQL whitelisted |
-| 3 | ML pipeline correctness (TimeSeriesSplit, versioning, SHAP) | ✅ Code done 2026-06-24 — player KFold→TimeSeriesSplit, explainer labels drift-proof, load_model feature guard, numpy<2 pinned. Retrain+venv reinstall deferred (env-blocked) |
+| 3 | ML pipeline correctness (TimeSeriesSplit, versioning, SHAP) | ✅ Done — code 2026-06-24; **retrain done 2026-06-29** (game 34-feat OOS 66.3%; player models 16-feat in clean `.venv`). requirements numpy<2 conflict fixed (shap 0.46 + httpx) |
 | 4 | Scraper resilience + cron safety | ✅ Done 2026-06-25 — shared `get_with_retry` (backoff+jitter+Retry-After) on all scrapers; cron `fcntl` singleton lock; 6 retry tests |
 | 5 | Frontend quality + component library | ✅ Done 2026-06-25 — vitest+RTL (9 tests), `src/config.ts` season config (de-hardcoded), FantasyPage 1213→67 lines (pages/fantasy/ modules) |
 | 6 | Performance + observability | ✅ Done 2026-06-26 — `src/observability.py` (JSON logs + request-id/timing middleware + Metrics), cache hit/miss stats, `GET /api/metrics` |
@@ -63,7 +65,7 @@ Check plan file for granular sub-tasks. Update Status as phases complete.
 
 ## Test Coverage Notes
 
-- 256 backend tests, 13 files — all pass with `data/nfl.db` present **and** a numpy<2 venv (2 player-ML tests fail on numpy 2.x ABI)
+- 256 backend tests, 14 files — **all pass** in a clean `.venv` (`pip install -r requirements.txt`: numpy<2, shap 0.46, httpx) with `data/nfl.db` present. Anaconda base (numpy 2.x) fails the player-ML tests.
 - Tests with `pytestmark = pytest.mark.skipif(not DEFAULT_DB_PATH.exists(), ...)` skip silently without DB
 - Frontend tests: ✅ vitest + RTL set up 2026-06-25 (`npm test` / `npm run test:watch`); config in `vitest.config.ts` (separate from vite.config). 9 tests so far — expand coverage.
 - `test_roster.py` inserts test data into real DB, never cleans up

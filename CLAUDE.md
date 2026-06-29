@@ -202,7 +202,7 @@ Replace `YYYY` with the season year (e.g. 2025).
 | `/history` | History | Auto-saved prediction log with accuracy tracking |
 | `/playoffs` | Playoffs | Seed 14 teams → simulate WC/Div/Conf/SB bracket |
 | `/players/:id` | PlayerPage | Full player detail: bio, position-specific stats, fantasy points |
-| `/fantasy` | FantasyPage | 6 tabs: Dashboard, Leaderboards, Waiver Wire, Draft, Trade Analyzer, Power Rankings |
+| `/fantasy` | FantasyPage | 7 tabs: Dashboard, Leaderboards, Waiver Wire, Draft, Trade Analyzer, Power Rankings, Optimizer (MILP lineups + matchup-grade pills in Dashboard) |
 
 **PlayerModal**: overlay component on TeamDetail; shows headshot, position badge, jersey, bio, position-specific stats (QB/RB/WR/TE logic), fantasy points PPR+Standard.
 
@@ -383,7 +383,7 @@ Issues found in full codebase audit — track progress in Wave 5 plan:
 | LOW | Missing CSP header in nginx | `nginx.conf` | 1 | ✅ CSP added |
 | LOW | No CI/CD pipeline | — | 7 | ✅ `.github/workflows/ci.yml` |
 
-**ML model retrain** (deferred, user-owned): clean venv (`numpy<2` per requirements) then `python scripts/train_model.py` + `train_player_models.py`. Active anaconda env has numpy 2.x → 2 `test_player_ml` tests fail with `numpy.core.multiarray failed to import` until reinstall.
+**ML model retrain** ✅ DONE 2026-06-29: clean `.venv` (`numpy<2`; `shap==0.46.0` since 0.47+ needs numpy>=2; `httpx` for TestClient), then game/spread model (`train_model.py`, 34-feat, OOS 66.3%) + per-position player models (`train_player_models.py`, **16-feat**, QB/RB/WR/TE MAE 6.48/5.66/5.50/4.26 → `data/player_models/*`). Player retrain needed `import_player_weekly.py` first (player_weekly_stats was empty; 19,576 rows imported 2018-2024). All 256 backend tests pass in the clean venv. Active anaconda base still has numpy 2.x → use the `.venv`.
 
 ## Wave 5 — Improvement Work (started 2026-05-11)
 
@@ -403,9 +403,9 @@ See plan: `/Users/normenkitzmann/.claude/plans/immutable-munching-elephant.md`
 | 6 | Performance + observability (JSON logs, /api/metrics) | ✅ Done (uncommitted) |
 | 7 | Documentation + CI/CD (GitHub Actions, README) | ✅ Done (uncommitted) |
 
-**All 7 phases complete (2026-06-26).** Remaining follow-ups: ML retrain (clean venv, user-owned); optional black/mypy + Docker image push.
+**All 7 phases complete (2026-06-26).** Post-Wave-5 (2026-06-29): matchup-engine fully integrated (backend ported earlier; **frontend matchup pill + Optimizer tab re-ported**), player feature vector **13→16**, ML models **retrained**, requirements numpy<2 conflict fixed. Remaining follow-ups: optional black/mypy + Docker image push.
 
-- **Tests:** 256 backend (pytest; +49 from matchup-engine branch port) + 9 frontend (vitest). 2 backend fails = numpy ABI env only (pass in CI's clean numpy<2 venv).
+- **Tests:** 256 backend (pytest; +49 from matchup-engine branch port) + 9 frontend (vitest). **All 256 pass in the clean `.venv`** (numpy<2, shap 0.46, httpx). Anaconda base numpy 2.x fails the player-ML tests — use the `.venv`.
 - **New modules:** `src/config.py`, `src/observability.py`, `src/scraper/http.py`, `frontend/src/config.ts`, `frontend/src/pages/fantasy/*`, `frontend/vitest.config.ts`, `.github/workflows/ci.yml`.
 - **CI:** `.github/workflows/ci.yml` — backend (ruff high-signal + pytest), frontend (eslint non-blocking + tsc/vite build + vitest), on push-to-main + PRs.
 - **Observability:** `GET /api/metrics` (request counts/latency + cache hit rate); structured JSON logs + `X-Request-ID` via middleware.

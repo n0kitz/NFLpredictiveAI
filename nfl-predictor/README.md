@@ -261,7 +261,7 @@ nfl-predictor/
 
 ```bash
 # Backend (pytest) — from nfl-predictor/
-python -m pytest -q                 # 256 tests (2 require numpy<2 venv)
+python -m pytest -q                 # 256 tests (use a clean numpy<2 venv — see Technical Details)
 
 # Frontend (vitest) — from nfl-predictor/frontend/
 npm test                            # unit tests

@@ -234,6 +234,107 @@ class TestPlayerWeeklyStats:
             if cell.get("snap_pct", 0) > 0 and (cell.get("snaps") in (0, None)):
                 assert cell["snaps"] is None or cell["snaps"] > 0
 
+    def test_expanded_stat_fields_present(self):
+        """The richer game-log payload must expose the full per-game stat line."""
+        pid = self._any_player_id()
+        if pid is None:
+            pytest.skip("No players in DB")
+        r = client.get(f"/api/players/{pid}/weekly-stats?season=2023")
+        assert r.status_code == 200
+        for cell in r.json()["weeks"]:
+            for k in (
+                "receptions", "rec_tds", "air_yards", "adot", "route_pct",
+                "rush_attempts", "rush_tds", "pass_attempts", "pass_completions",
+                "pass_tds", "interceptions", "result", "team_score", "opp_score",
+            ):
+                assert k in cell
+
+    def test_played_week_has_game_result(self):
+        """A player with 2023 weekly data should have weeks tagged with a W/L/T result."""
+        from src.database.db import Database
+        db = Database(DEFAULT_DB_PATH)
+        try:
+            row = db.fetchone(
+                "SELECT player_id FROM player_weekly_stats WHERE season=2023 LIMIT 1"
+            )
+        finally:
+            db.close()
+        if not row:
+            pytest.skip("No 2023 weekly stats in DB")
+        pid = row["player_id"]
+        r = client.get(f"/api/players/{pid}/weekly-stats?season=2023")
+        assert r.status_code == 200
+        results = [w["result"] for w in r.json()["weeks"] if w["result"] is not None]
+        assert results, "expected at least one week with a game result"
+        assert all(x in ("W", "L", "T") for x in results)
+        for w in r.json()["weeks"]:
+            if w["result"] is not None:
+                assert w["team_score"] is not None and w["opp_score"] is not None
+
+
+# ── Game detail endpoint ───────────────────────────────────────────────────────
+
+class TestGameDetail:
+    def _played_regular_game(self, season=2023):
+        from src.database.db import Database
+        db = Database(DEFAULT_DB_PATH)
+        try:
+            row = db.fetchone(
+                "SELECT game_id FROM games WHERE season=? AND home_score IS NOT NULL "
+                "AND CAST(week AS INTEGER) BETWEEN 1 AND 18 ORDER BY game_id LIMIT 1",
+                (season,),
+            )
+            return row["game_id"] if row else None
+        finally:
+            db.close()
+
+    def test_404_unknown_game(self):
+        r = client.get("/api/games/999999999")
+        assert r.status_code == 404
+
+    def test_detail_shape_and_box_score(self):
+        gid = self._played_regular_game()
+        if gid is None:
+            pytest.skip("No played 2023 regular-season game in DB")
+        r = client.get(f"/api/games/{gid}")
+        assert r.status_code == 200
+        d = r.json()
+        for k in ("game_id", "home_abbr", "away_abbr", "venue", "attendance",
+                  "home_box", "away_box", "box_score_available", "factors", "odds", "weather"):
+            assert k in d
+        assert isinstance(d["home_box"], list)
+        assert isinstance(d["away_box"], list)
+        # 2023 regular-season games have weekly player data → box score populated
+        assert d["box_score_available"] is True
+        assert len(d["home_box"]) + len(d["away_box"]) > 0
+        p = (d["home_box"] + d["away_box"])[0]
+        for k in ("player_id", "full_name", "team_id", "fantasy_points_ppr",
+                  "pass_yards", "rush_yards", "rec_yards"):
+            assert k in p
+
+    def test_playoff_game_has_empty_box(self):
+        from src.database.db import Database
+        db = Database(DEFAULT_DB_PATH)
+        try:
+            row = db.fetchone(
+                "SELECT game_id FROM games WHERE game_type='playoff' AND home_score IS NOT NULL "
+                "AND CAST(week AS INTEGER)=0 ORDER BY game_id DESC LIMIT 1"
+            )
+        finally:
+            db.close()
+        if not row:
+            pytest.skip("No non-numeric-week playoff game in DB")
+        r = client.get(f"/api/games/{row['game_id']}")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["box_score_available"] is False
+        assert d["home_box"] == [] and d["away_box"] == []
+
+    def test_adversarial_game_id_never_500(self):
+        for bad in ("abc", "-1", "0", "99999999999999999999"):
+            r = client.get(f"/api/games/{bad}")
+            assert r.status_code != 500
+
 
 # ── Factors CRUD ──────────────────────────────────────────────────────────────
 

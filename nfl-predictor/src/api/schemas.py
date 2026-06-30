@@ -77,6 +77,8 @@ class GameResponse(BaseModel):
     winner_abbr: Optional[str] = None
     winner_id: Optional[int] = None
     overtime: bool = False
+    venue: Optional[str] = None
+    attendance: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -86,6 +88,46 @@ class GameListResponse(BaseModel):
     games: List[GameResponse]
     count: int
     team: Optional[str] = None
+
+
+class GameBoxScorePlayer(BaseModel):
+    player_id: int
+    full_name: str
+    position: Optional[str] = None
+    team_id: int
+    team_abbr: Optional[str] = None
+    headshot_url: Optional[str] = None
+    is_home: bool = False
+    pass_completions: int = 0
+    pass_attempts: int = 0
+    pass_yards: int = 0
+    pass_tds: int = 0
+    interceptions: int = 0
+    rush_attempts: int = 0
+    rush_yards: int = 0
+    rush_tds: int = 0
+    targets: int = 0
+    receptions: int = 0
+    rec_yards: int = 0
+    rec_tds: int = 0
+    fantasy_points_ppr: float = 0.0
+
+
+class GameFactorEntry(BaseModel):
+    team_abbr: Optional[str] = None
+    team_name: Optional[str] = None
+    factor_type: str
+    factor_value: Optional[str] = None
+    impact_rating: int
+
+
+class GameDetailResponse(GameResponse):
+    odds: Optional["GameOddsResponse"] = None
+    weather: Optional["WeatherResponse"] = None
+    factors: List[GameFactorEntry] = []
+    home_box: List[GameBoxScorePlayer] = []
+    away_box: List[GameBoxScorePlayer] = []
+    box_score_available: bool = False
 
 
 # ── Predictions ────────────────────────────────────────
@@ -572,16 +614,31 @@ class PlayerWeekCell(BaseModel):
     # snaps may be None when the importer only filled snap_pct (raw count missing).
     snaps: Optional[int] = None
     snap_pct: float = 0.0
+    route_pct: float = 0.0
     routes: int = 0
     targets: int = 0
     target_share: float = 0.0
+    receptions: int = 0
     rec_yards: int = 0
+    rec_tds: int = 0
+    air_yards: int = 0
+    adot: float = 0.0
+    rush_attempts: int = 0
     rush_yards: int = 0
+    rush_tds: int = 0
+    pass_attempts: int = 0
+    pass_completions: int = 0
     pass_yards: int = 0
+    pass_tds: int = 0
+    interceptions: int = 0
     fantasy_points_ppr: float = 0.0
     fantasy_points_standard: float = 0.0
     opponent_abbr: Optional[str] = None
     is_home: bool = False
+    # Game result for this week (None when the game isn't matched / not played).
+    team_score: Optional[int] = None
+    opp_score: Optional[int] = None
+    result: Optional[str] = None  # 'W' | 'L' | 'T'
 
 
 class PlayerWeeklyStatsResponse(BaseModel):
@@ -814,3 +871,8 @@ class OptimizeResponse(BaseModel):
     exposure: Dict[str, ExposureEntry]
     total_lineups: int
     slots: Dict[str, int]
+
+
+# Resolve forward references in GameDetailResponse (GameOddsResponse /
+# WeatherResponse are defined after it).
+GameDetailResponse.model_rebuild()

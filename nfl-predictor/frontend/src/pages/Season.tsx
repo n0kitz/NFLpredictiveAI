@@ -365,6 +365,7 @@ function ConferenceBlock({ conf, data }: { conf: string; data: PlayoffPicture['a
 
 function WeekAccordion({ week, games }: { week: string; games: Game[] }) {
   const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
 
   return (
     <div className="rounded-lg border border-border bg-surface-850 overflow-hidden">
@@ -387,9 +388,15 @@ function WeekAccordion({ week, games }: { week: string; games: Game[] }) {
           {games.map((g) => {
             const hasScore = g.home_score !== null;
             return (
-              <div key={g.game_id} className="flex items-center px-5 py-2.5 text-sm hover:bg-surface-700/30 transition-colors">
+              <div
+                key={g.game_id}
+                onClick={hasScore ? () => navigate(`/games/${g.game_id}`) : undefined}
+                className={`flex items-center px-5 py-2.5 text-sm transition-colors ${
+                  hasScore ? 'cursor-pointer hover:bg-surface-700/30' : ''
+                }`}
+              >
                 <span className="text-text-muted w-24 text-xs tabular-nums">{g.date}</span>
-                <Link to={`/teams/${g.away_abbr}`} className="font-medium text-text-secondary hover:text-accent transition-colors w-12">
+                <Link to={`/teams/${g.away_abbr}`} onClick={(e) => e.stopPropagation()} className="font-medium text-text-secondary hover:text-accent transition-colors w-12">
                   {g.away_abbr}
                 </Link>
                 {hasScore ? (
@@ -399,7 +406,7 @@ function WeekAccordion({ week, games }: { week: string; games: Game[] }) {
                 ) : (
                   <span className="text-text-muted w-16 text-center text-xs">TBD</span>
                 )}
-                <Link to={`/teams/${g.home_abbr}`} className="font-medium text-text-secondary hover:text-accent transition-colors w-12">
+                <Link to={`/teams/${g.home_abbr}`} onClick={(e) => e.stopPropagation()} className="font-medium text-text-secondary hover:text-accent transition-colors w-12">
                   {g.home_abbr}
                 </Link>
                 {g.winner_abbr && (

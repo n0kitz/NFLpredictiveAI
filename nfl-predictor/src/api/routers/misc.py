@@ -277,13 +277,26 @@ def get_player_weekly_stats(
 
     rows = db.fetchall(
         """
-        SELECT pws.week, pws.snaps, pws.snap_pct, pws.routes, pws.targets,
-               pws.target_share, pws.rec_yards, pws.rush_yards, pws.pass_yards,
+        SELECT pws.week, pws.snaps, pws.snap_pct, pws.route_pct, pws.routes,
+               pws.targets, pws.target_share, pws.receptions, pws.rec_yards,
+               pws.rec_tds, pws.air_yards, pws.adot,
+               pws.rush_attempts, pws.rush_yards, pws.rush_tds,
+               pws.pass_attempts, pws.pass_completions, pws.pass_yards,
+               pws.pass_tds, pws.interceptions,
                pws.fantasy_points_ppr, pws.fantasy_points_standard,
                pws.is_home, pws.team_id, pws.opponent_team_id,
-               opp.abbreviation AS opponent_abbr
+               opp.abbreviation AS opponent_abbr,
+               g.home_team_id AS game_home_team_id,
+               g.home_score AS game_home_score,
+               g.away_score AS game_away_score,
+               g.winner_id AS game_winner_id
         FROM player_weekly_stats pws
         LEFT JOIN teams opp ON opp.team_id = pws.opponent_team_id
+        LEFT JOIN games g
+          ON g.season = pws.season
+         AND CAST(g.week AS INTEGER) = pws.week
+         AND ((g.home_team_id = pws.team_id AND g.away_team_id = pws.opponent_team_id)
+              OR (g.away_team_id = pws.team_id AND g.home_team_id = pws.opponent_team_id))
         WHERE pws.player_id = ? AND pws.season = ?
         ORDER BY pws.week ASC
         """,
@@ -358,21 +371,48 @@ def get_player_weekly_stats(
             # When only snap_pct is populated (importer didn't fill raw count),
             # report snaps=None rather than a misleading 0.
             snaps_out = raw_snaps if raw_snaps > 0 else (None if snap_pct > 0 else 0)
+            # Derive the game result from the joined games row (NULL if unmatched).
+            team_score = opp_score = None
+            result = None
+            ghome = r["game_home_team_id"]
+            if ghome is not None and r["game_home_score"] is not None:
+                if r["team_id"] == ghome:
+                    team_score = int(r["game_home_score"])
+                    opp_score = int(r["game_away_score"])
+                else:
+                    team_score = int(r["game_away_score"])
+                    opp_score = int(r["game_home_score"])
+                gw = r["game_winner_id"]
+                result = "T" if gw is None else ("W" if gw == r["team_id"] else "L")
             cells.append(PlayerWeekCell(
                 week=w,
                 is_bye=False,
                 snaps=snaps_out,
                 snap_pct=snap_pct,
+                route_pct=float(r["route_pct"] or 0),
                 routes=int(r["routes"] or 0),
                 targets=int(r["targets"] or 0),
                 target_share=float(r["target_share"] or 0),
+                receptions=int(r["receptions"] or 0),
                 rec_yards=int(r["rec_yards"] or 0),
+                rec_tds=int(r["rec_tds"] or 0),
+                air_yards=int(r["air_yards"] or 0),
+                adot=float(r["adot"] or 0),
+                rush_attempts=int(r["rush_attempts"] or 0),
                 rush_yards=int(r["rush_yards"] or 0),
+                rush_tds=int(r["rush_tds"] or 0),
+                pass_attempts=int(r["pass_attempts"] or 0),
+                pass_completions=int(r["pass_completions"] or 0),
                 pass_yards=int(r["pass_yards"] or 0),
+                pass_tds=int(r["pass_tds"] or 0),
+                interceptions=int(r["interceptions"] or 0),
                 fantasy_points_ppr=float(r["fantasy_points_ppr"] or 0),
                 fantasy_points_standard=float(r["fantasy_points_standard"] or 0),
                 opponent_abbr=r["opponent_abbr"],
                 is_home=bool(r["is_home"]),
+                team_score=team_score,
+                opp_score=opp_score,
+                result=result,
             ))
         else:
             week_team = team_for_week(w)

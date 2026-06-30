@@ -5,7 +5,7 @@ import math
 import random
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
 from ..deps import get_db, get_engine
@@ -13,6 +13,7 @@ from ..helpers import row_to_game, build_injury_list, build_weather_response
 from ..schemas import (
     GameListResponse, GameOddsResponse,
     GameConditionsResponse, ConditionsSummary, WeatherResponse,
+    GameDetailResponse, GameBoxScorePlayer, GameFactorEntry,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,100 @@ def list_games(
             (limit,),
         )
     return GameListResponse(games=[row_to_game(g) for g in games], count=len(games))
+
+
+def _box_player(row, home_team_id: int) -> GameBoxScorePlayer:
+    """Build a box-score entry from a player_weekly_stats join row."""
+    r = dict(row)
+    return GameBoxScorePlayer(
+        player_id=r["player_id"],
+        full_name=r.get("full_name") or "",
+        position=r.get("position"),
+        team_id=r["team_id"],
+        team_abbr=r.get("team_abbr"),
+        headshot_url=r.get("headshot_url"),
+        is_home=(r["team_id"] == home_team_id),
+        pass_completions=int(r.get("pass_completions") or 0),
+        pass_attempts=int(r.get("pass_attempts") or 0),
+        pass_yards=int(r.get("pass_yards") or 0),
+        pass_tds=int(r.get("pass_tds") or 0),
+        interceptions=int(r.get("interceptions") or 0),
+        rush_attempts=int(r.get("rush_attempts") or 0),
+        rush_yards=int(r.get("rush_yards") or 0),
+        rush_tds=int(r.get("rush_tds") or 0),
+        targets=int(r.get("targets") or 0),
+        receptions=int(r.get("receptions") or 0),
+        rec_yards=int(r.get("rec_yards") or 0),
+        rec_tds=int(r.get("rec_tds") or 0),
+        fantasy_points_ppr=float(r.get("fantasy_points_ppr") or 0.0),
+    )
+
+
+@router.get("/api/games/{game_id}", response_model=GameDetailResponse)
+def get_game_detail(
+    game_id: int = Path(..., ge=1, le=9_223_372_036_854_775_807),
+    db=Depends(get_db),
+):
+    """Full detail for a single game: meta + odds + weather + factors + box score.
+
+    Odds/weather/box-score are display-only enrichment. The box score comes from
+    player_weekly_stats (regular-season weeks, 2018+); other games return empty
+    box lists with ``box_score_available=False``.
+    """
+    game = db.get_game_detail(game_id)
+    if not game:
+        raise HTTPException(status_code=404, detail=f"Game {game_id} not found")
+
+    g = dict(game)
+    home_id = g["home_team_id"]
+    away_id = g["away_team_id"]
+    base = row_to_game(game)
+
+    # Odds (game_id match first, then team+date window)
+    odds_row = db.get_odds_for_game(game_id)
+    if not odds_row:
+        odds_row = db.get_odds_for_teams(home_id, away_id, str(g.get("date", "")))
+    odds = GameOddsResponse(**dict(odds_row)) if odds_row else None
+
+    # Weather (game_id match first, then home-team+date)
+    weather_row = db.get_weather_for_game(game_id)
+    if not weather_row:
+        weather_row = db.get_weather_for_teams(home_id, str(g.get("date", "")))
+    weather = build_weather_response(weather_row) if weather_row else None
+
+    # Manual game factors
+    factors = [
+        GameFactorEntry(
+            team_abbr=r["team_abbr"],
+            team_name=r["team_name"],
+            factor_type=r["factor_type"],
+            factor_value=r["factor_value"],
+            impact_rating=r["impact_rating"],
+        )
+        for r in db.get_game_factors(game_id)
+    ]
+
+    # Box score — only for numeric (regular-season) weeks present in player_weekly_stats
+    home_box: list = []
+    away_box: list = []
+    box_available = False
+    week_raw = str(g.get("week", ""))
+    if week_raw.isdigit():
+        rows = db.get_game_box_score(g["season"], int(week_raw), home_id, away_id)
+        box_available = len(rows) > 0
+        for r in rows:
+            entry = _box_player(r, home_id)
+            (home_box if r["team_id"] == home_id else away_box).append(entry)
+
+    return GameDetailResponse(
+        **base.model_dump(),
+        odds=odds,
+        weather=weather,
+        factors=factors,
+        home_box=home_box,
+        away_box=away_box,
+        box_score_available=box_available,
+    )
 
 
 @router.get("/api/games/{game_id}/odds", response_model=GameOddsResponse)

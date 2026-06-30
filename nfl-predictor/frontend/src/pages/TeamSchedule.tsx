@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { TeamScheduleResponse, TeamScheduleEntry } from '../api/types';
 import TeamLogo from '../components/TeamLogo';
@@ -41,6 +41,7 @@ function resultBadge(result: TeamScheduleEntry['result'], overtime: boolean) {
 
 export default function TeamSchedule() {
   const { abbr } = useParams<{ abbr: string }>();
+  const navigate = useNavigate();
   const [season, setSeason] = useState(CURRENT_YEAR);
   const [data, setData] = useState<TeamScheduleResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -140,9 +141,10 @@ export default function TeamSchedule() {
               {data.games.map((g, idx) => (
                 <tr
                   key={g.game_id}
-                  className={`border-b border-border/50 hover:bg-surface-800/50 transition-colors ${
+                  onClick={g.result !== null ? () => navigate(`/games/${g.game_id}`) : undefined}
+                  className={`border-b border-border/50 transition-colors ${
                     idx % 2 === 0 ? 'bg-surface-900' : 'bg-surface-850'
-                  }`}
+                  } ${g.result !== null ? 'cursor-pointer hover:bg-surface-800/50' : 'hover:bg-surface-800/50'}`}
                 >
                   <td className="px-3 py-2.5 text-text-muted text-xs">{g.week}</td>
                   <td className="px-3 py-2.5 text-text-secondary text-xs">{g.date}</td>

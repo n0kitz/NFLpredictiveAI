@@ -322,6 +322,47 @@ class Database:
 
         return self.fetchall(query, tuple(params))
 
+    def get_game_detail(self, game_id: int) -> Optional[sqlite3.Row]:
+        """Single game with team names/abbrs + ids.
+
+        The ``game_details`` view omits team ids (needed for the box score), so
+        this joins directly. Returns None if the game does not exist.
+        """
+        return self.fetchone(
+            """
+            SELECT g.*,
+                   ht.name AS home_team, ht.abbreviation AS home_abbr,
+                   at.name AS away_team, at.abbreviation AS away_abbr,
+                   wt.name AS winner, wt.abbreviation AS winner_abbr
+            FROM games g
+            JOIN teams ht ON g.home_team_id = ht.team_id
+            JOIN teams at ON g.away_team_id = at.team_id
+            LEFT JOIN teams wt ON g.winner_id = wt.team_id
+            WHERE g.game_id = ?
+            """,
+            (game_id,),
+        )
+
+    def get_game_box_score(self, season: int, week: int,
+                           home_team_id: int, away_team_id: int) -> List[sqlite3.Row]:
+        """Per-player stat lines for both teams in a game.
+
+        Sourced from player_weekly_stats (populated 2018+ only), so older games
+        return an empty list. Ordered by PPR fantasy points desc.
+        """
+        return self.fetchall(
+            """
+            SELECT pws.*, p.full_name, p.headshot_url,
+                   t.abbreviation AS team_abbr
+            FROM player_weekly_stats pws
+            JOIN players p ON p.player_id = pws.player_id
+            JOIN teams t ON t.team_id = pws.team_id
+            WHERE pws.season = ? AND pws.week = ? AND pws.team_id IN (?, ?)
+            ORDER BY pws.fantasy_points_ppr DESC
+            """,
+            (season, week, home_team_id, away_team_id),
+        )
+
     def get_head_to_head(self, team1_id: int, team2_id: int,
                          limit: Optional[int] = None) -> List[sqlite3.Row]:
         """Get head-to-head games between two teams."""

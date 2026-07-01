@@ -52,11 +52,22 @@ function recLeaders(players: GameBoxScorePlayer[]): GameBoxScorePlayer[] {
 
 function PlayerName({ p }: { p: GameBoxScorePlayer }) {
   return (
-    <Link to={`/players/${p.player_id}`} className="text-text-primary hover:text-accent transition-colors font-medium">
-      {p.full_name}
-      {p.position && <span className="text-text-muted text-[10px] ml-1">{p.position}</span>}
+    <Link to={`/players/${p.player_id}`} className="flex items-center gap-2 text-text-primary hover:text-accent transition-colors font-medium">
+      {p.headshot_url && (
+        <img src={p.headshot_url} alt="" className="w-6 h-6 rounded-full object-cover bg-surface-800 shrink-0" />
+      )}
+      <span>
+        {p.full_name}
+        {p.position && <span className="text-text-muted text-[10px] ml-1">{p.position}</span>}
+      </span>
     </Link>
   );
+}
+
+function teamTotals(players: GameBoxScorePlayer[]) {
+  const pass = players.reduce((s, p) => s + p.pass_yards, 0);
+  const rush = players.reduce((s, p) => s + p.rush_yards, 0);
+  return { pass, rush, total: pass + rush };
 }
 
 function StatLine({ children }: { children: React.ReactNode }) {
@@ -68,6 +79,7 @@ function TeamBox({ title, abbr, players }: { title: string; abbr: string | null;
   const pass = passLeader(players);
   const rush = rushLeaders(players);
   const rec = recLeaders(players);
+  const totals = teamTotals(players);
 
   return (
     <div className="rounded-xl border border-border bg-surface-850 overflow-hidden">
@@ -77,6 +89,13 @@ function TeamBox({ title, abbr, players }: { title: string; abbr: string | null;
           {title}
         </h3>
       </div>
+      {totals.total > 0 && (
+        <div className="px-5 py-2 border-b border-border flex gap-4 text-[11px] text-text-muted">
+          <span>Pass <b className="text-text-secondary tabular-nums">{totals.pass}</b></span>
+          <span>Rush <b className="text-text-secondary tabular-nums">{totals.rush}</b></span>
+          <span>Total <b className="text-text-primary tabular-nums">{totals.total}</b></span>
+        </div>
+      )}
       <div className="p-5 space-y-5">
         {pass && (
           <div>
@@ -247,6 +266,14 @@ export default function GameDetail() {
                 <div className="flex justify-between">
                   <span className="text-text-muted">Over/Under</span>
                   <span className="text-text-primary font-semibold tabular-nums">{game.odds.over_under}</span>
+                </div>
+              )}
+              {game.odds.home_implied_prob != null && game.odds.away_implied_prob != null && (
+                <div className="flex justify-between">
+                  <span className="text-text-muted">Implied win %</span>
+                  <span className="text-text-primary font-semibold tabular-nums">
+                    {game.away_abbr} {Math.round(game.odds.away_implied_prob * 100)}% · {game.home_abbr} {Math.round(game.odds.home_implied_prob * 100)}%
+                  </span>
                 </div>
               )}
               {cover && (

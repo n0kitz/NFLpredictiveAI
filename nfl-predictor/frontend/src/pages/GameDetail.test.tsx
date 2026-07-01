@@ -65,6 +65,15 @@ describe('GameDetail', () => {
     expect(screen.getByText('DET covered')).toBeInTheDocument();
   });
 
+  it('surfaces implied win % and team total yards', async () => {
+    renderAt(detail());
+    await waitFor(() => expect(screen.getByText('Box Score')).toBeInTheDocument());
+    // implied win % from the odds object (away 35% · home 65%)
+    expect(screen.getByText('DET 35% · KC 65%')).toBeInTheDocument();
+    // team total yards derived from the box (KC: Mahomes 226 pass + 45 rush = 271)
+    expect(screen.getByText('271')).toBeInTheDocument();
+  });
+
   it('shows a fallback when no box score is available', async () => {
     renderAt(detail({ box_score_available: false, home_box: [], away_box: [] }));
     await waitFor(() => expect(screen.getByText(/2018 onward/i)).toBeInTheDocument());

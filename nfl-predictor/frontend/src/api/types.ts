@@ -278,6 +278,7 @@ export interface PredictionHistoryItem {
   predicted_at: string;
   actual_winner_abbr: string | null;
   correct: boolean | null;
+  game_id: number | null;
 }
 
 export interface PredictionHistory {

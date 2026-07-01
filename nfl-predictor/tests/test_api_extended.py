@@ -397,6 +397,96 @@ class TestGameRetrodiction:
             assert r.status_code != 500
 
 
+# ── Prediction history ↔ game linking ─────────────────────────────────────────
+
+class TestPredictionGameLink:
+    def _open_db(self):
+        from src.database.db import Database
+        return Database(DEFAULT_DB_PATH)
+
+    def _latest_completed_pair_game(self, db):
+        return db.fetchone(
+            """
+            SELECT g.game_id, g.home_team_id, g.away_team_id, g.winner_id
+            FROM games g
+            WHERE g.winner_id IS NOT NULL
+              AND g.game_id = (
+                  SELECT game_id FROM games g2
+                  WHERE g2.home_team_id = g.home_team_id
+                    AND g2.away_team_id = g.away_team_id
+                    AND g2.home_score IS NOT NULL
+                  ORDER BY g2.date DESC LIMIT 1
+              )
+            ORDER BY g.date DESC LIMIT 1
+            """
+        )
+
+    def test_enrich_links_game_id(self):
+        """A fresh prediction gets game_id + correct filled by enrichment."""
+        db = self._open_db()
+        game = self._latest_completed_pair_game(db)
+        if not game:
+            db.close()
+            pytest.skip("No completed games in DB")
+        pred_id = db.insert_prediction(
+            home_team_id=game["home_team_id"], away_team_id=game["away_team_id"],
+            predicted_winner_id=game["winner_id"], home_prob=0.6, away_prob=0.4,
+            confidence="low",
+        )
+        try:
+            r = client.post("/api/predictions/enrich")
+            assert r.status_code == 200
+            row = db.fetchone(
+                "SELECT game_id, correct FROM prediction_history WHERE id = ?", (pred_id,)
+            )
+            assert row["correct"] == 1
+            assert row["game_id"] == game["game_id"]
+        finally:
+            db.execute("DELETE FROM prediction_history WHERE id = ?", (pred_id,))
+            db.commit()
+            db.close()
+
+    def test_backfill_links_resolved_rows(self):
+        """Rows enriched before game_id tracking get linked, outcome-consistently."""
+        db = self._open_db()
+        game = self._latest_completed_pair_game(db)
+        if not game:
+            db.close()
+            pytest.skip("No completed games in DB")
+        pred_id = db.insert_prediction(
+            home_team_id=game["home_team_id"], away_team_id=game["away_team_id"],
+            predicted_winner_id=game["winner_id"], home_prob=0.55, away_prob=0.45,
+            confidence="low",
+        )
+        try:
+            # Simulate a legacy row: resolved but never linked
+            db.execute(
+                "UPDATE prediction_history SET actual_winner_id = ?, correct = 1, game_id = NULL WHERE id = ?",
+                (game["winner_id"], pred_id),
+            )
+            db.commit()
+            linked = db.backfill_prediction_game_ids()
+            assert linked >= 1
+            row = db.fetchone(
+                "SELECT ph.game_id, g.winner_id FROM prediction_history ph "
+                "JOIN games g ON g.game_id = ph.game_id WHERE ph.id = ?",
+                (pred_id,),
+            )
+            assert row is not None and row["game_id"] is not None
+            # the linked game's outcome matches the stored one
+            assert row["winner_id"] == game["winner_id"]
+        finally:
+            db.execute("DELETE FROM prediction_history WHERE id = ?", (pred_id,))
+            db.commit()
+            db.close()
+
+    def test_history_endpoint_exposes_game_id(self):
+        r = client.get("/api/predictions/history?limit=5")
+        assert r.status_code == 200
+        for p in r.json()["predictions"]:
+            assert "game_id" in p
+
+
 # ── Factors CRUD ──────────────────────────────────────────────────────────────
 
 class TestFactorsCRUD:

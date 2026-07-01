@@ -237,7 +237,7 @@ Replace `YYYY` with the season year (e.g. 2025).
 - `/stats` endpoint uses `calculate_team_metrics()` (3-season window, tuned for predictions)
 - `/profile` endpoint aggregates `team_season_stats` table directly (correct all-time totals)
 - `POST /api/predict` accepts optional `factors` array for inline game factors (no game_id needed)
-- Predictions auto-save to `prediction_history` table; weekly cron enriches them with actual results
+- Predictions auto-save to `prediction_history` table; weekly cron enriches them with actual results **and links `game_id`** (History page → `/games/:id`); `backfill_prediction_game_ids()` inside `enrich_prediction_history()` links legacy resolved rows, outcome-consistently (idempotent)
 - Theme system: CSS variables for dark mode, teamColors.ts for team-specific styling
 - All team colors/styling are independent from component logic (swap theme without touching pages)
 - Scraper has cloudscraper fallback: if requests gets 403, it retries with cloudscraper automatically

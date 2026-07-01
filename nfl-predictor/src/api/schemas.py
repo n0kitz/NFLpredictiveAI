@@ -359,6 +359,7 @@ class PredictionHistoryItem(BaseModel):
     predicted_at: str
     actual_winner_abbr: Optional[str] = None
     correct: Optional[bool] = None
+    game_id: Optional[int] = None  # linked completed game (set by enrichment)
 
 
 class PredictionHistoryResponse(BaseModel):

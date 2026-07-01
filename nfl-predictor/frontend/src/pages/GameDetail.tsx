@@ -1,8 +1,10 @@
+import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useGameDetail } from '../hooks/useApi';
+import { api } from '../api/client';
 import Spinner from '../components/Spinner';
 import { getTeamColors } from '../theme/teamColors';
-import type { GameBoxScorePlayer, GameDetail, GameOdds } from '../api/types';
+import type { GameBoxScorePlayer, GameDetail, GameOdds, GameRetrodiction } from '../api/types';
 
 function prettyFactor(type: string): string {
   return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -68,6 +70,123 @@ function teamTotals(players: GameBoxScorePlayer[]) {
   const pass = players.reduce((s, p) => s + p.pass_yards, 0);
   const rush = players.reduce((s, p) => s + p.rush_yards, 0);
   return { pass, rush, total: pass + rush };
+}
+
+function RetrodictionCard({ gameId }: { gameId: number }) {
+  const [data, setData] = useState<GameRetrodiction | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api.getGameRetrodiction(gameId)
+      .then((d) => { if (!cancelled) setData(d); })
+      .catch((e) => { if (!cancelled) setError(e?.message ?? 'Retrodiction unavailable'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [gameId]);
+
+  if (loading) {
+    return (
+      <div className="rounded-xl border border-border bg-surface-850 p-5 mb-6 text-text-muted text-xs">
+        Running model retrodiction…
+      </div>
+    );
+  }
+  if (error || !data) {
+    return (
+      <div className="rounded-xl border border-border bg-surface-850 p-5 mb-6 text-text-muted text-xs">
+        Model retrodiction unavailable{error ? ` — ${error}` : ''}.
+      </div>
+    );
+  }
+
+  const home = getTeamColors(data.home_abbr);
+  const away = getTeamColors(data.away_abbr);
+  const homePct = Math.round(data.home_prob * 100);
+  const awayPct = 100 - homePct;
+  const verdict = data.correct === null ? 'TIE' : data.correct ? 'HIT' : 'MISS';
+  const verdictColor =
+    data.correct === null ? 'var(--color-tie)' : data.correct ? 'var(--color-win)' : 'var(--color-loss)';
+  const confClass =
+    data.confidence === 'high' ? 'text-conf-high' : data.confidence === 'medium' ? 'text-conf-medium' : 'text-conf-low';
+
+  return (
+    <div className="rounded-xl border border-border bg-surface-850 overflow-hidden mb-6">
+      {/* Probability bar — top edge, matches PredictionCard */}
+      <div className="flex h-1">
+        <div style={{ width: `${awayPct}%`, backgroundColor: away.primary }} />
+        <div style={{ width: `${homePct}%`, backgroundColor: home.primary }} />
+      </div>
+      <div className="p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-display text-[11px] font-semibold uppercase tracking-[0.2em] text-text-muted">
+            Model Retrodiction
+          </h2>
+          <span
+            className="text-[10px] font-display font-bold uppercase tracking-wider px-2 py-0.5 rounded"
+            style={{ color: verdictColor, backgroundColor: `color-mix(in srgb, ${verdictColor} 12%, transparent)` }}
+          >
+            {verdict}
+          </span>
+        </div>
+
+        <div className="flex items-center justify-between text-sm mb-3">
+          <span className="font-display font-bold tabular-nums" style={{ color: away.primary }}>
+            {data.away_abbr} {awayPct}%
+          </span>
+          <span className="text-text-secondary text-xs">
+            Model picked{' '}
+            <b className="text-text-primary">{data.predicted_winner_abbr}</b>
+            {data.actual_winner_abbr && (
+              <> · Actual: <b className="text-text-primary">{data.actual_winner_abbr}</b></>
+            )}
+          </span>
+          <span className="font-display font-bold tabular-nums" style={{ color: home.primary }}>
+            {data.home_abbr} {homePct}%
+          </span>
+        </div>
+
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-text-muted border-t border-border pt-3">
+          <span>
+            Confidence: <span className={`font-semibold uppercase ${confClass}`}>{data.confidence}</span>
+          </span>
+          {data.predicted_spread != null && (
+            <span>
+              {/* predicted_spread uses Vegas convention: negative = home favored */}
+              Predicted margin:{' '}
+              <span className="text-text-secondary font-semibold tabular-nums">
+                {data.home_abbr} {data.predicted_spread < 0 ? '+' : ''}{(-data.predicted_spread).toFixed(1)}
+              </span>
+            </span>
+          )}
+          {data.actual_margin != null && (
+            <span>
+              Actual margin:{' '}
+              <span className="text-text-secondary font-semibold tabular-nums">
+                {data.home_abbr} {data.actual_margin > 0 ? '+' : ''}{data.actual_margin}
+              </span>
+            </span>
+          )}
+        </div>
+
+        {data.key_factors.length > 0 && (
+          <ul className="mt-3 space-y-0.5">
+            {data.key_factors.slice(0, 4).map((f, i) => (
+              <li key={i} className="text-[11px] text-text-muted">· {f}</li>
+            ))}
+          </ul>
+        )}
+
+        <p className="mt-3 text-[10px] text-text-muted/70">
+          Computed using only data available before {data.cutoff_date} — the same
+          point-in-time setup the backtester uses.
+        </p>
+      </div>
+    </div>
+  );
 }
 
 function StatLine({ children }: { children: React.ReactNode }) {
@@ -245,6 +364,9 @@ export default function GameDetail() {
         <MetaItem label="Attendance" value={game.attendance ? game.attendance.toLocaleString() : '—'} />
         <MetaItem label="Type" value={isPlayoff ? 'Playoff' : 'Regular Season'} />
       </div>
+
+      {/* Model retrodiction — only meaningful once the game is played */}
+      {played && <RetrodictionCard gameId={game.game_id} />}
 
       <div className="grid md:grid-cols-2 gap-6 mb-6">
         {/* Betting line */}

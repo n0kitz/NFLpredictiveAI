@@ -119,6 +119,26 @@ export interface GameDetail extends Game {
   box_score_available: boolean;
 }
 
+export interface GameRetrodiction {
+  game_id: number;
+  season: number;
+  week: string;
+  cutoff_date: string;
+  model: string;
+  home_abbr: string;
+  away_abbr: string;
+  home_prob: number;
+  away_prob: number;
+  predicted_winner_abbr: string;
+  predicted_winner_prob: number;
+  confidence: string;
+  predicted_spread: number | null;
+  actual_winner_abbr: string | null;
+  actual_margin: number | null;
+  correct: boolean | null;
+  key_factors: string[];
+}
+
 export interface GameList {
   games: Game[];
   count: number;

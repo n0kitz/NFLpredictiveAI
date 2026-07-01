@@ -336,6 +336,67 @@ class TestGameDetail:
             assert r.status_code != 500
 
 
+# ── Game retrodiction endpoint ─────────────────────────────────────────────────
+
+class TestGameRetrodiction:
+    def _played_game(self):
+        from src.database.db import Database
+        db = Database(DEFAULT_DB_PATH)
+        try:
+            row = db.fetchone(
+                "SELECT game_id, home_team_id, away_team_id, winner_id FROM games "
+                "WHERE season=2023 AND home_score IS NOT NULL AND winner_id IS NOT NULL "
+                "ORDER BY game_id LIMIT 1"
+            )
+            return dict(row) if row else None
+        finally:
+            db.close()
+
+    def test_404_unknown_game(self):
+        r = client.get("/api/games/999999999/retrodiction")
+        assert r.status_code == 404
+
+    def test_retrodiction_shape_and_consistency(self):
+        g = self._played_game()
+        if g is None:
+            pytest.skip("No played 2023 game in DB")
+        r = client.get(f"/api/games/{g['game_id']}/retrodiction")
+        assert r.status_code == 200
+        d = r.json()
+        # probabilities are a valid distribution
+        assert abs(d["home_prob"] + d["away_prob"] - 1.0) < 0.01
+        assert 0.0 <= d["home_prob"] <= 1.0
+        # predicted winner is one of the two teams and matches the higher prob
+        assert d["predicted_winner_abbr"] in (d["home_abbr"], d["away_abbr"])
+        higher = d["home_abbr"] if d["home_prob"] > d["away_prob"] else d["away_abbr"]
+        assert d["predicted_winner_abbr"] == higher
+        # verdict agrees with predicted vs actual
+        assert d["actual_winner_abbr"] in (d["home_abbr"], d["away_abbr"])
+        assert d["correct"] == (d["predicted_winner_abbr"] == d["actual_winner_abbr"])
+        assert d["confidence"] in ("low", "medium", "high")
+        assert d["model"] == "weighted_sum"
+        assert d["cutoff_date"]
+
+    def test_unplayed_game_rejected(self):
+        from src.database.db import Database
+        db = Database(DEFAULT_DB_PATH)
+        try:
+            row = db.fetchone(
+                "SELECT game_id FROM games WHERE home_score IS NULL LIMIT 1"
+            )
+        finally:
+            db.close()
+        if not row:
+            pytest.skip("No unplayed games in DB")
+        r = client.get(f"/api/games/{row['game_id']}/retrodiction")
+        assert r.status_code == 400
+
+    def test_adversarial_ids_never_500(self):
+        for bad in ("abc", "-1", "0", "99999999999999999999"):
+            r = client.get(f"/api/games/{bad}/retrodiction")
+            assert r.status_code != 500
+
+
 # ── Factors CRUD ──────────────────────────────────────────────────────────────
 
 class TestFactorsCRUD:

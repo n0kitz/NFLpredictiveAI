@@ -14,6 +14,7 @@ from ..schemas import (
     GameListResponse, GameOddsResponse,
     GameConditionsResponse, ConditionsSummary, WeatherResponse,
     GameDetailResponse, GameBoxScorePlayer, GameFactorEntry,
+    GameRetrodictionResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -144,6 +145,75 @@ def get_game_detail(
         home_box=home_box,
         away_box=away_box,
         box_score_available=box_available,
+    )
+
+
+@router.get("/api/games/{game_id}/retrodiction", response_model=GameRetrodictionResponse)
+def get_game_retrodiction(
+    game_id: int = Path(..., ge=1, le=9_223_372_036_854_775_807),
+    db=Depends(get_db),
+):
+    """Run the prediction engine as-of game day for a played game.
+
+    Uses cutoff_date = game date so only pre-game data feeds the metrics —
+    the exact configuration the backtester measures OOS accuracy with
+    (weighted-sum, no manual factors, no ML). Compares against the actual
+    winner to report a hit/miss.
+    """
+    game = db.get_game_detail(game_id)
+    if not game:
+        raise HTTPException(status_code=404, detail=f"Game {game_id} not found")
+    g = dict(game)
+    if g.get("home_score") is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Game not played yet — use /api/predict for upcoming games",
+        )
+
+    engine = get_engine()
+    game_date = str(g.get("date", ""))[:10]
+    try:
+        pred = engine.predict(
+            home_team=g["home_abbr"],
+            away_team=g["away_abbr"],
+            apply_factors=False,
+            current_season=g["season"],
+            cutoff_date=game_date or None,
+            is_playoff=(g.get("game_type", "regular") != "regular"),
+            week=g.get("week", 0),
+            use_ml=False,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    home_predicted = pred.home_win_probability > pred.away_win_probability
+    predicted_winner_id = g["home_team_id"] if home_predicted else g["away_team_id"]
+    predicted_winner_abbr = g["home_abbr"] if home_predicted else g["away_abbr"]
+
+    winner_id = g.get("winner_id")
+    actual_winner_abbr = None
+    correct = None
+    if winner_id is not None:
+        actual_winner_abbr = g["home_abbr"] if winner_id == g["home_team_id"] else g["away_abbr"]
+        correct = predicted_winner_id == winner_id
+
+    return GameRetrodictionResponse(
+        game_id=game_id,
+        season=g["season"],
+        week=str(g.get("week", "")),
+        cutoff_date=game_date,
+        home_abbr=g["home_abbr"],
+        away_abbr=g["away_abbr"],
+        home_prob=round(pred.home_win_probability, 4),
+        away_prob=round(pred.away_win_probability, 4),
+        predicted_winner_abbr=predicted_winner_abbr,
+        predicted_winner_prob=round(pred.predicted_winner_probability, 4),
+        confidence=pred.confidence,
+        predicted_spread=pred.predicted_spread,
+        actual_winner_abbr=actual_winner_abbr,
+        actual_margin=int(g["home_score"]) - int(g["away_score"]),
+        correct=correct,
+        key_factors=list(pred.key_factors or [])[:6],
     )
 
 

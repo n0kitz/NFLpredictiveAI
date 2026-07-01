@@ -130,6 +130,31 @@ class GameDetailResponse(GameResponse):
     box_score_available: bool = False
 
 
+class GameRetrodictionResponse(BaseModel):
+    """What the model would have predicted for a played game.
+
+    Computed with cutoff_date = game date so only pre-game data is used
+    (same configuration the backtester measures OOS accuracy with).
+    """
+    game_id: int
+    season: int
+    week: str
+    cutoff_date: str
+    model: str = "weighted_sum"
+    home_abbr: str
+    away_abbr: str
+    home_prob: float
+    away_prob: float
+    predicted_winner_abbr: str
+    predicted_winner_prob: float
+    confidence: str
+    predicted_spread: Optional[float] = None
+    actual_winner_abbr: Optional[str] = None   # None when the game was a tie
+    actual_margin: Optional[int] = None        # home_score - away_score
+    correct: Optional[bool] = None             # None when the game was a tie
+    key_factors: List[str] = []
+
+
 # ── Predictions ────────────────────────────────────────
 
 class InlineFactor(BaseModel):

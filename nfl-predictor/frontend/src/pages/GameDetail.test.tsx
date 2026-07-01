@@ -3,11 +3,20 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import GameDetail from './GameDetail';
 import { api } from '../api/client';
-import type { GameBoxScorePlayer, GameDetail as GameDetailType } from '../api/types';
+import type { GameBoxScorePlayer, GameDetail as GameDetailType, GameRetrodiction } from '../api/types';
 
 vi.mock('../api/client', () => ({
-  api: { getGameDetail: vi.fn() },
+  api: { getGameDetail: vi.fn(), getGameRetrodiction: vi.fn() },
 }));
+
+const retro = (over: Partial<GameRetrodiction> = {}): GameRetrodiction => ({
+  game_id: 1, season: 2023, week: '1', cutoff_date: '2023-09-07', model: 'weighted_sum',
+  home_abbr: 'KC', away_abbr: 'DET', home_prob: 0.6332, away_prob: 0.3668,
+  predicted_winner_abbr: 'KC', predicted_winner_prob: 0.6332, confidence: 'low',
+  predicted_spread: -0.9, actual_winner_abbr: 'DET', actual_margin: -1, correct: false,
+  key_factors: ['KC: 0-0 record, +280 point diff'],
+  ...over,
+});
 
 const boxPlayer = (over: Partial<GameBoxScorePlayer> = {}): GameBoxScorePlayer => ({
   player_id: 1067, full_name: 'Patrick Mahomes', position: 'QB', team_id: 2,
@@ -33,6 +42,7 @@ const detail = (over: Partial<GameDetailType> = {}): GameDetailType => ({
 
 function renderAt(d: GameDetailType) {
   vi.mocked(api.getGameDetail).mockResolvedValue(d);
+  vi.mocked(api.getGameRetrodiction).mockResolvedValue(retro());
   return render(
     <MemoryRouter initialEntries={['/games/1']}>
       <Routes>
@@ -77,5 +87,35 @@ describe('GameDetail', () => {
   it('shows a fallback when no box score is available', async () => {
     renderAt(detail({ box_score_available: false, home_box: [], away_box: [] }));
     await waitFor(() => expect(screen.getByText(/2018 onward/i)).toBeInTheDocument());
+  });
+
+  it('renders the retrodiction verdict with probabilities', async () => {
+    // model picked KC 63% but DET won → MISS
+    renderAt(detail());
+    await waitFor(() => expect(screen.getByText('MISS')).toBeInTheDocument());
+    expect(screen.getByText('DET 37%')).toBeInTheDocument();
+    expect(screen.getByText('KC 63%')).toBeInTheDocument();
+    expect(screen.getByText(/before 2023-09-07/)).toBeInTheDocument();
+  });
+
+  it('shows a HIT verdict when the model called it right', async () => {
+    vi.mocked(api.getGameDetail).mockResolvedValue(detail());
+    vi.mocked(api.getGameRetrodiction).mockResolvedValue(
+      retro({ predicted_winner_abbr: 'DET', home_prob: 0.42, away_prob: 0.58, correct: true }),
+    );
+    render(
+      <MemoryRouter initialEntries={['/games/1']}>
+        <Routes>
+          <Route path="/games/:id" element={<GameDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByText('HIT')).toBeInTheDocument());
+  });
+
+  it('does not fetch retrodiction for unplayed games', async () => {
+    renderAt(detail({ home_score: null, away_score: null, winner: null, winner_abbr: null, winner_id: null }));
+    await waitFor(() => expect(screen.getByText('Scheduled')).toBeInTheDocument());
+    expect(api.getGameRetrodiction).not.toHaveBeenCalled();
   });
 });

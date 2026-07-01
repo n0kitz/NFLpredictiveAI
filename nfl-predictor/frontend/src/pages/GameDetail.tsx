@@ -264,12 +264,18 @@ function TeamBox({ title, abbr, players }: { title: string; abbr: string | null;
 
 export default function GameDetail() {
   const { id } = useParams<{ id: string }>();
-  const gameId = id ? parseInt(id, 10) : null;
+  // normalize NaN (e.g. /games/abc) to null so it renders as not-found
+  const parsed = id ? parseInt(id, 10) : NaN;
+  const gameId = Number.isFinite(parsed) ? parsed : null;
   const { data: game, loading, error } = useGameDetail(gameId);
 
   if (loading) return <Spinner text="Loading game..." />;
   if (error || !game) {
-    return <div className="text-center py-20 text-text-muted">{error ?? 'Game not found'}</div>;
+    return (
+      <div className="text-center py-20 text-text-muted">
+        {error && error !== 'no id' ? error : 'Game not found'}
+      </div>
+    );
   }
 
   const home = getTeamColors(game.home_abbr ?? '');

@@ -353,6 +353,7 @@ class Database:
         return self.fetchall(
             """
             SELECT pws.*, p.full_name, p.headshot_url,
+                   p.position AS player_position,
                    t.abbreviation AS team_abbr
             FROM player_weekly_stats pws
             JOIN players p ON p.player_id = pws.player_id

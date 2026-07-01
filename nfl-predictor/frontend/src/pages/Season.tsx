@@ -391,8 +391,17 @@ function WeekAccordion({ week, games }: { week: string; games: Game[] }) {
               <div
                 key={g.game_id}
                 onClick={hasScore ? () => navigate(`/games/${g.game_id}`) : undefined}
+                onKeyDown={hasScore ? (e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    navigate(`/games/${g.game_id}`);
+                  }
+                } : undefined}
+                role={hasScore ? 'link' : undefined}
+                tabIndex={hasScore ? 0 : undefined}
+                aria-label={hasScore ? `View game detail: ${g.away_abbr} at ${g.home_abbr}` : undefined}
                 className={`flex items-center px-5 py-2.5 text-sm transition-colors ${
-                  hasScore ? 'cursor-pointer hover:bg-surface-700/30' : ''
+                  hasScore ? 'cursor-pointer hover:bg-surface-700/30 focus-visible:bg-surface-700/30 focus-visible:outline-none' : ''
                 }`}
               >
                 <span className="text-text-muted w-24 text-xs tabular-nums">{g.date}</span>

@@ -60,7 +60,8 @@ def _box_player(row, home_team_id: int) -> GameBoxScorePlayer:
     return GameBoxScorePlayer(
         player_id=r["player_id"],
         full_name=r.get("full_name") or "",
-        position=r.get("position"),
+        # weekly-stats position, falling back to the player's roster position
+        position=r.get("position") or r.get("player_position"),
         team_id=r["team_id"],
         team_abbr=r.get("team_abbr"),
         headshot_url=r.get("headshot_url"),

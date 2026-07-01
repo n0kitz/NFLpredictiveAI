@@ -142,9 +142,18 @@ export default function TeamSchedule() {
                 <tr
                   key={g.game_id}
                   onClick={g.result !== null ? () => navigate(`/games/${g.game_id}`) : undefined}
+                  onKeyDown={g.result !== null ? (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      navigate(`/games/${g.game_id}`);
+                    }
+                  } : undefined}
+                  role={g.result !== null ? 'link' : undefined}
+                  tabIndex={g.result !== null ? 0 : undefined}
+                  aria-label={g.result !== null ? `View game detail: ${g.is_home ? 'vs' : 'at'} ${g.opp_abbr}, week ${g.week}` : undefined}
                   className={`border-b border-border/50 transition-colors ${
                     idx % 2 === 0 ? 'bg-surface-900' : 'bg-surface-850'
-                  } ${g.result !== null ? 'cursor-pointer hover:bg-surface-800/50' : 'hover:bg-surface-800/50'}`}
+                  } ${g.result !== null ? 'cursor-pointer hover:bg-surface-800/50 focus-visible:bg-surface-800/50 focus-visible:outline-none' : 'hover:bg-surface-800/50'}`}
                 >
                   <td className="px-3 py-2.5 text-text-muted text-xs">{g.week}</td>
                   <td className="px-3 py-2.5 text-text-secondary text-xs">{g.date}</td>

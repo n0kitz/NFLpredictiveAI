@@ -13,7 +13,7 @@ import type {
   FantasyProjection, StartSitResult, DraftRanking, TradeAnalysis,
   PlayoffPicture, TeamUpcoming, PowerRankings, TradeValues, RosterImportResult,
   ValuePicksResponse, ValuePickHistoryResponse, TeamScheduleResponse, SimulationResult,
-  PlayerWeeklyStatsResponse,
+  PlayerWeeklyStatsResponse, GameDetail, GameRetrodiction,
   MatchupGrade, OptimizeRequest, OptimizeDFSRequest, OptimizeResponse,
 } from './types';
 import { CURRENT_SEASON, LAST_COMPLETED_SEASON, ACCURACY_SEASONS } from '../config';
@@ -66,6 +66,9 @@ export const api = {
     const qs = params.toString();
     return get<GameList>(`/games${qs ? `?${qs}` : ''}`);
   },
+  getGameDetail: (gameId: number) => get<GameDetail>(`/games/${gameId}`),
+  getGameRetrodiction: (gameId: number) =>
+    get<GameRetrodiction>(`/games/${gameId}/retrodiction`),
 
   // Predictions
   predict: (homeTeam: string, awayTeam: string, factors?: InlineFactor[]) =>

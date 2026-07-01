@@ -311,6 +311,7 @@ def prediction_history(
             predicted_at=str(d["predicted_at"]),
             actual_winner_abbr=d.get("actual_winner_abbr"),
             correct=bool(d["correct"]) if d["correct"] is not None else None,
+            game_id=d.get("game_id"),
         ))
 
     total = stats["total"] if stats else 0

@@ -234,6 +234,258 @@ class TestPlayerWeeklyStats:
             if cell.get("snap_pct", 0) > 0 and (cell.get("snaps") in (0, None)):
                 assert cell["snaps"] is None or cell["snaps"] > 0
 
+    def test_expanded_stat_fields_present(self):
+        """The richer game-log payload must expose the full per-game stat line."""
+        pid = self._any_player_id()
+        if pid is None:
+            pytest.skip("No players in DB")
+        r = client.get(f"/api/players/{pid}/weekly-stats?season=2023")
+        assert r.status_code == 200
+        for cell in r.json()["weeks"]:
+            for k in (
+                "receptions", "rec_tds", "air_yards", "adot", "route_pct",
+                "rush_attempts", "rush_tds", "pass_attempts", "pass_completions",
+                "pass_tds", "interceptions", "result", "team_score", "opp_score",
+            ):
+                assert k in cell
+
+    def test_played_week_has_game_result(self):
+        """A player with 2023 weekly data should have weeks tagged with a W/L/T result."""
+        from src.database.db import Database
+        db = Database(DEFAULT_DB_PATH)
+        try:
+            row = db.fetchone(
+                "SELECT player_id FROM player_weekly_stats WHERE season=2023 LIMIT 1"
+            )
+        finally:
+            db.close()
+        if not row:
+            pytest.skip("No 2023 weekly stats in DB")
+        pid = row["player_id"]
+        r = client.get(f"/api/players/{pid}/weekly-stats?season=2023")
+        assert r.status_code == 200
+        results = [w["result"] for w in r.json()["weeks"] if w["result"] is not None]
+        assert results, "expected at least one week with a game result"
+        assert all(x in ("W", "L", "T") for x in results)
+        for w in r.json()["weeks"]:
+            if w["result"] is not None:
+                assert w["team_score"] is not None and w["opp_score"] is not None
+
+
+# ── Game detail endpoint ───────────────────────────────────────────────────────
+
+class TestGameDetail:
+    def _played_regular_game(self, season=2023):
+        from src.database.db import Database
+        db = Database(DEFAULT_DB_PATH)
+        try:
+            row = db.fetchone(
+                "SELECT game_id FROM games WHERE season=? AND home_score IS NOT NULL "
+                "AND CAST(week AS INTEGER) BETWEEN 1 AND 18 ORDER BY game_id LIMIT 1",
+                (season,),
+            )
+            return row["game_id"] if row else None
+        finally:
+            db.close()
+
+    def test_404_unknown_game(self):
+        r = client.get("/api/games/999999999")
+        assert r.status_code == 404
+
+    def test_detail_shape_and_box_score(self):
+        gid = self._played_regular_game()
+        if gid is None:
+            pytest.skip("No played 2023 regular-season game in DB")
+        r = client.get(f"/api/games/{gid}")
+        assert r.status_code == 200
+        d = r.json()
+        for k in ("game_id", "home_abbr", "away_abbr", "venue", "attendance",
+                  "home_box", "away_box", "box_score_available", "factors", "odds", "weather"):
+            assert k in d
+        assert isinstance(d["home_box"], list)
+        assert isinstance(d["away_box"], list)
+        # 2023 regular-season games have weekly player data → box score populated
+        assert d["box_score_available"] is True
+        assert len(d["home_box"]) + len(d["away_box"]) > 0
+        p = (d["home_box"] + d["away_box"])[0]
+        for k in ("player_id", "full_name", "team_id", "fantasy_points_ppr",
+                  "pass_yards", "rush_yards", "rec_yards"):
+            assert k in p
+
+    def test_playoff_game_has_empty_box(self):
+        from src.database.db import Database
+        db = Database(DEFAULT_DB_PATH)
+        try:
+            row = db.fetchone(
+                "SELECT game_id FROM games WHERE game_type='playoff' AND home_score IS NOT NULL "
+                "AND CAST(week AS INTEGER)=0 ORDER BY game_id DESC LIMIT 1"
+            )
+        finally:
+            db.close()
+        if not row:
+            pytest.skip("No non-numeric-week playoff game in DB")
+        r = client.get(f"/api/games/{row['game_id']}")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["box_score_available"] is False
+        assert d["home_box"] == [] and d["away_box"] == []
+
+    def test_adversarial_game_id_never_500(self):
+        for bad in ("abc", "-1", "0", "99999999999999999999"):
+            r = client.get(f"/api/games/{bad}")
+            assert r.status_code != 500
+
+
+# ── Game retrodiction endpoint ─────────────────────────────────────────────────
+
+class TestGameRetrodiction:
+    def _played_game(self):
+        from src.database.db import Database
+        db = Database(DEFAULT_DB_PATH)
+        try:
+            row = db.fetchone(
+                "SELECT game_id, home_team_id, away_team_id, winner_id FROM games "
+                "WHERE season=2023 AND home_score IS NOT NULL AND winner_id IS NOT NULL "
+                "ORDER BY game_id LIMIT 1"
+            )
+            return dict(row) if row else None
+        finally:
+            db.close()
+
+    def test_404_unknown_game(self):
+        r = client.get("/api/games/999999999/retrodiction")
+        assert r.status_code == 404
+
+    def test_retrodiction_shape_and_consistency(self):
+        g = self._played_game()
+        if g is None:
+            pytest.skip("No played 2023 game in DB")
+        r = client.get(f"/api/games/{g['game_id']}/retrodiction")
+        assert r.status_code == 200
+        d = r.json()
+        # probabilities are a valid distribution
+        assert abs(d["home_prob"] + d["away_prob"] - 1.0) < 0.01
+        assert 0.0 <= d["home_prob"] <= 1.0
+        # predicted winner is one of the two teams and matches the higher prob
+        assert d["predicted_winner_abbr"] in (d["home_abbr"], d["away_abbr"])
+        higher = d["home_abbr"] if d["home_prob"] > d["away_prob"] else d["away_abbr"]
+        assert d["predicted_winner_abbr"] == higher
+        # verdict agrees with predicted vs actual
+        assert d["actual_winner_abbr"] in (d["home_abbr"], d["away_abbr"])
+        assert d["correct"] == (d["predicted_winner_abbr"] == d["actual_winner_abbr"])
+        assert d["confidence"] in ("low", "medium", "high")
+        assert d["model"] == "weighted_sum"
+        assert d["cutoff_date"]
+
+    def test_unplayed_game_rejected(self):
+        from src.database.db import Database
+        db = Database(DEFAULT_DB_PATH)
+        try:
+            row = db.fetchone(
+                "SELECT game_id FROM games WHERE home_score IS NULL LIMIT 1"
+            )
+        finally:
+            db.close()
+        if not row:
+            pytest.skip("No unplayed games in DB")
+        r = client.get(f"/api/games/{row['game_id']}/retrodiction")
+        assert r.status_code == 400
+
+    def test_adversarial_ids_never_500(self):
+        for bad in ("abc", "-1", "0", "99999999999999999999"):
+            r = client.get(f"/api/games/{bad}/retrodiction")
+            assert r.status_code != 500
+
+
+# ── Prediction history ↔ game linking ─────────────────────────────────────────
+
+class TestPredictionGameLink:
+    def _open_db(self):
+        from src.database.db import Database
+        return Database(DEFAULT_DB_PATH)
+
+    def _latest_completed_pair_game(self, db):
+        return db.fetchone(
+            """
+            SELECT g.game_id, g.home_team_id, g.away_team_id, g.winner_id
+            FROM games g
+            WHERE g.winner_id IS NOT NULL
+              AND g.game_id = (
+                  SELECT game_id FROM games g2
+                  WHERE g2.home_team_id = g.home_team_id
+                    AND g2.away_team_id = g.away_team_id
+                    AND g2.home_score IS NOT NULL
+                  ORDER BY g2.date DESC LIMIT 1
+              )
+            ORDER BY g.date DESC LIMIT 1
+            """
+        )
+
+    def test_enrich_links_game_id(self):
+        """A fresh prediction gets game_id + correct filled by enrichment."""
+        db = self._open_db()
+        game = self._latest_completed_pair_game(db)
+        if not game:
+            db.close()
+            pytest.skip("No completed games in DB")
+        pred_id = db.insert_prediction(
+            home_team_id=game["home_team_id"], away_team_id=game["away_team_id"],
+            predicted_winner_id=game["winner_id"], home_prob=0.6, away_prob=0.4,
+            confidence="low",
+        )
+        try:
+            r = client.post("/api/predictions/enrich")
+            assert r.status_code == 200
+            row = db.fetchone(
+                "SELECT game_id, correct FROM prediction_history WHERE id = ?", (pred_id,)
+            )
+            assert row["correct"] == 1
+            assert row["game_id"] == game["game_id"]
+        finally:
+            db.execute("DELETE FROM prediction_history WHERE id = ?", (pred_id,))
+            db.commit()
+            db.close()
+
+    def test_backfill_links_resolved_rows(self):
+        """Rows enriched before game_id tracking get linked, outcome-consistently."""
+        db = self._open_db()
+        game = self._latest_completed_pair_game(db)
+        if not game:
+            db.close()
+            pytest.skip("No completed games in DB")
+        pred_id = db.insert_prediction(
+            home_team_id=game["home_team_id"], away_team_id=game["away_team_id"],
+            predicted_winner_id=game["winner_id"], home_prob=0.55, away_prob=0.45,
+            confidence="low",
+        )
+        try:
+            # Simulate a legacy row: resolved but never linked
+            db.execute(
+                "UPDATE prediction_history SET actual_winner_id = ?, correct = 1, game_id = NULL WHERE id = ?",
+                (game["winner_id"], pred_id),
+            )
+            db.commit()
+            linked = db.backfill_prediction_game_ids()
+            assert linked >= 1
+            row = db.fetchone(
+                "SELECT ph.game_id, g.winner_id FROM prediction_history ph "
+                "JOIN games g ON g.game_id = ph.game_id WHERE ph.id = ?",
+                (pred_id,),
+            )
+            assert row is not None and row["game_id"] is not None
+            # the linked game's outcome matches the stored one
+            assert row["winner_id"] == game["winner_id"]
+        finally:
+            db.execute("DELETE FROM prediction_history WHERE id = ?", (pred_id,))
+            db.commit()
+            db.close()
+
+    def test_history_endpoint_exposes_game_id(self):
+        r = client.get("/api/predictions/history?limit=5")
+        assert r.status_code == 200
+        for p in r.json()["predictions"]:
+            assert "game_id" in p
+
 
 # ── Factors CRUD ──────────────────────────────────────────────────────────────
 

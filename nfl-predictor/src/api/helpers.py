@@ -65,6 +65,8 @@ def row_to_game(row) -> GameResponse:
         winner_abbr=d.get("winner_abbr"),
         winner_id=d.get("winner_id"),
         overtime=bool(d.get("overtime", False)),
+        venue=d.get("venue"),
+        attendance=d.get("attendance"),
     )
 
 

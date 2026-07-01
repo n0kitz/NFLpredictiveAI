@@ -322,6 +322,48 @@ class Database:
 
         return self.fetchall(query, tuple(params))
 
+    def get_game_detail(self, game_id: int) -> Optional[sqlite3.Row]:
+        """Single game with team names/abbrs + ids.
+
+        The ``game_details`` view omits team ids (needed for the box score), so
+        this joins directly. Returns None if the game does not exist.
+        """
+        return self.fetchone(
+            """
+            SELECT g.*,
+                   ht.name AS home_team, ht.abbreviation AS home_abbr,
+                   at.name AS away_team, at.abbreviation AS away_abbr,
+                   wt.name AS winner, wt.abbreviation AS winner_abbr
+            FROM games g
+            JOIN teams ht ON g.home_team_id = ht.team_id
+            JOIN teams at ON g.away_team_id = at.team_id
+            LEFT JOIN teams wt ON g.winner_id = wt.team_id
+            WHERE g.game_id = ?
+            """,
+            (game_id,),
+        )
+
+    def get_game_box_score(self, season: int, week: int,
+                           home_team_id: int, away_team_id: int) -> List[sqlite3.Row]:
+        """Per-player stat lines for both teams in a game.
+
+        Sourced from player_weekly_stats (populated 2018+ only), so older games
+        return an empty list. Ordered by PPR fantasy points desc.
+        """
+        return self.fetchall(
+            """
+            SELECT pws.*, p.full_name, p.headshot_url,
+                   p.position AS player_position,
+                   t.abbreviation AS team_abbr
+            FROM player_weekly_stats pws
+            JOIN players p ON p.player_id = pws.player_id
+            JOIN teams t ON t.team_id = pws.team_id
+            WHERE pws.season = ? AND pws.week = ? AND pws.team_id IN (?, ?)
+            ORDER BY pws.fantasy_points_ppr DESC
+            """,
+            (season, week, home_team_id, away_team_id),
+        )
+
     def get_head_to_head(self, team1_id: int, team2_id: int,
                          limit: Optional[int] = None) -> List[sqlite3.Row]:
         """Get head-to-head games between two teams."""
@@ -635,12 +677,14 @@ class Database:
         )
 
     def enrich_prediction_history(self) -> int:
-        """Match unresolved predictions to completed games and fill actual_winner_id/correct."""
+        """Match unresolved predictions to completed games and fill actual_winner_id/correct/game_id."""
+        # Link already-resolved rows that predate game_id tracking (idempotent, ~0 rows after first run)
+        self.backfill_prediction_game_ids()
         # Single JOIN query instead of N+1 per-prediction lookups
         rows = self.fetchall(
             """
             SELECT ph.id, ph.predicted_winner_id,
-                   g.winner_id
+                   g.winner_id, g.game_id
             FROM prediction_history ph
             JOIN games g
               ON g.home_team_id = ph.home_team_id
@@ -661,13 +705,52 @@ class Database:
         for row in rows:
             correct = 1 if row['winner_id'] == row['predicted_winner_id'] else 0
             self.execute(
-                "UPDATE prediction_history SET actual_winner_id = ?, correct = ? WHERE id = ?",
-                (row['winner_id'], correct, row['id']),
+                "UPDATE prediction_history SET actual_winner_id = ?, correct = ?, game_id = ? WHERE id = ?",
+                (row['winner_id'], correct, row['game_id'], row['id']),
             )
             enriched += 1
         if enriched:
             self.commit()
         return enriched
+
+    def backfill_prediction_game_ids(self) -> int:
+        """Set game_id on resolved predictions that were enriched before game_id tracking.
+
+        Only links a game whose winner matches the stored actual_winner_id (the
+        link can never contradict the recorded outcome), picking the game closest
+        in time to when the prediction was made. Rows with no consistent match
+        stay NULL.
+        """
+        # SQLite can't reference the outer UPDATE table in a subquery's ORDER BY,
+        # so match candidates via a plain join and pick the closest per prediction.
+        rows = self.fetchall(
+            """
+            SELECT ph.id, g.game_id,
+                   ABS(julianday(g.date) - julianday(ph.predicted_at)) AS dist
+            FROM prediction_history ph
+            JOIN games g
+              ON g.home_team_id = ph.home_team_id
+             AND g.away_team_id = ph.away_team_id
+             AND g.home_score IS NOT NULL
+             AND g.winner_id = ph.actual_winner_id
+            WHERE ph.correct IS NOT NULL
+              AND ph.game_id IS NULL
+              AND ph.actual_winner_id IS NOT NULL
+            ORDER BY ph.id, dist
+            """
+        )
+        best: Dict[int, int] = {}
+        for r in rows:
+            if r["id"] not in best:
+                best[r["id"]] = r["game_id"]
+        for pred_id, game_id in best.items():
+            self.execute(
+                "UPDATE prediction_history SET game_id = ? WHERE id = ?",
+                (game_id, pred_id),
+            )
+        if best:
+            self.commit()
+        return len(best)
 
 
     def get_value_picks_history(self, min_edge: float = 0.04, limit: int = 50) -> List[sqlite3.Row]:

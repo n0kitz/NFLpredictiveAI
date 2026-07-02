@@ -372,6 +372,48 @@ class AccuracyDetailResponse(BaseModel):
     biggest_misses: List[NotableGameEntry]  # most confident wrong picks
 
 
+# ── Team advanced stats + QB history ───────────────────
+
+class TeamAdvancedStatsResponse(BaseModel):
+    team_id: int
+    team_abbr: str
+    season: int
+    turnover_margin: Optional[float] = None
+    third_down_pct: Optional[float] = None
+    redzone_efficiency: Optional[float] = None
+    yards_per_play: Optional[float] = None
+    sack_rate_allowed: Optional[float] = None
+    qb_epa_per_play: Optional[float] = None
+    ranks: Dict[str, int] = {}  # 1 = best in league that season
+
+
+class QBStartWeek(BaseModel):
+    week: int
+    qb_name: str
+    epa_per_play: Optional[float] = None
+    snap_count: Optional[int] = None
+
+
+class QBStarterSummary(BaseModel):
+    qb_name: str
+    starts: int
+    avg_epa: Optional[float] = None
+    player_id: Optional[int] = None
+
+
+class QBSeasonHistory(BaseModel):
+    season: int
+    starters: List[QBStarterSummary]
+
+
+class TeamQBHistoryResponse(BaseModel):
+    team_id: int
+    team_abbr: str
+    seasons: List[QBSeasonHistory]
+    detail_season: Optional[int] = None
+    weeks: List[QBStartWeek] = []
+
+
 # ── Playoff odds (Monte Carlo) ─────────────────────────
 
 class PlayoffOddsTeam(BaseModel):
@@ -560,6 +602,9 @@ class PlayerStatsEntry(BaseModel):
     rec_yards: int = 0
     rec_tds: int = 0
     yards_per_reception: float = 0.0
+    tackles: int = 0
+    sacks: float = 0.0
+    interceptions_def: int = 0
     fantasy_points_ppr: float = 0.0
     fantasy_points_standard: float = 0.0
 

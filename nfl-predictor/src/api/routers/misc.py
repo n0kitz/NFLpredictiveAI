@@ -346,6 +346,9 @@ def get_player(player_id: int, db=Depends(get_db)):
             rec_yards=s.get("rec_yards", 0),
             rec_tds=s.get("rec_tds", 0),
             yards_per_reception=s.get("yards_per_reception", 0.0),
+            tackles=s.get("tackles") or 0,
+            sacks=s.get("sacks") or 0.0,
+            interceptions_def=s.get("interceptions_def") or 0,
             fantasy_points_ppr=s.get("fantasy_points_ppr", 0.0),
             fantasy_points_standard=s.get("fantasy_points_standard", 0.0),
         )

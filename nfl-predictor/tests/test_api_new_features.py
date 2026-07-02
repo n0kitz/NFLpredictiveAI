@@ -115,6 +115,62 @@ class TestPlayoffOdds:
         assert client.get("/api/seasons/2098/playoff-odds").status_code == 404
 
 
+# ── Team advanced stats + QB history ────────────────────────────────────────────
+
+class TestTeamAdvancedStats:
+    def test_advanced_latest_season(self):
+        r = client.get("/api/teams/KC/advanced")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["team_abbr"] == "KC"
+        assert data["season"] >= 2020
+        assert data["yards_per_play"] is not None
+        for col, rank in data["ranks"].items():
+            assert 1 <= rank <= 32, col
+
+    def test_advanced_specific_season(self):
+        r = client.get("/api/teams/KC/advanced?season=2024")
+        assert r.status_code == 200
+        assert r.json()["season"] == 2024
+
+    def test_advanced_missing_season(self):
+        assert client.get("/api/teams/KC/advanced?season=1991").status_code == 404
+
+    def test_advanced_unknown_team(self):
+        assert client.get("/api/teams/ZZZZ/advanced").status_code == 404
+
+
+class TestTeamQBHistory:
+    def test_qb_history_shape(self):
+        r = client.get("/api/teams/KC/qb-history")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["team_abbr"] == "KC"
+        assert len(data["seasons"]) >= 10  # 2010+ coverage
+        latest = data["seasons"][0]
+        assert latest["starters"][0]["starts"] >= 1
+        # weekly detail matches detail_season and covers a full-ish season
+        assert data["detail_season"] == latest["season"]
+        assert len(data["weeks"]) >= 15
+        assert all(1 <= w["week"] <= 22 for w in data["weeks"])
+
+    def test_qb_history_specific_season(self):
+        r = client.get("/api/teams/KC/qb-history?season=2018")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["detail_season"] == 2018
+        assert all(w["qb_name"] for w in data["weeks"])
+
+    def test_qb_history_starters_sorted_by_starts(self):
+        r = client.get("/api/teams/KC/qb-history")
+        for season in r.json()["seasons"]:
+            starts = [s["starts"] for s in season["starters"]]
+            assert starts == sorted(starts, reverse=True)
+
+    def test_qb_history_unknown_team(self):
+        assert client.get("/api/teams/ZZZZ/qb-history").status_code == 404
+
+
 # ── Model info feature importance ───────────────────────────────────────────────
 
 class TestModelFeatureImportance:

@@ -16,6 +16,7 @@ import type {
   PlayerWeeklyStatsResponse, GameDetail, GameRetrodiction,
   MatchupGrade, OptimizeRequest, OptimizeDFSRequest, OptimizeResponse,
   AccuracyDetail, ModelInfo, DataCoverage, PlayoffOdds,
+  TeamAdvancedStats, TeamQBHistory,
 } from './types';
 import { CURRENT_SEASON, LAST_COMPLETED_SEASON, ACCURACY_SEASONS } from '../config';
 
@@ -180,6 +181,16 @@ export const api = {
 
   getValuePicksHistory: (minEdge = 0.04, limit = 50) =>
     get<ValuePickHistoryResponse>(`/picks/history?min_edge=${minEdge}&limit=${limit}`),
+
+  // Team advanced stats + QB history
+  getTeamAdvancedStats: (id: string, season?: number) =>
+    get<TeamAdvancedStats>(
+      `/teams/${encodeURIComponent(id)}/advanced${season ? `?season=${season}` : ''}`
+    ),
+  getTeamQBHistory: (id: string, season?: number) =>
+    get<TeamQBHistory>(
+      `/teams/${encodeURIComponent(id)}/qb-history${season ? `?season=${season}` : ''}`
+    ),
 
   // Team schedule (full season)
   getTeamSchedule: (id: string, season?: number) =>

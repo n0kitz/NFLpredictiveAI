@@ -318,6 +318,9 @@ export interface PlayerStatsEntry {
   rec_yards: number;
   rec_tds: number;
   yards_per_reception: number;
+  tackles: number;
+  sacks: number;
+  interceptions_def: number;
   fantasy_points_ppr: number;
   fantasy_points_standard: number;
 }
@@ -691,6 +694,48 @@ export interface ValuePickHistoryResponse {
   resolved: number;
   correct: number;
   hit_rate: number | null;
+}
+
+// ── Team advanced stats + QB history ──────────────────────────────────────────
+
+export interface TeamAdvancedStats {
+  team_id: number;
+  team_abbr: string;
+  season: number;
+  turnover_margin: number | null;
+  third_down_pct: number | null;
+  redzone_efficiency: number | null;
+  yards_per_play: number | null;
+  sack_rate_allowed: number | null;
+  qb_epa_per_play: number | null;
+  ranks: Record<string, number>;
+}
+
+export interface QBStartWeek {
+  week: number;
+  qb_name: string;
+  epa_per_play: number | null;
+  snap_count: number | null;
+}
+
+export interface QBStarterSummary {
+  qb_name: string;
+  starts: number;
+  avg_epa: number | null;
+  player_id: number | null;
+}
+
+export interface QBSeasonHistory {
+  season: number;
+  starters: QBStarterSummary[];
+}
+
+export interface TeamQBHistory {
+  team_id: number;
+  team_abbr: string;
+  seasons: QBSeasonHistory[];
+  detail_season: number | null;
+  weeks: QBStartWeek[];
 }
 
 // ── Playoff Odds (Monte Carlo) ────────────────────────────────────────────────

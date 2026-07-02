@@ -19,6 +19,7 @@ const FantasyPage = lazy(() => import('./pages/FantasyPage'));
 const TeamSchedule = lazy(() => import('./pages/TeamSchedule'));
 const GameDetail = lazy(() => import('./pages/GameDetail'));
 const ModelHub = lazy(() => import('./pages/ModelHub'));
+const PlayerCompare = lazy(() => import('./pages/PlayerCompare'));
 
 export default function App() {
   return (
@@ -36,6 +37,7 @@ export default function App() {
               <Route path="/seasons/:year?" element={<Season />} />
               <Route path="/history" element={<History />} />
               <Route path="/playoffs" element={<Playoffs />} />
+              <Route path="/players/compare" element={<PlayerCompare />} />
               <Route path="/players/:id" element={<PlayerPage />} />
               <Route path="/games/:id" element={<GameDetail />} />
               <Route path="/fantasy" element={<FantasyPage />} />

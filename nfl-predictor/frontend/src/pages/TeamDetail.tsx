@@ -4,6 +4,8 @@ import { useTeamProfile, useTeamMetrics, useTeamGames, useTeamRoster } from '../
 import Spinner from '../components/Spinner';
 import TrendChart from '../components/TrendChart';
 import PlayerModal from '../components/PlayerModal';
+import TeamAdvancedStatsCard from '../components/TeamAdvancedStatsCard';
+import QBHistoryCard from '../components/QBHistoryCard';
 import { getTeamColors, teamBgTint } from '../theme/teamColors';
 import TeamLogo from '../components/TeamLogo';
 import type { PlayerEntry } from '../api/types';
@@ -259,6 +261,11 @@ export default function TeamDetail() {
 
       {activeTab === 'overview' && (
         <>
+          {/* Advanced stats (model inputs) */}
+          <div className="mb-8">
+            <TeamAdvancedStatsCard teamAbbr={profile.team_abbr} />
+          </div>
+
           {/* Trend charts */}
           <div className="mb-8">
             <TrendChart
@@ -266,6 +273,11 @@ export default function TeamDetail() {
               primaryColor={colors.primary}
               secondaryColor={colors.secondary}
             />
+          </div>
+
+          {/* Starting QB history */}
+          <div className="mb-8">
+            <QBHistoryCard teamAbbr={profile.team_abbr} />
           </div>
 
           {/* Recent games */}

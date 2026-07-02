@@ -120,6 +120,12 @@ export default function PlayerPage() {
                 </span>
               )}
               <BoomBustBadge boomPct={player.boom_pct} bustPct={player.bust_pct} size="md" />
+              <Link
+                to={`/players/compare?a=${player.player_id}`}
+                className="text-[10px] font-display font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-accent/15 text-accent hover:bg-accent/25 transition-colors"
+              >
+                Compare ⇄
+              </Link>
             </div>
 
             {/* Bio grid */}
@@ -188,6 +194,9 @@ export default function PlayerPage() {
           {pos !== 'QB' && pos !== 'RB' && pos !== 'FB' && pos !== 'WR' && pos !== 'TE' && (
             <div className="grid grid-cols-4 gap-3">
               <StatCard label="Games" value={String(s.games_played)} accent={colors.primary} />
+              {s.tackles !== 0 && <StatCard label="Tackles" value={String(s.tackles)} accent={colors.primary} />}
+              {s.sacks !== 0 && <StatCard label="Sacks" value={s.sacks.toFixed(1)} accent={colors.primary} />}
+              {s.interceptions_def !== 0 && <StatCard label="INT" value={String(s.interceptions_def)} accent={colors.primary} />}
               {s.rush_yards !== 0 && <StatCard label="Rush Yds" value={String(s.rush_yards)} />}
               {s.rush_tds !== 0 && <StatCard label="Rush TD" value={String(s.rush_tds)} />}
               {s.receptions !== 0 && <StatCard label="Rec" value={String(s.receptions)} />}

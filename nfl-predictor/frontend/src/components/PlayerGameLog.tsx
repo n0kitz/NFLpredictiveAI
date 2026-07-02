@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import {
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  CartesianGrid, ReferenceLine,
+} from 'recharts';
 import { api } from '../api/client';
 import type { PlayerWeeklyStatsResponse, PlayerWeekCell } from '../api/types';
 import { LAST_COMPLETED_SEASON, recentSeasons } from '../config';
@@ -46,6 +50,50 @@ function Td({ children, className = '' }: { children: React.ReactNode; className
   return <td className={`px-2 py-2 tabular-nums ${className}`}>{children}</td>;
 }
 
+/** Fantasy PPR per week as a compact trend line with a season-average reference. */
+function PPRTrend({ games }: { games: PlayerWeekCell[] }) {
+  const data = games.map((c) => ({
+    week: c.week,
+    ppr: Math.round(c.fantasy_points_ppr * 10) / 10,
+    opp: c.opponent_abbr ? `${c.is_home ? 'vs' : '@'} ${c.opponent_abbr}` : '',
+  }));
+  const avg = data.reduce((sum, d) => sum + d.ppr, 0) / data.length;
+
+  return (
+    <div className="px-5 pt-4 pb-1 border-b border-border/50">
+      <p className="text-[10px] text-text-muted uppercase tracking-wider font-display font-medium mb-1">
+        Fantasy points (PPR) by week — dashed line = season average ({avg.toFixed(1)})
+      </p>
+      <ResponsiveContainer width="100%" height={140}>
+        <LineChart data={data} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+          <XAxis dataKey="week" tick={{ fontSize: 10, fill: 'var(--color-text-muted)', fontFamily: 'Oswald, sans-serif' }} />
+          <YAxis tick={{ fontSize: 10, fill: 'var(--color-text-muted)', fontFamily: 'Oswald, sans-serif' }} />
+          <Tooltip
+            contentStyle={{
+              backgroundColor: 'var(--color-surface-800)',
+              border: '1px solid var(--color-border)',
+              borderRadius: '6px',
+              fontSize: '12px',
+            }}
+            formatter={(v) => [`${v} pts`, 'PPR']}
+            labelFormatter={(label) => {
+              const row = data.find((d) => String(d.week) === String(label));
+              return `Week ${label}${row?.opp ? ` ${row.opp}` : ''}`;
+            }}
+          />
+          <ReferenceLine y={avg} stroke="var(--color-text-secondary)" strokeDasharray="6 4" />
+          <Line
+            type="monotone" dataKey="ppr" name="PPR"
+            stroke="var(--color-accent)" strokeWidth={2}
+            dot={{ r: 2.5, fill: 'var(--color-accent)' }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 export default function PlayerGameLog({ playerId, position, defaultSeason }: Props) {
   const [season, setSeason] = useState(defaultSeason ?? LAST_COMPLETED_SEASON);
   const [data, setData] = useState<PlayerWeeklyStatsResponse | null>(null);
@@ -89,6 +137,10 @@ export default function PlayerGameLog({ playerId, position, defaultSeason }: Pro
       {error && !loading && <div className="p-5 text-text-muted text-xs">{error}</div>}
       {!loading && !error && games.length === 0 && (
         <div className="p-8 text-center text-text-muted text-xs">No game data for {season}.</div>
+      )}
+
+      {!loading && !error && games.length > 1 && (
+        <PPRTrend games={games} />
       )}
 
       {!loading && !error && games.length > 0 && (

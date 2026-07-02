@@ -1,7 +1,7 @@
 """Team-related API endpoints."""
 
 import logging
-from typing import Optional
+from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Path
 
@@ -12,6 +12,8 @@ from ..schemas import (
     TeamMetricsResponse, TeamProfileResponse, TeamProfileStats,
     TeamSeasonStatsResponse, GameListResponse, TeamRosterResponse,
     TeamScheduleEntry, TeamScheduleResponse,
+    TeamAdvancedStatsResponse, TeamQBHistoryResponse,
+    QBSeasonHistory, QBStarterSummary, QBStartWeek,
 )
 from ...prediction.metrics import calculate_team_metrics
 
@@ -346,4 +348,144 @@ def get_team_schedule(
         season=season,
         games=entries,
         wins=wins, losses=losses, ties=ties,
+    )
+
+
+# ── Advanced stats + QB history ─────────────────────────────────────────────────
+
+# column → True when higher is better (rank 1 = best)
+_ADV_HIGHER_BETTER = {
+    "turnover_margin": True,
+    "third_down_pct": True,
+    "redzone_efficiency": True,
+    "yards_per_play": True,
+    "qb_epa_per_play": True,
+    "sack_rate_allowed": False,
+}
+
+
+@router.get("/api/teams/{identifier}/advanced", response_model=TeamAdvancedStatsResponse)
+def get_team_advanced_stats(
+    identifier: str = Path(..., max_length=50),
+    season: Optional[int] = Query(None, ge=1990, le=2100),
+    db=Depends(get_db),
+):
+    """Advanced per-season stats (PBP aggregates that feed the model) + league ranks."""
+    team = resolve_team(db, identifier)
+    tid = team["team_id"]
+    if season is None:
+        row = db.fetchone(
+            "SELECT MAX(season) AS s FROM team_advanced_stats WHERE team_id = ?", (tid,)
+        )
+        season = row["s"] if row else None
+        if season is None:
+            raise HTTPException(status_code=404, detail="No advanced stats for this team")
+
+    rows = db.fetchall("SELECT * FROM team_advanced_stats WHERE season = ?", (season,))
+    mine = next((dict(r) for r in rows if r["team_id"] == tid), None)
+    if mine is None:
+        raise HTTPException(
+            status_code=404, detail=f"No advanced stats for this team in {season}"
+        )
+
+    ranks: Dict[str, int] = {}
+    for col, higher in _ADV_HIGHER_BETTER.items():
+        vals = [(r["team_id"], r[col]) for r in rows if r[col] is not None]
+        vals.sort(key=lambda x: x[1], reverse=higher)
+        for i, (t_id, _) in enumerate(vals, start=1):
+            if t_id == tid:
+                ranks[col] = i
+                break
+
+    return TeamAdvancedStatsResponse(
+        team_id=tid,
+        team_abbr=team["abbreviation"],
+        season=season,
+        ranks=ranks,
+        **{k: mine.get(k) for k in _ADV_HIGHER_BETTER},
+    )
+
+
+def _resolve_qb_player_ids(db, qb_names) -> Dict[str, int]:
+    """Best-effort link of 'P.Mahomes'-style names to players rows (unique QB match only)."""
+    out: Dict[str, int] = {}
+    for name in qb_names:
+        if "." not in name:
+            continue
+        initial, _, last = name.partition(".")
+        if not initial or not last:
+            continue
+        matches = db.fetchall(
+            "SELECT player_id FROM players WHERE position = 'QB' AND full_name LIKE ?",
+            (f"{initial}% {last}",),
+        )
+        if len(matches) == 1:
+            out[name] = matches[0]["player_id"]
+    return out
+
+
+@router.get("/api/teams/{identifier}/qb-history", response_model=TeamQBHistoryResponse)
+def get_team_qb_history(
+    identifier: str = Path(..., max_length=50),
+    season: Optional[int] = Query(None, ge=1990, le=2100),
+    db=Depends(get_db),
+):
+    """Starting-QB history per season (weekly_qb_starts, 2010+), weekly detail for one season."""
+    team = resolve_team(db, identifier)
+    tid = team["team_id"]
+    rows = db.fetchall(
+        """
+        SELECT season, week, qb_name, epa_per_play, snap_count
+        FROM weekly_qb_starts
+        WHERE team_id = ?
+        ORDER BY season DESC, week ASC
+        """,
+        (tid,),
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="No QB start history for this team")
+
+    by_season: Dict[int, Dict[str, dict]] = {}
+    for r in rows:
+        agg = by_season.setdefault(r["season"], {})
+        e = agg.setdefault(r["qb_name"], {"starts": 0, "epa_sum": 0.0, "epa_n": 0})
+        e["starts"] += 1
+        if r["epa_per_play"] is not None:
+            e["epa_sum"] += r["epa_per_play"]
+            e["epa_n"] += 1
+
+    all_names = {r["qb_name"] for r in rows}
+    name_to_pid = _resolve_qb_player_ids(db, all_names)
+
+    seasons_out = []
+    for s in sorted(by_season, reverse=True):
+        starters = sorted(
+            (
+                QBStarterSummary(
+                    qb_name=n,
+                    starts=v["starts"],
+                    avg_epa=round(v["epa_sum"] / v["epa_n"], 3) if v["epa_n"] else None,
+                    player_id=name_to_pid.get(n),
+                )
+                for n, v in by_season[s].items()
+            ),
+            key=lambda q: -q.starts,
+        )
+        seasons_out.append(QBSeasonHistory(season=s, starters=starters))
+
+    detail_season = season if season is not None and season in by_season else max(by_season)
+    weeks = [
+        QBStartWeek(
+            week=r["week"], qb_name=r["qb_name"],
+            epa_per_play=r["epa_per_play"], snap_count=r["snap_count"],
+        )
+        for r in rows if r["season"] == detail_season
+    ]
+
+    return TeamQBHistoryResponse(
+        team_id=tid,
+        team_abbr=team["abbreviation"],
+        seasons=seasons_out,
+        detail_season=detail_season,
+        weeks=weeks,
     )

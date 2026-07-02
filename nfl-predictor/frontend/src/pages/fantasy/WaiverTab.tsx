@@ -11,7 +11,7 @@ import {
   PositionFilterBar, PosBadge, Headshot, MTooltip,
 } from './shared';
 
-export default function WaiverTab() {
+export default function WaiverTab({ excludeIds = [] }: { excludeIds?: number[] }) {
   const [week, setWeek] = useState(1);
   const [season] = useState(LAST_COMPLETED_SEASON);
   const [position, setPosition] = useState<PositionFilter>('ALL');
@@ -29,9 +29,10 @@ export default function WaiverTab() {
       .finally(() => setLoading(false));
   }, [week, season, position, settings.scoring]);
 
-  const visible = hideBye
-    ? players.filter((p) => p.bye_week !== week)
-    : players;
+  const rostered = new Set(excludeIds);
+  const visible = players
+    .filter((p) => !rostered.has(p.player_id))
+    .filter((p) => !hideBye || p.bye_week !== week);
 
   function oppBar(score: number) {
     const pct = Math.round(score * 10);

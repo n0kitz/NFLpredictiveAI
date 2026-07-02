@@ -31,7 +31,7 @@ def _make_player(pid, name, pos, team_id=1, team_abbr='KC', pts=10.0,
 
 
 def _season_long_pool():
-    """Minimal pool that satisfies SEASON_LONG_SLOTS (QB1 RB2 WR2 TE1 FLEX1 K1)."""
+    """Minimal pool that satisfies SEASON_LONG_SLOTS (QB1 RB2 WR2 TE1 FLEX1 K1 DST1)."""
     players = []
     players.append(_make_player(1, 'QB1', 'QB', 1, 'KC', 25.0, 7000))
     players.append(_make_player(2, 'RB1', 'RB', 1, 'KC', 18.0, 6000))
@@ -42,6 +42,8 @@ def _season_long_pool():
     players.append(_make_player(7, 'TE1', 'TE', 1, 'KC', 14.0, 5200))
     players.append(_make_player(8, 'K1', 'K', 4, 'BUF', 8.0, 4000))
     players.append(_make_player(9, 'RB3', 'RB', 3, 'DAL', 12.0, 4800))
+    players.append(_make_player(10, 'DST1', 'DST', 5, 'PIT', 9.0, 3500))
+    players.append(_make_player(11, 'DST2', 'DST', 6, 'NYJ', 7.0, 3200))
     return players
 
 
@@ -128,7 +130,7 @@ class TestOptimizeLineup:
 
     def test_salary_cap_enforced(self):
         players = _season_long_pool()
-        cap = 46_000  # feasible (min combo ~41k)
+        cap = 48_000  # feasible (min combo ~46.5k incl. DST)
         result = optimize_lineup(
             players,
             slots=SEASON_LONG_SLOTS,

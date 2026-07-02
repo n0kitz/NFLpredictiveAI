@@ -6,13 +6,15 @@ import type {
 import DataBadge from '../../components/DataBadge';
 import { CURRENT_SEASON } from '../../config';
 import { posColor } from './helpers';
+import { useLeagueSettings } from './leagueSettings';
 import { PosBadge, Headshot } from './shared';
 
-const SEASON_LONG_SLOTS: Record<string, number> = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1 };
+const SEASON_LONG_SLOTS: Record<string, number> = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1 };
 
 export default function OptimizerTab() {
   const [week, setWeek]           = useState(1);
   const [season]                  = useState(CURRENT_SEASON);
+  const [{ scoring }]             = useLeagueSettings();
   const [mode, setMode]           = useState<'season' | 'dk' | 'fd'>('season');
   const [salaryCap, setSalaryCap] = useState<number | null>(null);
   const [nLineups, setNLineups]   = useState(5);
@@ -27,9 +29,9 @@ export default function OptimizerTab() {
     setLoading(true);
     setError(null);
     try {
-      const allPos = ['QB', 'RB', 'WR', 'TE', 'K'];
+      const allPos = ['QB', 'RB', 'WR', 'TE', 'K', 'DST'];
       const pools = await Promise.all(
-        allPos.map((pos) => api.getFantasyProjections(week, season, pos, 'ppr'))
+        allPos.map((pos) => api.getFantasyProjections(week, season, pos, scoring))
       );
       const players: OptimizerPlayerInput[] = pools.flat().map((p) => ({
         player_id: p.player_id,

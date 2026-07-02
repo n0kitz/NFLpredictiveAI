@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { CURRENT_SEASON } from '../config';
+import { loadMyRoster, saveMyRoster } from './fantasy/myRoster';
 import DashboardTab from './fantasy/DashboardTab';
 import LeaderboardsTab from './fantasy/LeaderboardsTab';
 import WaiverTab from './fantasy/WaiverTab';
@@ -13,7 +15,12 @@ type Tab = typeof TABS[number];
 
 export default function FantasyPage() {
   const [active, setActive] = useState<Tab>('Dashboard');
-  const [rosterIds, setRosterIds] = useState<number[]>([]);
+  // Persisted per season so the imported roster survives reloads
+  const [rosterIds, setRosterIds] = useState<number[]>(() => loadMyRoster(CURRENT_SEASON));
+  const updateRoster = (ids: number[]) => {
+    setRosterIds(ids);
+    saveMyRoster(CURRENT_SEASON, ids);
+  };
 
   return (
     <div className="animate-fade-up">
@@ -49,14 +56,14 @@ export default function FantasyPage() {
       {active === 'Dashboard' && (
         <div className="space-y-6">
           <DashboardTab />
-          <RosterImportHelper onImported={setRosterIds} />
+          <RosterImportHelper onImported={updateRoster} />
           {rosterIds.length > 0 && (
-            <p className="text-xs text-win">Roster set — {rosterIds.length} players imported.</p>
+            <p className="text-xs text-win">Roster set — {rosterIds.length} players imported (saved).</p>
           )}
         </div>
       )}
       {active === 'Leaderboards'   && <LeaderboardsTab />}
-      {active === 'Waiver Wire'    && <WaiverTab />}
+      {active === 'Waiver Wire'    && <WaiverTab excludeIds={rosterIds} />}
       {active === 'Draft'          && <DraftTab />}
       {active === 'Trade Analyzer' && <TradeTabWithValues />}
       {active === 'Power Rankings' && <PowerRankingsTab />}

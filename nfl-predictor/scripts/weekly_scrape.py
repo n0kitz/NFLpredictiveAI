@@ -279,11 +279,19 @@ def main():
     # the weekly job only refreshes data + projections. To retrain, run from the
     # clean venv:  python scripts/train_player_models.py
 
-    # Generate fantasy projections for the current week (uses ML if loaded)
+    # Generate fantasy projections for the current week (uses ML if loaded).
+    # Stale rows are deleted first — the projections endpoint serves cached
+    # rows, so leftovers from an older server (e.g. heuristic-only) would
+    # otherwise mask the fresh run.
     try:
         from src.prediction.fantasy_scorer import FantasyScorer
         scorer = FantasyScorer(db)
         current_week = db.get_current_week(current_season)
+        db.execute(
+            "DELETE FROM fantasy_projections WHERE season = ? AND week = ?",
+            (current_season, current_week),
+        )
+        db.commit()
         projections = scorer.generate_weekly_projections(season=current_season, week=current_week)
         logger.info(f"Fantasy projections generated for week {current_week} ({len(projections)} players)")
     except Exception as e:

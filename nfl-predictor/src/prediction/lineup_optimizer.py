@@ -40,7 +40,7 @@ DFS_SLOTS: Dict[str, Dict[str, Any]] = {
 }
 
 SEASON_LONG_SLOTS: Dict[str, int] = {
-    'QB': 1, 'RB': 2, 'WR': 2, 'TE': 1, 'FLEX': 1, 'K': 1,
+    'QB': 1, 'RB': 2, 'WR': 2, 'TE': 1, 'FLEX': 1, 'K': 1, 'DST': 1,
 }
 SEASON_LONG_FLEX: set = {'RB', 'WR', 'TE'}
 

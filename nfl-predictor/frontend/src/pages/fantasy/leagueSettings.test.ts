@@ -38,6 +38,23 @@ describe('league settings persistence', () => {
   });
 });
 
+describe('my roster persistence', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('round-trips roster ids per season', async () => {
+    const { loadMyRoster, saveMyRoster } = await import('./myRoster');
+    saveMyRoster(2026, [1, 2, 3]);
+    expect(loadMyRoster(2026)).toEqual([1, 2, 3]);
+    expect(loadMyRoster(2025)).toEqual([]);
+  });
+
+  it('tolerates corrupt data', async () => {
+    const { loadMyRoster } = await import('./myRoster');
+    localStorage.setItem('nfl-predictor.myRoster.2026', 'not json');
+    expect(loadMyRoster(2026)).toEqual([]);
+  });
+});
+
 describe('DST position support', () => {
   it('POSITIONS filter includes DST', () => {
     expect(POSITIONS).toContain('DST');

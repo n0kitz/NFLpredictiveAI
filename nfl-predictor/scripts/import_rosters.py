@@ -32,7 +32,8 @@ from src.scraper.roster_scraper import RosterScraper
 from src.scraper.nfl_data_importer import import_player_season_stats
 
 CURRENT_SEASON = datetime.now().year if datetime.now().month >= 9 else datetime.now().year - 1
-STAT_SEASONS = [2022, 2023, 2024]
+# Last three completed seasons (nfl_data_py only has data for finished seasons)
+STAT_SEASONS = list(range(CURRENT_SEASON - 2, CURRENT_SEASON + 1))
 
 # ── Name normalisation helpers ────────────────────────────────────────────────
 
@@ -168,16 +169,26 @@ def _passer_rating(comp: int, att: int, yds: int, tds: int, ints: int) -> float:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--season', type=int, default=CURRENT_SEASON,
+                        help='Season to file the ESPN roster snapshot under '
+                             '(e.g. 2026 for offseason rosters ahead of the draft)')
+    parser.add_argument('--skip-stats', action='store_true',
+                        help='Only fetch rosters, skip nfl_data_py season stats')
+    args = parser.parse_args()
+    roster_season = args.season
+
     db = Database()
 
     print("=" * 60)
     print("  NFL Roster Importer")
-    print(f"  Current season:  {CURRENT_SEASON}")
+    print(f"  Roster season:   {roster_season}")
     print(f"  Stat seasons:    {STAT_SEASONS}")
     print("=" * 60)
 
     # ── Step 1: ESPN rosters ──────────────────────────────────────────────────
-    print(f"\n[1/2] Fetching rosters from ESPN for all 32 teams (season {CURRENT_SEASON})…")
+    print(f"\n[1/2] Fetching rosters from ESPN for all 32 teams (season {roster_season})…")
     scraper = RosterScraper(request_delay=1.0)
     all_rosters = scraper.fetch_all_rosters()
 
@@ -201,7 +212,7 @@ def main() -> None:
                 db.upsert_roster_entry({
                     'player_id':     player_id,
                     'team_id':       team_id,
-                    'season':        CURRENT_SEASON,
+                    'season':        roster_season,
                     'roster_status': player.get('status', 'Active'),
                     'fetched_at':    fetched_at,
                 })
@@ -215,6 +226,11 @@ def main() -> None:
     print(f"  Roster entries upserted: {roster_entries_upserted}")
 
     # ── Step 2: nfl_data_py player season stats ───────────────────────────────
+    if args.skip_stats:
+        db.close()
+        print("\nRoster import complete (stats skipped).")
+        return
+
     print(f"\n[2/2] Importing player season stats from nfl_data_py (seasons {STAT_SEASONS})…")
     try:
         player_rows = import_player_season_stats(STAT_SEASONS)

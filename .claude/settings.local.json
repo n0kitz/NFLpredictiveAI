@@ -28,7 +28,8 @@
       "Bash(git stash *)",
       "Bash(grep -v \"Warning\\\\|warn\\\\|numpy\\\\|^$\")",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(sqlite3 data/nfl.db \"SELECT MAX\\(season\\) FROM games; SELECT COUNT\\(*\\), MAX\\(season\\) FROM roster_entries; SELECT season, week, COUNT\\(*\\) FROM fantasy_projections GROUP BY season, week ORDER BY season DESC, week DESC LIMIT 5; SELECT MAX\\(season\\), MAX\\(week\\) FROM player_weekly_stats;\")"
     ]
   }
 }

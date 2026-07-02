@@ -332,6 +332,19 @@ CREATE TABLE IF NOT EXISTS player_weekly_stats (
     interceptions INTEGER DEFAULT 0,
     fantasy_points_ppr REAL DEFAULT 0,
     fantasy_points_standard REAL DEFAULT 0,
+    fg_made_0_39 INTEGER DEFAULT 0,
+    fg_made_40_49 INTEGER DEFAULT 0,
+    fg_made_50_plus INTEGER DEFAULT 0,
+    fg_missed INTEGER DEFAULT 0,
+    xp_made INTEGER DEFAULT 0,
+    xp_missed INTEGER DEFAULT 0,
+    dst_sacks INTEGER DEFAULT 0,
+    dst_interceptions INTEGER DEFAULT 0,
+    dst_fumbles_recovered INTEGER DEFAULT 0,
+    dst_tds INTEGER DEFAULT 0,
+    dst_safeties INTEGER DEFAULT 0,
+    dst_blocks INTEGER DEFAULT 0,
+    dst_points_allowed INTEGER DEFAULT 0,
     UNIQUE(player_id, season, week)
 );
 CREATE INDEX IF NOT EXISTS idx_player_weekly_season_week ON player_weekly_stats(season, week);

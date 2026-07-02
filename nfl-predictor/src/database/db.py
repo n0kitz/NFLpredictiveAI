@@ -43,6 +43,20 @@ MIGRATIONS: List[str] = [
     "ALTER TABLE prediction_history ADD COLUMN model_edge REAL",
     # v10: VBD column on draft_rankings (Fantasy Depth Pack)
     "ALTER TABLE draft_rankings ADD COLUMN vbd REAL",
+    # v11-v23: kicker + DST columns on player_weekly_stats (fantasy K/DST support)
+    "ALTER TABLE player_weekly_stats ADD COLUMN fg_made_0_39 INTEGER DEFAULT 0",
+    "ALTER TABLE player_weekly_stats ADD COLUMN fg_made_40_49 INTEGER DEFAULT 0",
+    "ALTER TABLE player_weekly_stats ADD COLUMN fg_made_50_plus INTEGER DEFAULT 0",
+    "ALTER TABLE player_weekly_stats ADD COLUMN fg_missed INTEGER DEFAULT 0",
+    "ALTER TABLE player_weekly_stats ADD COLUMN xp_made INTEGER DEFAULT 0",
+    "ALTER TABLE player_weekly_stats ADD COLUMN xp_missed INTEGER DEFAULT 0",
+    "ALTER TABLE player_weekly_stats ADD COLUMN dst_sacks INTEGER DEFAULT 0",
+    "ALTER TABLE player_weekly_stats ADD COLUMN dst_interceptions INTEGER DEFAULT 0",
+    "ALTER TABLE player_weekly_stats ADD COLUMN dst_fumbles_recovered INTEGER DEFAULT 0",
+    "ALTER TABLE player_weekly_stats ADD COLUMN dst_tds INTEGER DEFAULT 0",
+    "ALTER TABLE player_weekly_stats ADD COLUMN dst_safeties INTEGER DEFAULT 0",
+    "ALTER TABLE player_weekly_stats ADD COLUMN dst_blocks INTEGER DEFAULT 0",
+    "ALTER TABLE player_weekly_stats ADD COLUMN dst_points_allowed INTEGER DEFAULT 0",
 ]
 
 
@@ -1189,8 +1203,13 @@ class Database:
                  targets, receptions, rec_yards, rec_tds, target_share, air_yards, adot,
                  rush_attempts, rush_yards, rush_tds,
                  pass_attempts, pass_completions, pass_yards, pass_tds, interceptions,
-                 fantasy_points_ppr, fantasy_points_standard)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 fantasy_points_ppr, fantasy_points_standard,
+                 fg_made_0_39, fg_made_40_49, fg_made_50_plus, fg_missed,
+                 xp_made, xp_missed,
+                 dst_sacks, dst_interceptions, dst_fumbles_recovered, dst_tds,
+                 dst_safeties, dst_blocks, dst_points_allowed)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 stats['player_id'], stats['season'], stats['week'],
@@ -1209,6 +1228,13 @@ class Database:
                 stats.get('interceptions', 0),
                 stats.get('fantasy_points_ppr', 0.0),
                 stats.get('fantasy_points_standard', 0.0),
+                stats.get('fg_made_0_39', 0), stats.get('fg_made_40_49', 0),
+                stats.get('fg_made_50_plus', 0), stats.get('fg_missed', 0),
+                stats.get('xp_made', 0), stats.get('xp_missed', 0),
+                stats.get('dst_sacks', 0), stats.get('dst_interceptions', 0),
+                stats.get('dst_fumbles_recovered', 0), stats.get('dst_tds', 0),
+                stats.get('dst_safeties', 0), stats.get('dst_blocks', 0),
+                stats.get('dst_points_allowed', 0),
             ),
         )
 

@@ -133,9 +133,12 @@ class RosterScraper:
         first_name = athlete.get("firstName", "")
         last_name = athlete.get("lastName", "")
 
-        # Position
+        # Position (ESPN uses "PK" for placekickers; normalize to "K" so
+        # fantasy position filters match)
         pos = athlete.get("position", {})
         position = pos.get("abbreviation") if isinstance(pos, dict) else None
+        if position == "PK":
+            position = "K"
 
         # Jersey
         jersey = athlete.get("jersey")

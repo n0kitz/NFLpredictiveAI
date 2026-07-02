@@ -253,11 +253,24 @@ def main():
     except Exception as e:
         logger.error(f"Roster fetch failed (non-fatal): {e}")
 
-    # Import weekly player stats (nfl_data_py) for ML features
+    # Import weekly player stats (nflverse) for ML features + K/DST fantasy
     try:
-        from src.scraper.player_weekly_importer import import_player_weekly_stats
-        rows = import_player_weekly_stats(db, [current_season])
-        logger.info(f"Weekly player stats: {rows} rows upserted for {current_season}")
+        from src.scraper.player_weekly_importer import (
+            aggregate_kicker_dst_season_stats,
+            fetch_stats_player_week,
+            import_kicker_weekly_stats,
+            import_player_weekly_stats,
+        )
+        from src.scraper.dst_importer import import_dst_weekly_stats
+        spw = fetch_stats_player_week([current_season])
+        rows = import_player_weekly_stats(db, [current_season], df=spw)
+        k_rows = import_kicker_weekly_stats(db, [current_season], df=spw)
+        dst_rows = import_dst_weekly_stats(db, [current_season], df=spw)
+        aggregate_kicker_dst_season_stats(db, [current_season])
+        logger.info(
+            f"Weekly player stats: {rows} offense, {k_rows} kicker, "
+            f"{dst_rows} DST rows upserted for {current_season}"
+        )
     except Exception as e:
         logger.error(f"Weekly player stats import failed (non-fatal): {e}")
 

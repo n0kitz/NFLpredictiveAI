@@ -287,6 +287,20 @@ Replace `YYYY` with the season year (e.g. 2025).
 - `matchup_cache` — Advanced Matchup Engine grades (player×opp×season×week: grade, score, DvP/pace/PROE, components)
 - `user_rosters` — Lineup-optimizer player pool (user×player×season×week: salary, locked/excluded flags)
 
+## Fantasy Upgrade Wave (2026-07-02) — win the fantasy.nfl.com league
+
+Plan: `/Users/normenkitzmann/.claude/plans/swift-growing-wombat.md`. 6 commits (`8b0e3b4`…`c9aabae`), all phases done. **324 backend + 46 frontend tests green.**
+
+- **Data source change:** nflverse retired `player_stats_{year}.parquet` after 2024 — `nfl_data_py.import_weekly_data` 404s for 2025+. Weekly imports now read `stats_player/stats_player_week_{year}.parquet` directly (`fetch_stats_player_week` in `player_weekly_importer.py`). New feed includes kickers (FG distance buckets) + per-player defense stats.
+- **K + DST support:** kicker weekly stats (NFL.com scoring: FG 0-49=3, 50+=5, XP=1) + DST as 32 synthetic players (`espn_id='DST-{abbr}'`, position='DST') aggregated by defteam + points-allowed brackets. 13 new `player_weekly_stats` columns (migrations v11-v23). Season aggregates → `player_season_stats`. ESPN `PK`→`K` normalized. Backfilled 2018-2025; wired into cron.
+- **LeagueSettings** (`src/prediction/league_settings.py`): scoring standard/ppr/half_ppr (standard = NFL.com default everywhere now), league_size 8-20 → dynamic VBD replacement ranks + tier boundaries. `league_size` param on `/api/fantasy/draft-rankings` (computed per request, VBD-ordered board), migration v24.
+- **Draft rankings quality:** two-season ppg blend (65/35) with small-sample shrinkage (<8 games); board ordered by VBD not raw points; real ADP via `scripts/import_adp.py` (FantasyPros CSV → `player_adp` table, migration v25).
+- **Live draft board** `/draft` (`DraftBoardPage` + `pages/fantasy/draftBoard.ts`): snake tracking 8-20 teams, best-available by need-boosted VBD, tier-break alerts, my-roster needs, localStorage persistence.
+- **In-season:** roster import persists (`myRoster.ts`), waiver excludes rostered players, optimizer has DST slot + league scoring, cron deletes stale `fantasy_projections` before regenerating.
+- **Experimental NFL.com sync:** `GET /api/nfl-league/{id}` (needs `NFL_FANTASY_COOKIE` env), applies league settings + pre-fills roster import; 503 → manual fallback.
+- **2026 rosters imported** (2925 players, `import_rosters.py --season 2026 --skip-stats`) — re-run weekly until draft (roster churn). `GET /api/fantasy/draft-rankings?season=2026&scoring=standard&league_size=N` is the draft cheat sheet.
+- ⚠️ Before draft: check the league's actual scoring page on fantasy.nfl.com vs the defaults coded in `dst_importer.py`/`kicker_fantasy_points`.
+
 ## Recent Changes (2026-04)
 
 ### Wave 1 — Core platform

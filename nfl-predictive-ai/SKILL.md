@@ -17,8 +17,18 @@ description: >
 | DB | SQLite + WAL, `data/nfl.db`, `src/database/db.py`, schema in `schema.sql` |
 | ML | GradientBoostingClassifier, **34 features** (docstrings corrected), trained 2013-2022; `load_model()` guards feature mismatch |
 | Frontend | React 19 + TypeScript + Tailwind v4, `frontend/src/` |
-| Tests | pytest, 258 backend tests across 14 files + 18 frontend (vitest), `tests/` & `frontend/src/**/*.test.*` |
+| Tests | pytest, 324 backend tests across 18 files + 46 frontend (vitest), `tests/` & `frontend/src/**/*.test.*` |
 | Infra | Docker Compose: api + frontend + cron |
+
+## Critical Gotchas (2026-07 fantasy wave)
+
+- **nfl_data_py `import_weekly_data` is DEAD for 2025+** — nflverse retired the `player_stats_{year}` release. Use `fetch_stats_player_week(years)` in `src/scraper/player_weekly_importer.py` (`stats_player/stats_player_week_{year}.parquet`). Renames vs old feed: `interceptions`→`passing_interceptions`, `recent_team`→`team`. Filter `season_type=='REG'`.
+- **DST = synthetic players** (`espn_id='DST-{abbr}'`, position='DST', per season via `ensure_dst_players` in `src/scraper/dst_importer.py`) — flows through rankings/projections/optimizer via normal joins.
+- **ESPN codes kickers `PK`** — `roster_scraper` normalizes to `K`; DB UPDATEd once. Don't reintroduce PK.
+- **Draft rankings computed per request** (`/api/fantasy/draft-rankings?league_size=N&scoring=standard`), ordered by **VBD** not raw points; `draft_rankings` table = last-request cache only. Real ADP in `player_adp` (`scripts/import_adp.py`) beats synthetic rank ADP.
+- **LeagueSettings** (`src/prediction/league_settings.py`) owns scoring (**'standard' is the default now**, not ppr), league_size 8-20, replacement ranks, tiers. Frontend twin: `frontend/src/pages/fantasy/leagueSettings.ts` (localStorage hook `useLeagueSettings`). Don't hardcode 'ppr' or 12-team cutoffs.
+- **vitest localStorage**: jsdom ships none — polyfilled in `frontend/src/test/setup.ts`. Run vitest from `frontend/` cwd or the setup file silently doesn't load.
+- **Live draft board** `/draft`: pure logic in `frontend/src/pages/fantasy/draftBoard.ts` (snake, needs, tier breaks), state in localStorage `nfl-predictor.draftBoard.v1`.
 
 ## Critical Gotchas (from 2026-05 audit)
 

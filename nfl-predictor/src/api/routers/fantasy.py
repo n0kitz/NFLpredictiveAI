@@ -75,7 +75,7 @@ def get_fantasy_model_info():
 def get_fantasy_top(
     position: Optional[str] = Query(None),
     season: int = Query(2024),
-    scoring: str = Query("ppr"),
+    scoring: str = Query("standard"),
     limit: int = Query(50, ge=1, le=200),
     db=Depends(get_db),
 ):
@@ -102,7 +102,7 @@ def get_fantasy_projections(
     week: int = Query(...),
     season: int = Query(2024),
     position: str = Query("all"),
-    scoring: str = Query("ppr"),
+    scoring: str = Query("standard"),
     db=Depends(get_db),
 ):
     from ...prediction.fantasy_scorer import FantasyScorer
@@ -151,7 +151,7 @@ def get_start_sit(
 def get_waiver_wire(
     week: int = Query(...),
     season: int = Query(2024),
-    scoring: str = Query("ppr"),
+    scoring: str = Query("standard"),
     position: str = Query("all"),
     limit: int = Query(30, ge=1, le=100),
     db=Depends(get_db),
@@ -173,39 +173,40 @@ def get_waiver_wire(
 @router.get("/api/fantasy/draft-rankings", response_model=List[DraftRankingEntry])
 def get_draft_rankings(
     season: int = Query(2025),
-    scoring: str = Query("ppr"),
+    scoring: str = Query("standard"),
     position: str = Query("all"),
+    league_size: int = Query(10, ge=8, le=20),
     db=Depends(get_db),
 ):
     from ...prediction.fantasy_scorer import FantasyScorer
-    rows = db.get_draft_rankings(season, scoring, position)
     scorer = FantasyScorer(db)
-    if not rows:
-        scorer.generate_draft_rankings(season, scoring)
-        rows = db.get_draft_rankings(season, scoring, position)
-    boom_bust = scorer.bulk_boom_bust(
-        season - 1,
-        player_ids=[r["player_id"] for r in rows],
-    )
-    rankings = []
-    for r in rows:
-        keys = r.keys()
-        bb = boom_bust.get(r["player_id"]) or {}
-        rankings.append(DraftRankingEntry(
+    # Rankings depend on league_size (VBD replacement levels, tiers), so they
+    # are computed per request; the draft_rankings table only caches the most
+    # recently requested configuration.
+    try:
+        rows = scorer.generate_draft_rankings(season, scoring, league_size=league_size)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    pos_filter = position.upper()
+    if pos_filter != "ALL":
+        rows = [r for r in rows if (r["position"] or "").upper() == pos_filter]
+    return [
+        DraftRankingEntry(
             player_id=r["player_id"],
-            full_name=r["full_name"] if "full_name" in keys else "",
-            position=r["position"] if "position" in keys else None,
-            team_abbr=r["team_abbr"] if "team_abbr" in keys else None,
-            headshot_url=r["headshot_url"] if "headshot_url" in keys else None,
+            full_name=r["full_name"] or "",
+            position=r["position"],
+            team_abbr=r["team_abbr"],
+            headshot_url=r["headshot_url"],
             overall_rank=r["overall_rank"], position_rank=r["position_rank"],
             tier=r["tier"], adp=r["adp"],
             projected_season_points=r["projected_season_points"],
             season=r["season"], scoring_format=r["scoring_format"],
-            vbd=r["vbd"] if "vbd" in keys else None,
-            boom_pct=bb.get("boom_pct"),
-            bust_pct=bb.get("bust_pct"),
-        ))
-    return rankings
+            vbd=r["vbd"],
+            boom_pct=r.get("boom_pct"),
+            bust_pct=r.get("bust_pct"),
+        )
+        for r in rows
+    ]
 
 
 @router.post("/api/fantasy/roster")

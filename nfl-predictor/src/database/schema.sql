@@ -248,11 +248,12 @@ CREATE TABLE IF NOT EXISTS player_season_stats (
 CREATE TABLE IF NOT EXISTS fantasy_leagues (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    scoring_format TEXT NOT NULL DEFAULT 'ppr',
-    roster_slots TEXT NOT NULL DEFAULT '{"QB":1,"RB":2,"WR":2,"TE":1,"FLEX":1,"BN":6}',
+    scoring_format TEXT NOT NULL DEFAULT 'standard',
+    roster_slots TEXT NOT NULL DEFAULT '{"QB":1,"RB":2,"WR":2,"TE":1,"FLEX":1,"K":1,"DST":1,"BN":7}',
     waiver_type TEXT DEFAULT 'faab',
     season INTEGER NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    league_size INTEGER DEFAULT 10
 );
 
 CREATE TABLE IF NOT EXISTS fantasy_rosters (

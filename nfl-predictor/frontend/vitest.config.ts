@@ -8,6 +8,9 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: 'jsdom',
+    // jsdom's default about:blank origin is opaque, which disables
+    // localStorage; a real URL enables it for the league-settings tests.
+    environmentOptions: { jsdom: { url: 'http://localhost/' } },
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     css: false,

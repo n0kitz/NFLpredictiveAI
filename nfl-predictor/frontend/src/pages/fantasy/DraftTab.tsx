@@ -6,13 +6,14 @@ import Spinner from '../../components/Spinner';
 import BoomBustBadge from '../../components/BoomBustBadge';
 import { CURRENT_SEASON, recentSeasons } from '../../config';
 import { type PositionFilter } from './helpers';
+import { useLeagueSettings, type Scoring } from './leagueSettings';
 import {
-  PositionFilterBar, ScoringToggle, PosBadge, Headshot,
+  PositionFilterBar, ScoringToggle, LeagueSizeSelect, PosBadge, Headshot,
 } from './shared';
 
 export default function DraftTab() {
   const [season, setSeason] = useState(CURRENT_SEASON);
-  const [scoring, setScoring] = useState('ppr');
+  const [settings, setSettings] = useLeagueSettings();
   const [position, setPosition] = useState<PositionFilter>('ALL');
   const [search, setSearch] = useState('');
   const [rankings, setRankings] = useState<DraftRanking[]>([]);
@@ -20,14 +21,15 @@ export default function DraftTab() {
   const [mockMode, setMockMode] = useState(false);
   const [drafted, setDrafted] = useState<Set<number>>(new Set());
   const navigate = useNavigate();
+  const { scoring, leagueSize } = settings;
 
   useEffect(() => {
     setLoading(true);
-    api.getDraftRankings(season, scoring, position === 'ALL' ? 'all' : position)
+    api.getDraftRankings(season, scoring, position === 'ALL' ? 'all' : position, leagueSize)
       .then(setRankings)
       .catch(() => setRankings([]))
       .finally(() => setLoading(false));
-  }, [season, scoring, position]);
+  }, [season, scoring, position, leagueSize]);
 
   const filtered = rankings.filter((r) => {
     if (mockMode && drafted.has(r.player_id)) return false;
@@ -58,7 +60,14 @@ export default function DraftTab() {
             {recentSeasons(3).map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
         </div>
-        <ScoringToggle value={scoring} onChange={setScoring} />
+        <ScoringToggle
+          value={scoring}
+          onChange={(s) => setSettings({ ...settings, scoring: s as Scoring })}
+        />
+        <LeagueSizeSelect
+          value={leagueSize}
+          onChange={(n) => setSettings({ ...settings, leagueSize: n })}
+        />
         <PositionFilterBar value={position} onChange={setPosition} />
         <input
           value={search}
@@ -93,7 +102,7 @@ export default function DraftTab() {
                   { k: 'ADP' },
                   { k: 'Pos Rank' },
                   { k: 'Proj Pts' },
-                  { k: 'VBD', t: 'Value Based Drafting: projected season points above replacement-level at this position (12-team league baseline)' },
+                  { k: 'VBD', t: `Value Based Drafting: projected season points above replacement-level at this position (${leagueSize}-team league baseline). Rankings are ordered by VBD.` },
                 ].map(({ k, t }) => (
                   <th
                     key={k}

@@ -5,13 +5,17 @@ import type { FantasyLeaderboard, FantasyPlayerEntry } from '../../api/types';
 import Spinner from '../../components/Spinner';
 import { LAST_COMPLETED_SEASON } from '../../config';
 import { type PositionFilter } from './helpers';
+import { useLeagueSettings, type Scoring } from './leagueSettings';
 import {
   PositionFilterBar, ScoringToggle, PosBadge, Headshot,
 } from './shared';
 
 export default function LeaderboardsTab() {
   const [position, setPosition] = useState<PositionFilter>('QB');
-  const [scoring, setScoring] = useState('ppr');
+  const [settings, setSettings] = useLeagueSettings();
+  const scoring = settings.scoring;
+  const setScoring = (s: string) =>
+    setSettings({ ...settings, scoring: s as Scoring });
   const [season] = useState(LAST_COMPLETED_SEASON);
   const [data, setData] = useState<FantasyLeaderboard | null>(null);
   const [loading, setLoading] = useState(false);

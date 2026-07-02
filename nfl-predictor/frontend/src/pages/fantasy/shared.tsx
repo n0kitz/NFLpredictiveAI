@@ -123,12 +123,16 @@ export function PositionFilterBar({
   );
 }
 
+const SCORING_LABELS: Record<string, string> = {
+  standard: 'STD', half_ppr: '½PPR', ppr: 'PPR',
+};
+
 export function ScoringToggle({
   value, onChange,
 }: { value: string; onChange: (s: string) => void }) {
   return (
     <div className="flex gap-1">
-      {(['ppr', 'standard'] as const).map((s) => (
+      {(['standard', 'half_ppr', 'ppr'] as const).map((s) => (
         <button
           key={s}
           onClick={() => onChange(s)}
@@ -138,9 +142,28 @@ export function ScoringToggle({
               : 'bg-surface-800 text-text-muted hover:text-text-secondary border border-border'
           }`}
         >
-          {s === 'ppr' ? 'PPR' : 'STD'}
+          {SCORING_LABELS[s]}
         </button>
       ))}
+    </div>
+  );
+}
+
+export function LeagueSizeSelect({
+  value, onChange,
+}: { value: number; onChange: (n: number) => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <label className="text-xs text-text-muted font-display uppercase tracking-widest">Teams</label>
+      <select
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="bg-surface-800 border border-border rounded px-3 py-1.5 text-sm text-text-secondary focus:outline-none focus:border-accent"
+      >
+        {Array.from({ length: 13 }, (_, i) => i + 8).map((n) => (
+          <option key={n} value={n}>{n}</option>
+        ))}
+      </select>
     </div>
   );
 }

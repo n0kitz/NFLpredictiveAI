@@ -6,6 +6,7 @@ import Spinner from '../../components/Spinner';
 import BoomBustBadge from '../../components/BoomBustBadge';
 import { LAST_COMPLETED_SEASON } from '../../config';
 import { matchupColor, type PositionFilter } from './helpers';
+import { useLeagueSettings } from './leagueSettings';
 import {
   PositionFilterBar, PosBadge, Headshot, MTooltip,
 } from './shared';
@@ -17,15 +18,16 @@ export default function WaiverTab() {
   const [hideBye, setHideBye] = useState(true);
   const [players, setPlayers] = useState<FantasyProjection[]>([]);
   const [loading, setLoading] = useState(false);
+  const [settings] = useLeagueSettings();
   const navigate = useNavigate();
 
   useEffect(() => {
     setLoading(true);
-    api.getWaiverWire(week, season, 'ppr', position === 'ALL' ? 'all' : position, 30)
+    api.getWaiverWire(week, season, settings.scoring, position === 'ALL' ? 'all' : position, 30)
       .then(setPlayers)
       .catch(() => setPlayers([]))
       .finally(() => setLoading(false));
-  }, [week, season, position]);
+  }, [week, season, position, settings.scoring]);
 
   const visible = hideBye
     ? players.filter((p) => p.bye_week !== week)

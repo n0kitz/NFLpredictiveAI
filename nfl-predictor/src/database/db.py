@@ -57,6 +57,8 @@ MIGRATIONS: List[str] = [
     "ALTER TABLE player_weekly_stats ADD COLUMN dst_safeties INTEGER DEFAULT 0",
     "ALTER TABLE player_weekly_stats ADD COLUMN dst_blocks INTEGER DEFAULT 0",
     "ALTER TABLE player_weekly_stats ADD COLUMN dst_points_allowed INTEGER DEFAULT 0",
+    # v24: league size on fantasy_leagues (8-20 team VBD support)
+    "ALTER TABLE fantasy_leagues ADD COLUMN league_size INTEGER DEFAULT 10",
 ]
 
 

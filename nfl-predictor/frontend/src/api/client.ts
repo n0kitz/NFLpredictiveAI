@@ -124,13 +124,13 @@ export const api = {
     get<StartSitResult>(
       `/fantasy/start-sit?player1_id=${player1Id}&player2_id=${player2Id}&week=${week}&season=${season}`
     ),
-  getWaiverWire: (week: number, season = LAST_COMPLETED_SEASON, scoring = 'ppr', position = 'all', limit = 30) =>
+  getWaiverWire: (week: number, season = LAST_COMPLETED_SEASON, scoring = 'standard', position = 'all', limit = 30) =>
     get<FantasyProjection[]>(
       `/fantasy/waiver?week=${week}&season=${season}&scoring=${scoring}&position=${encodeURIComponent(position)}&limit=${limit}`
     ),
-  getDraftRankings: (season = CURRENT_SEASON, scoring = 'ppr', position = 'all') =>
+  getDraftRankings: (season = CURRENT_SEASON, scoring = 'standard', position = 'all', leagueSize = 10) =>
     get<DraftRanking[]>(
-      `/fantasy/draft-rankings?season=${season}&scoring=${scoring}&position=${encodeURIComponent(position)}`
+      `/fantasy/draft-rankings?season=${season}&scoring=${scoring}&position=${encodeURIComponent(position)}&league_size=${leagueSize}`
     ),
   analyzeTrade: (body: {
     give_player_ids: number[];

@@ -32,19 +32,35 @@ _INJURY_RULES: Dict[str, tuple] = {
     'Questionable': (0.7, 'low'),
 }
 
-_FANTASY_POSITIONS = ('QB', 'RB', 'WR', 'TE', 'K')
+_FANTASY_POSITIONS = ('QB', 'RB', 'WR', 'TE', 'K', 'DST')
+_POSITIONS_SQL = ','.join(f"'{p}'" for p in _FANTASY_POSITIONS)
 
-# Tier boundaries (cumulative player count thresholds)
-_TIER_BOUNDARIES = [12, 36, 60, 84, 108, 132, 156, 180]
+# Two-season blend weights for projected season points (recency-weighted ppg)
+_BLEND_LAST = 0.65
+_BLEND_PRIOR = 0.35
+_SEASON_GAMES = 17
 
-# Replacement-level position rank for VBD (12-team league assumption)
-_REPLACEMENT_LEVEL: Dict[str, int] = {
-    'QB': 12,
-    'RB': 30,
-    'WR': 36,
-    'TE': 12,
-    'K': 12,
-}
+
+def blend_projected_season_points(last_pts: float, last_games: int,
+                                  prior_pts: float, prior_games: int) -> float:
+    """Project season points from a recency-weighted per-game blend.
+
+    Uses ppg so partial seasons extrapolate instead of penalizing; falls back
+    to whichever season has data. Small samples shrink linearly below 8 total
+    games so a one-game blowup can't extrapolate into an elite season.
+    """
+    last_ppg = (last_pts / last_games) if last_games else 0.0
+    prior_ppg = (prior_pts / prior_games) if prior_games else 0.0
+    if last_games and prior_games:
+        ppg = _BLEND_LAST * last_ppg + _BLEND_PRIOR * prior_ppg
+    elif last_games:
+        ppg = last_ppg
+    elif prior_games:
+        ppg = prior_ppg
+    else:
+        return 0.0
+    shrink = min(1.0, (last_games + prior_games) / 8)
+    return round(ppg * _SEASON_GAMES * shrink, 1)
 
 # Boom/bust thresholds (multipliers of player's season average PPR points)
 _BOOM_THRESHOLD = 1.5
@@ -267,7 +283,7 @@ class FantasyScorer:
         """
         # ── 1. All skill players + season stats in one query ─────────────────
         player_rows = self.db.fetchall(
-            """
+            f"""
             SELECT p.player_id, p.full_name, p.position, p.headshot_url,
                    re.team_id, re.is_starter,
                    t.abbreviation AS team_abbr,
@@ -278,7 +294,7 @@ class FantasyScorer:
             LEFT JOIN player_season_stats pss
                 ON pss.player_id = p.player_id AND pss.season = ?
             LEFT JOIN teams t ON t.team_id = re.team_id
-            WHERE p.position IN ('QB','RB','WR','TE','K')
+            WHERE p.position IN ({_POSITIONS_SQL})
             GROUP BY p.player_id
             """,
             (season, season),
@@ -576,34 +592,47 @@ class FantasyScorer:
 
     # ── Draft rankings ───────────────────────────────────────────────────────
 
-    def generate_draft_rankings(self, season: int, scoring_format: str) -> List[Dict[str, Any]]:
+    def generate_draft_rankings(self, season: int, scoring_format: str,
+                                league_size: int = 10) -> List[Dict[str, Any]]:
         """
-        Generate and persist draft rankings for a given season and scoring format.
+        Generate and persist draft rankings for a season, scoring format and
+        league size.
 
-        Base score: previous season fantasy points. Adjusts for player age (>30)
-        and injury frequency. Assigns tiers, position ranks, and ADP (rank + gaussian σ=2).
-        Returns a sorted list of ranking dicts.
+        Base score: recency-weighted per-game blend of the last two completed
+        seasons (65/35), extrapolated to 17 games. Adjusts for player age (>30)
+        and injury frequency. Replacement levels (VBD) and tier boundaries
+        derive from LeagueSettings, so an 8-team and a 20-team league produce
+        different value boards.
         """
+        from .league_settings import LeagueSettings
+
+        settings = LeagueSettings(scoring=scoring_format, league_size=league_size)
         prev_season = season - 1
-        pts_col = 'fantasy_points_ppr' if scoring_format == 'ppr' else 'fantasy_points_standard'
+        prior_season = season - 2
+        pts_expr = settings.points_expr('pss')
+        pts_expr_prior = settings.points_expr('pss2')
 
         rows = self.db.fetchall(
             f"""
             SELECT p.player_id, p.full_name, p.position, p.headshot_url,
                    p.date_of_birth, p.experience_years,
                    t.abbreviation AS team_abbr,
-                   COALESCE(pss.{pts_col}, 0) AS season_pts,
-                   COALESCE(pss.games_played, 0) AS games_played
+                   COALESCE({pts_expr}, 0) AS season_pts,
+                   COALESCE(pss.games_played, 0) AS games_played,
+                   COALESCE({pts_expr_prior}, 0) AS prior_pts,
+                   COALESCE(pss2.games_played, 0) AS prior_games
             FROM players p
             JOIN roster_entries re ON re.player_id = p.player_id AND re.season = ?
             LEFT JOIN player_season_stats pss
                 ON pss.player_id = p.player_id AND pss.season = ?
+            LEFT JOIN player_season_stats pss2
+                ON pss2.player_id = p.player_id AND pss2.season = ?
             LEFT JOIN teams t ON t.team_id = re.team_id
-            WHERE p.position IN ('QB','RB','WR','TE','K')
+            WHERE p.position IN ({_POSITIONS_SQL})
             GROUP BY p.player_id
             ORDER BY season_pts DESC
             """,
-            (season, prev_season),
+            (season, prev_season, prior_season),
         )
 
         if not rows:
@@ -613,23 +642,40 @@ class FantasyScorer:
                 SELECT p.player_id, p.full_name, p.position, p.headshot_url,
                        p.date_of_birth, p.experience_years,
                        t.abbreviation AS team_abbr,
-                       COALESCE(pss.{pts_col}, 0) AS season_pts,
-                       COALESCE(pss.games_played, 0) AS games_played
+                       COALESCE({pts_expr}, 0) AS season_pts,
+                       COALESCE(pss.games_played, 0) AS games_played,
+                       0 AS prior_pts, 0 AS prior_games
                 FROM players p
                 JOIN roster_entries re ON re.player_id = p.player_id AND re.season = ?
                 LEFT JOIN player_season_stats pss ON pss.player_id = p.player_id
                 LEFT JOIN teams t ON t.team_id = re.team_id
-                WHERE p.position IN ('QB','RB','WR','TE','K')
+                WHERE p.position IN ({_POSITIONS_SQL})
                 GROUP BY p.player_id
                 ORDER BY season_pts DESC
                 """,
                 (season,),
             )
 
+        # Bulk injury-report counts keyed by lowercase last name (avoids one
+        # LIKE query per player)
+        injury_counts: Dict[str, int] = {}
+        for r in self.db.fetchall(
+            "SELECT player_name, COUNT(*) AS cnt FROM injury_reports "
+            "GROUP BY player_name", ()
+        ):
+            name = (r['player_name'] or '').strip()
+            if name:
+                last = name.split()[-1].lower()
+                injury_counts[last] = injury_counts.get(last, 0) + int(r['cnt'])
+
         # Compute adjusted scores
         scored: List[Dict[str, Any]] = []
         for r in rows:
-            score = float(r['season_pts'] or 0)
+            projected = blend_projected_season_points(
+                float(r['season_pts'] or 0), int(r['games_played'] or 0),
+                float(r['prior_pts'] or 0), int(r['prior_games'] or 0),
+            )
+            score = projected
 
             # Age penalty: −2 % per year above 30
             dob = r['date_of_birth']
@@ -642,7 +688,8 @@ class FantasyScorer:
                     pass
 
             # Injury-frequency penalty: −5 % per report beyond 2
-            inj_count = self._get_injury_frequency(r['full_name'])
+            last = (r['full_name'] or '').strip().split()[-1].lower() if r['full_name'] else ''
+            inj_count = injury_counts.get(last, 0)
             if inj_count > 2:
                 score *= max(0.8, 1.0 - 0.05 * (inj_count - 2))
 
@@ -653,21 +700,39 @@ class FantasyScorer:
                 'headshot_url': r['headshot_url'],
                 'team_abbr':  r['team_abbr'],
                 'adj_score':  score,
-                'season_pts': float(r['season_pts'] or 0),
+                'season_pts': projected,
             })
 
         scored.sort(key=lambda x: x['adj_score'], reverse=True)
 
-        # Replacement-level baseline points per position (for VBD)
-        # Walk scored list once, capture nth-ranked player's adj_score per position
+        # Replacement-level baseline points per position (for VBD),
+        # derived from league size + roster slots
+        replacement_level = settings.replacement_ranks()
+        tier_boundaries = settings.tier_boundaries()
         replacement_pts: Dict[str, float] = {}
         pos_rank_walk: Dict[str, int] = {}
         for entry in scored:
             pos = entry['position'] or 'OTH'
             pos_rank_walk[pos] = pos_rank_walk.get(pos, 0) + 1
-            cutoff = _REPLACEMENT_LEVEL.get(pos)
+            cutoff = replacement_level.get(pos)
             if cutoff and pos_rank_walk[pos] == cutoff:
                 replacement_pts[pos] = float(entry['adj_score'])
+
+        # VBD per entry, then order the board by value over replacement —
+        # raw points would stack QBs at the top even when a RB is the scarcer
+        # (and therefore more valuable) pick.
+        for entry in scored:
+            replacement = replacement_pts.get(entry['position'] or 'OTH')
+            entry['vbd'] = (
+                round(max(0.0, float(entry['adj_score']) - replacement), 1)
+                if replacement is not None
+                else None
+            )
+        scored.sort(
+            key=lambda x: (x['vbd'] if x['vbd'] is not None else -1.0,
+                           x['adj_score']),
+            reverse=True,
+        )
 
         # Boom/bust from prior season weekly data (same as projections)
         boom_bust_by_player = self.bulk_boom_bust(prev_season)
@@ -680,19 +745,14 @@ class FantasyScorer:
             pos_rank_counter[pos] = pos_rank_counter.get(pos, 0) + 1
             pos_rank = pos_rank_counter[pos]
 
-            tier = len(_TIER_BOUNDARIES)
-            for i, boundary in enumerate(_TIER_BOUNDARIES, start=1):
+            tier = len(tier_boundaries)
+            for i, boundary in enumerate(tier_boundaries, start=1):
                 if overall_rank <= boundary:
                     tier = i
                     break
 
             adp = float(overall_rank)
-            replacement = replacement_pts.get(pos)
-            vbd = (
-                round(max(0.0, float(entry['adj_score']) - replacement), 1)
-                if replacement is not None
-                else None
-            )
+            vbd = entry['vbd']
             bb = boom_bust_by_player.get(entry['player_id']) or {}
 
             ranking: Dict[str, Any] = {

@@ -559,6 +559,23 @@ export interface RosterImportResult {
   unmatched: string[];
 }
 
+// ── NFL.com league sync (experimental) ───────────────────────────────────────
+
+export interface NflLeagueSync {
+  settings: {
+    league_id: string;
+    name: string;
+    league_size: number;
+    scoring: string;
+  };
+  teams: {
+    team_id: string;
+    team_name: string;
+    players: [string, string][]; // [name, position]
+  }[];
+  experimental: boolean;
+}
+
 // ── Value Picks ───────────────────────────────────────────────────────────────
 
 export interface ValuePick {

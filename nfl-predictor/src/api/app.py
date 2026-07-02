@@ -12,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 
 from ..config import settings
 from ..observability import setup_logging, metrics
-from .routers import teams, games, predictions, fantasy, misc, matchup
+from .routers import teams, games, predictions, fantasy, misc, matchup, nfl_league
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -77,4 +77,5 @@ app.include_router(games.router)
 app.include_router(predictions.router)
 app.include_router(fantasy.router)
 app.include_router(matchup.router)
+app.include_router(nfl_league.router)
 app.include_router(misc.router)

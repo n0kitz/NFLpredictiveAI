@@ -15,6 +15,7 @@ import type {
   ValuePicksResponse, ValuePickHistoryResponse, TeamScheduleResponse, SimulationResult,
   PlayerWeeklyStatsResponse,
   MatchupGrade, OptimizeRequest, OptimizeDFSRequest, OptimizeResponse,
+  NflLeagueSync,
 } from './types';
 import { CURRENT_SEASON, LAST_COMPLETED_SEASON, ACCURACY_SEASONS } from '../config';
 
@@ -156,6 +157,10 @@ export const api = {
 
   importRosterByNames: (names: string[], season = LAST_COMPLETED_SEASON) =>
     post<RosterImportResult>('/fantasy/roster/import-by-names', { names, season }),
+
+  // Experimental fantasy.nfl.com sync (503 unless server has NFL_FANTASY_COOKIE)
+  getNflLeagueSync: (leagueId: string) =>
+    get<NflLeagueSync>(`/nfl-league/${encodeURIComponent(leagueId)}`),
 
   // Value picks
   getValuePicks: (minEdge?: number) =>

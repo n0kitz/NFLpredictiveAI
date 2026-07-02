@@ -2,6 +2,7 @@ import { useParams, Link } from 'react-router-dom';
 import { usePlayer } from '../hooks/useApi';
 import Spinner from '../components/Spinner';
 import PlayerWeeklyHeatmap from '../components/PlayerWeeklyHeatmap';
+import PlayerGameLog from '../components/PlayerGameLog';
 import BoomBustBadge from '../components/BoomBustBadge';
 import { getTeamColors } from '../theme/teamColors';
 
@@ -227,6 +228,10 @@ export default function PlayerPage() {
 
       <div className="mt-6">
         <PlayerWeeklyHeatmap playerId={player.player_id} position={player.position} />
+      </div>
+
+      <div className="mt-6">
+        <PlayerGameLog playerId={player.player_id} position={player.position} />
       </div>
     </div>
   );

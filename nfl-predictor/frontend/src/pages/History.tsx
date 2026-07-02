@@ -104,6 +104,14 @@ export default function History() {
                       <td className="px-4 py-2.5 text-center">
                         {p.correct === null ? (
                           <span className="text-text-muted text-xs">Pending</span>
+                        ) : p.game_id !== null ? (
+                          <Link
+                            to={`/games/${p.game_id}`}
+                            title="View game detail"
+                            className={`font-display font-bold text-xs hover:underline ${p.correct ? 'text-win' : 'text-loss'}`}
+                          >
+                            {p.correct ? 'CORRECT' : 'WRONG'} ↗
+                          </Link>
                         ) : p.correct ? (
                           <span className="text-win font-display font-bold text-xs">CORRECT</span>
                         ) : (

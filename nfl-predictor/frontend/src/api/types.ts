@@ -65,6 +65,78 @@ export interface Game {
   winner_abbr: string | null;
   winner_id: number | null;
   overtime: boolean;
+  venue?: string | null;
+  attendance?: number | null;
+}
+
+export interface GameOdds {
+  id: number;
+  game_id: number | null;
+  opening_spread: number | null;
+  over_under: number | null;
+  home_implied_prob: number | null;
+  away_implied_prob: number | null;
+  fetched_at: string | null;
+}
+
+export interface GameBoxScorePlayer {
+  player_id: number;
+  full_name: string;
+  position: string | null;
+  team_id: number;
+  team_abbr: string | null;
+  headshot_url: string | null;
+  is_home: boolean;
+  pass_completions: number;
+  pass_attempts: number;
+  pass_yards: number;
+  pass_tds: number;
+  interceptions: number;
+  rush_attempts: number;
+  rush_yards: number;
+  rush_tds: number;
+  targets: number;
+  receptions: number;
+  rec_yards: number;
+  rec_tds: number;
+  fantasy_points_ppr: number;
+}
+
+export interface GameFactorEntry {
+  team_abbr: string | null;
+  team_name: string | null;
+  factor_type: string;
+  factor_value: string | null;
+  impact_rating: number;
+}
+
+export interface GameDetail extends Game {
+  odds: GameOdds | null;
+  weather: WeatherInfo | null;
+  factors: GameFactorEntry[];
+  home_box: GameBoxScorePlayer[];
+  away_box: GameBoxScorePlayer[];
+  box_score_available: boolean;
+}
+
+export interface GameRetrodiction {
+  game_id: number;
+  season: number;
+  week: string;
+  cutoff_date: string;
+  model: string;
+  home_abbr: string;
+  away_abbr: string;
+  home_prob: number;
+  away_prob: number;
+  predicted_winner_abbr: string;
+  predicted_winner_prob: number;
+  confidence: string;
+  predicted_spread: number | null;
+  actual_winner_abbr: string | null;
+  actual_margin: number | null;
+  correct: boolean | null;
+  key_factors: string[];
 }
 
 export interface GameList {
@@ -206,6 +278,7 @@ export interface PredictionHistoryItem {
   predicted_at: string;
   actual_winner_abbr: string | null;
   correct: boolean | null;
+  game_id: number | null;
 }
 
 export interface PredictionHistory {
@@ -411,16 +484,30 @@ export interface PlayerWeekCell {
   is_bye: boolean;
   snaps: number | null;
   snap_pct: number;
+  route_pct: number;
   routes: number;
   targets: number;
   target_share: number;
+  receptions: number;
   rec_yards: number;
+  rec_tds: number;
+  air_yards: number;
+  adot: number;
+  rush_attempts: number;
   rush_yards: number;
+  rush_tds: number;
+  pass_attempts: number;
+  pass_completions: number;
   pass_yards: number;
+  pass_tds: number;
+  interceptions: number;
   fantasy_points_ppr: number;
   fantasy_points_standard: number;
   opponent_abbr: string | null;
   is_home: boolean;
+  team_score: number | null;
+  opp_score: number | null;
+  result: string | null;
 }
 
 export interface PlayerWeeklyStatsResponse {

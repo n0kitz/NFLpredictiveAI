@@ -140,6 +140,8 @@ docker compose run scraper               # One-off data scrape
 - `GET  /api/teams/{id}/games` — Recent games
 - `GET  /api/teams/{id}/roster` — Current roster with player stats (`?season=`)
 - `GET  /api/games` — Games (filter by season/type, `?limit=` param, no limit when season is set)
+- `GET  /api/games/{game_id}` — Full game detail: meta (venue/attendance) + odds + weather + factors + box score (top performers from `player_weekly_stats`, regular season 2018+)
+- `GET  /api/games/{game_id}/retrodiction` — What the model would have predicted (cutoff-aware, mirrors backtester config: weighted-sum, no factors); HIT/MISS vs actual winner; 400 for unplayed games
 - `GET  /api/games/{game_id}/odds` — Vegas odds for a game (404 if none; display-only)
 - `GET  /api/games/{game_id}/conditions` — Injury reports + weather for a game
 - `POST /api/predict` — Predict (JSON body, supports optional `factors` array; auto-saves; includes `vegas_context` + `conditions`)
@@ -201,7 +203,8 @@ Replace `YYYY` with the season year (e.g. 2025).
 | `/seasons/:year?` | Season | 3 tabs: Standings (by division), Games (by week accordion), Playoff Picture (AFC/NFC seeding) |
 | `/history` | History | Auto-saved prediction log with accuracy tracking |
 | `/playoffs` | Playoffs | Seed 14 teams → simulate WC/Div/Conf/SB bracket |
-| `/players/:id` | PlayerPage | Full player detail: bio, position-specific stats, fantasy points |
+| `/players/:id` | PlayerPage | Full player detail: bio, position-specific stats, fantasy points, game-by-game log |
+| `/games/:id` | GameDetail | Played-game detail: scoreboard, venue/attendance, model retrodiction (HIT/MISS), betting line + ATS cover, weather, box score (2018+), factors |
 | `/fantasy` | FantasyPage | 7 tabs: Dashboard, Leaderboards, Waiver Wire, Draft, Trade Analyzer, Power Rankings, Optimizer (MILP lineups + matchup-grade pills in Dashboard) |
 
 **PlayerModal**: overlay component on TeamDetail; shows headshot, position badge, jersey, bio, position-specific stats (QB/RB/WR/TE logic), fantasy points PPR+Standard.
@@ -234,7 +237,7 @@ Replace `YYYY` with the season year (e.g. 2025).
 - `/stats` endpoint uses `calculate_team_metrics()` (3-season window, tuned for predictions)
 - `/profile` endpoint aggregates `team_season_stats` table directly (correct all-time totals)
 - `POST /api/predict` accepts optional `factors` array for inline game factors (no game_id needed)
-- Predictions auto-save to `prediction_history` table; weekly cron enriches them with actual results
+- Predictions auto-save to `prediction_history` table; weekly cron enriches them with actual results **and links `game_id`** (History page → `/games/:id`); `backfill_prediction_game_ids()` inside `enrich_prediction_history()` links legacy resolved rows, outcome-consistently (idempotent)
 - Theme system: CSS variables for dark mode, teamColors.ts for team-specific styling
 - All team colors/styling are independent from component logic (swap theme without touching pages)
 - Scraper has cloudscraper fallback: if requests gets 403, it retries with cloudscraper automatically

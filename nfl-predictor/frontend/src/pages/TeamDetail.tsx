@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useTeamProfile, useTeamMetrics, useTeamGames, useTeamRoster } from '../hooks/useApi';
 import Spinner from '../components/Spinner';
 import TrendChart from '../components/TrendChart';
@@ -29,6 +29,7 @@ function computeRollingStats(games: import('../api/types').Game[], teamId: numbe
 
 export default function TeamDetail() {
   const { abbr } = useParams<{ abbr: string }>();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'overview' | 'roster'>('overview');
   const [statView, setStatView] = useState<StatView>('season');
   const [selectedPlayer, setSelectedPlayer] = useState<PlayerEntry | null>(null);
@@ -285,10 +286,23 @@ export default function TeamDetail() {
                     const oppAbbr = isHome ? g.away_abbr : g.home_abbr;
                     const won = g.winner_id === profile.team_id;
                     const tie = g.winner_id === null && g.home_score !== null;
+                    const hasScore = g.home_score !== null;
                     return (
                       <div
                         key={g.game_id}
-                        className="flex items-center justify-between text-sm py-2.5 border-b border-border last:border-0 hover:bg-surface-700/30 -mx-2 px-2 rounded transition-colors"
+                        onClick={hasScore ? () => navigate(`/games/${g.game_id}`) : undefined}
+                        onKeyDown={hasScore ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            navigate(`/games/${g.game_id}`);
+                          }
+                        } : undefined}
+                        role={hasScore ? 'link' : undefined}
+                        tabIndex={hasScore ? 0 : undefined}
+                        aria-label={hasScore ? `View game detail: ${isHome ? 'vs' : 'at'} ${oppAbbr} on ${g.date}` : undefined}
+                        className={`flex items-center justify-between text-sm py-2.5 border-b border-border last:border-0 -mx-2 px-2 rounded transition-colors ${
+                          hasScore ? 'cursor-pointer hover:bg-surface-700/30 focus-visible:bg-surface-700/30 focus-visible:outline-none' : ''
+                        }`}
                       >
                         <span className="text-text-muted w-24 text-xs tabular-nums">{g.date}</span>
                         <span className="text-text-muted w-8 text-xs font-display uppercase tracking-wider">
@@ -296,6 +310,7 @@ export default function TeamDetail() {
                         </span>
                         <Link
                           to={`/teams/${oppAbbr}`}
+                          onClick={(e) => e.stopPropagation()}
                           className="text-text-secondary hover:text-accent flex-1 transition-colors font-medium"
                         >
                           {oppAbbr}

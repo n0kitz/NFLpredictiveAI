@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
 import { ACCURACY_SEASONS } from '../config';
-import type { TeamList, Prediction, PredictionExplanation, H2H, TeamMetrics, TeamProfile, GameList, AccuracyStats, InlineFactor, TeamRoster, PlayerProfile } from '../api/types';
+import type { TeamList, Prediction, PredictionExplanation, H2H, TeamMetrics, TeamProfile, GameList, AccuracyStats, InlineFactor, TeamRoster, PlayerProfile, GameDetail } from '../api/types';
 
 /** Generic hook for async data fetching with loading/error states. */
 function useAsync<T>(fetcher: () => Promise<T>, deps: unknown[] = []) {
@@ -128,4 +128,12 @@ export function usePlayer(playerId: number | null) {
 /** Fetch value picks (games where model disagrees with Vegas by ≥4pp). */
 export function useValuePicks() {
   return useAsync(() => api.getValuePicks(), []);
+}
+
+/** Fetch full detail (meta + odds + weather + factors + box score) for a game. */
+export function useGameDetail(gameId: number | null) {
+  return useAsync<GameDetail>(
+    () => (gameId ? api.getGameDetail(gameId) : Promise.reject(new Error('no id'))),
+    [gameId],
+  );
 }

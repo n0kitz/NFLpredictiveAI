@@ -18,6 +18,7 @@ const PlayerPage = lazy(() => import('./pages/PlayerPage'));
 const FantasyPage = lazy(() => import('./pages/FantasyPage'));
 const DraftBoardPage = lazy(() => import('./pages/DraftBoardPage'));
 const TeamSchedule = lazy(() => import('./pages/TeamSchedule'));
+const GameDetail = lazy(() => import('./pages/GameDetail'));
 
 export default function App() {
   return (
@@ -36,6 +37,7 @@ export default function App() {
               <Route path="/history" element={<History />} />
               <Route path="/playoffs" element={<Playoffs />} />
               <Route path="/players/:id" element={<PlayerPage />} />
+              <Route path="/games/:id" element={<GameDetail />} />
               <Route path="/fantasy" element={<FantasyPage />} />
               <Route path="/draft" element={<DraftBoardPage />} />
               <Route path="*" element={<NotFound />} />

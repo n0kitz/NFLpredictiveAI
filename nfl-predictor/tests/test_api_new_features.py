@@ -82,6 +82,39 @@ class TestAccuracyDetail:
         assert data["best_calls"] == []
 
 
+# ── Playoff odds ────────────────────────────────────────────────────────────────
+
+class TestPlayoffOdds:
+    def test_playoff_odds_retro_2024(self):
+        # as_of_week=17 leaves only week 18 to simulate — fast
+        r = client.get("/api/seasons/2024/playoff-odds?as_of_week=17&sims=100")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["season"] == 2024
+        assert data["n_sims"] == 100
+        assert data["games_simulated"] > 0
+        assert len(data["teams"]) == 32
+        for conf in ("AFC", "NFC"):
+            mass = sum(t["playoff_pct"] for t in data["teams"] if t["conference"] == conf)
+            assert abs(mass - 700.0) < 1.0  # 7 seeds × 100%
+        for t in data["teams"]:
+            assert t["top_seed_pct"] <= t["division_pct"] + 0.11  # seed 1 is always a division winner
+
+    def test_playoff_odds_deterministic_cache(self):
+        r1 = client.get("/api/seasons/2024/playoff-odds?as_of_week=17&sims=100")
+        r2 = client.get("/api/seasons/2024/playoff-odds?as_of_week=17&sims=100")
+        assert r1.json()["teams"] == r2.json()["teams"]
+
+    def test_playoff_odds_bounds(self):
+        assert client.get("/api/seasons/1800/playoff-odds").status_code == 422
+        assert client.get("/api/seasons/2024/playoff-odds?as_of_week=25").status_code == 422
+        assert client.get("/api/seasons/2024/playoff-odds?sims=5").status_code == 422
+        assert client.get("/api/seasons/2024/playoff-odds?sims=999999").status_code == 422
+
+    def test_playoff_odds_missing_season(self):
+        assert client.get("/api/seasons/2098/playoff-odds").status_code == 404
+
+
 # ── Model info feature importance ───────────────────────────────────────────────
 
 class TestModelFeatureImportance:

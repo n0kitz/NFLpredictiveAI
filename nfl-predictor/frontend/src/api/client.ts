@@ -15,7 +15,7 @@ import type {
   ValuePicksResponse, ValuePickHistoryResponse, TeamScheduleResponse, SimulationResult,
   PlayerWeeklyStatsResponse, GameDetail, GameRetrodiction,
   MatchupGrade, OptimizeRequest, OptimizeDFSRequest, OptimizeResponse,
-  AccuracyDetail, ModelInfo, DataCoverage,
+  AccuracyDetail, ModelInfo, DataCoverage, PlayoffOdds,
 } from './types';
 import { CURRENT_SEASON, LAST_COMPLETED_SEASON, ACCURACY_SEASONS } from '../config';
 
@@ -152,6 +152,13 @@ export const api = {
   // Playoff Picture
   getPlayoffPicture: (year: number) =>
     get<PlayoffPicture>(`/seasons/${year}/playoff-picture`),
+  getPlayoffOdds: (year: number, asOfWeek?: number, sims?: number) => {
+    const params = new URLSearchParams();
+    if (asOfWeek !== undefined) params.set('as_of_week', String(asOfWeek));
+    if (sims !== undefined) params.set('sims', String(sims));
+    const qs = params.toString();
+    return get<PlayoffOdds>(`/seasons/${year}/playoff-odds${qs ? `?${qs}` : ''}`);
+  },
 
   // Team upcoming schedule
   getTeamUpcoming: (id: string, season = CURRENT_SEASON, limit = 4) =>

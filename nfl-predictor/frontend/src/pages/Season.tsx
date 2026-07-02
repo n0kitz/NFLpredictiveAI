@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Game, PlayoffPicture, PlayoffTeamEntry } from '../api/types';
+import type { Game, PlayoffPicture, PlayoffTeamEntry, PlayoffOdds } from '../api/types';
 import Spinner from '../components/Spinner';
 import PlayoffBracket from '../components/PlayoffBracket';
 import { getTeamColors } from '../theme/teamColors';
@@ -30,7 +30,7 @@ export default function Season() {
   const [standings, setStandings] = useState<Standing[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'standings' | 'games' | 'playoff'>('standings');
+  const [tab, setTab] = useState<'standings' | 'games' | 'playoff' | 'odds'>('standings');
 
   useEffect(() => {
     if (paramYear) setYear(Number(paramYear));
@@ -146,7 +146,7 @@ export default function Season() {
       </div>
 
       <div className="flex gap-1 mb-6 border-b border-border animate-fade-up stagger-1">
-        {(['standings', 'games', 'playoff'] as const).map((t) => (
+        {(['standings', 'games', 'playoff', 'odds'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -154,7 +154,7 @@ export default function Season() {
               tab === t ? 'text-accent' : 'text-text-muted hover:text-text-secondary'
             }`}
           >
-            {t === 'playoff' ? 'Playoff Picture' : t}
+            {t === 'playoff' ? 'Playoff Picture' : t === 'odds' ? 'Playoff Odds' : t}
             {tab === t && <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-accent rounded-full" />}
           </button>
         ))}
@@ -229,6 +229,142 @@ export default function Season() {
 
       {!loading && tab === 'playoff' && (
         <PlayoffPictureTab year={year} />
+      )}
+
+      {!loading && tab === 'odds' && (
+        <PlayoffOddsTab year={year} />
+      )}
+    </div>
+  );
+}
+
+// ── Playoff Odds Tab (Monte Carlo) ────────────────────────────────────────────
+
+const ODDS_WEEKS = Array.from({ length: 18 }, (_, i) => i + 1);
+
+function OddsCell({ pct }: { pct: number }) {
+  return (
+    <div className="flex items-center gap-2 justify-end">
+      <div className="w-14 h-1.5 bg-surface-800 rounded overflow-hidden hidden sm:block">
+        <div className="h-full bg-accent rounded-r" style={{ width: `${pct}%` }} />
+      </div>
+      <span className={`tabular-nums w-12 text-right ${
+        pct >= 99.95 ? 'text-win font-semibold' : pct < 0.05 ? 'text-text-muted' : 'text-text-primary'
+      }`}>
+        {pct >= 99.95 ? '100%' : pct < 0.05 ? '—' : `${pct.toFixed(1)}%`}
+      </span>
+    </div>
+  );
+}
+
+function PlayoffOddsTab({ year }: { year: number }) {
+  const [asOfWeek, setAsOfWeek] = useState<number | undefined>(undefined);
+  const [data, setData] = useState<PlayoffOdds | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api.getPlayoffOdds(year, asOfWeek)
+      .then((d) => { if (!cancelled) setData(d); })
+      .catch((e) => { if (!cancelled) setError(e.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [year, asOfWeek]);
+
+  return (
+    <div className="space-y-4 animate-fade-up">
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="text-xs text-text-muted">Simulate from</label>
+        <select
+          value={asOfWeek ?? 'current'}
+          onChange={(e) => setAsOfWeek(e.target.value === 'current' ? undefined : Number(e.target.value))}
+          className="bg-surface-800 border border-border rounded px-2 py-1 text-sm text-text-primary"
+        >
+          <option value="current">Current standings</option>
+          {ODDS_WEEKS.map((w) => (
+            <option key={w} value={w}>Through week {w}</option>
+          ))}
+        </select>
+        {data && !loading && (
+          <span className="text-xs text-text-muted">
+            {data.n_sims.toLocaleString()} simulations · {data.games_simulated} games simulated
+          </span>
+        )}
+      </div>
+
+      {error && <p className="text-loss text-sm py-4">{error}</p>}
+      {loading && <Spinner text="Simulating season (first run can take ~10s)..." />}
+
+      {data && !loading && data.games_simulated === 0 && (
+        <div className="rounded-xl border border-border bg-surface-850 p-5 text-sm text-text-muted">
+          Every game is already played — these odds reflect the final standings.
+          Pick a week above to replay the playoff race from that point.
+        </div>
+      )}
+
+      {data && !loading && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {(['AFC', 'NFC'] as const).map((conf) => {
+            const teams = data.teams.filter((t) => t.conference === conf);
+            return (
+              <div key={conf} className="rounded-xl border border-border bg-surface-850 overflow-hidden">
+                <div className="px-4 py-2.5 bg-surface-800/50 border-b border-border">
+                  <span className="font-display text-[11px] font-bold uppercase tracking-[0.2em] text-accent">
+                    {conf}
+                  </span>
+                </div>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-[9px] text-text-muted uppercase tracking-wider font-display border-b border-border">
+                      <th className="text-left px-3 py-2">Team</th>
+                      <th className="text-center px-2 py-2">Record</th>
+                      <th className="text-right px-2 py-2">Proj W</th>
+                      <th className="text-right px-3 py-2">Playoffs</th>
+                      <th className="text-right px-3 py-2 hidden md:table-cell">Division</th>
+                      <th className="text-right px-3 py-2 hidden md:table-cell">#1 Seed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {teams.map((t) => {
+                      const tc = getTeamColors(t.team_abbr);
+                      return (
+                        <tr key={t.team_id} className="border-b border-border/50 last:border-0 hover:bg-surface-700/30 transition-colors">
+                          <td className="px-3 py-2">
+                            <Link to={`/teams/${t.team_abbr}`} className="flex items-center gap-2 hover:text-accent transition-colors">
+                              <span className="w-5 h-5 rounded-sm flex items-center justify-center text-[8px] font-display font-bold text-white shrink-0"
+                                style={{ backgroundColor: tc.primary }}>
+                                {t.team_abbr}
+                              </span>
+                              <span className="font-medium text-text-primary">{t.team_abbr}</span>
+                            </Link>
+                          </td>
+                          <td className="text-center px-2 py-2 tabular-nums text-text-secondary">
+                            {t.wins}-{t.losses}{t.ties > 0 ? `-${t.ties}` : ''}
+                          </td>
+                          <td className="text-right px-2 py-2 tabular-nums text-text-secondary">{t.mean_wins.toFixed(1)}</td>
+                          <td className="px-3 py-2"><OddsCell pct={t.playoff_pct} /></td>
+                          <td className="px-3 py-2 hidden md:table-cell"><OddsCell pct={t.division_pct} /></td>
+                          <td className="px-3 py-2 hidden md:table-cell"><OddsCell pct={t.top_seed_pct} /></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {data && !loading && (
+        <p className="text-[10px] text-text-muted">
+          Monte Carlo simulation: remaining games use the model's win probabilities
+          (each predicted with pre-game data only). Division winners seed 1-4, top three
+          non-winners take the wildcards.
+        </p>
       )}
     </div>
   );

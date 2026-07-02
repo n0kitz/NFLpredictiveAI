@@ -5,7 +5,7 @@ import time
 from collections import defaultdict
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -19,9 +19,12 @@ from ..schemas import (
     PlayerWeeklyStatsResponse, PlayerWeekCell,
     AccuracyDetailResponse, WeeklyRecordEntry, NotableGameEntry,
     DataCoverageEntry, DataCoverageResponse,
+    PlayoffOddsTeam, PlayoffOddsResponse,
 )
 from ...prediction.backtester import Backtester
 from ...prediction.factors import FactorAdjuster
+from ...prediction.season_simulator import simulate_season
+from ...prediction.standings import conference_seeding, finalize_win_pct
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -617,15 +620,11 @@ def get_playoff_picture(year: int, db=Depends(get_db)):
         except (TypeError, ValueError):
             pass
 
+    finalize_win_pct(stats)
     for s in stats.values():
-        total = s["wins"] + s["losses"] + s["ties"]
-        s["win_pct"] = (s["wins"] + s["ties"] * 0.5) / total if total > 0 else 0.0
         s["conf_record"] = f"{s['conf_wins']}-{s['conf_losses']}"
         s["div_record"] = f"{s['div_wins']}-{s['div_losses']}"
         s["point_diff"] = s["points_for"] - s["points_against"]
-
-    def sort_key(t: dict):
-        return (t["win_pct"], t["conf_wins"] - t["conf_losses"], t["point_diff"])
 
     def make_row(t: dict) -> dict:
         return {
@@ -638,20 +637,7 @@ def get_playoff_picture(year: int, db=Depends(get_db)):
 
     conf_data = {}
     for conf in ("AFC", "NFC"):
-        conf_teams = [s for s in stats.values() if s["conference"] == conf]
-        divisions_seen = sorted(set(s["division"] for s in conf_teams))
-        division_leaders = []
-        non_leaders = []
-
-        for div in divisions_seen:
-            div_teams = sorted([s for s in conf_teams if s["division"] == div], key=sort_key, reverse=True)
-            if div_teams:
-                division_leaders.append(div_teams[0])
-                non_leaders.extend(div_teams[1:])
-
-        division_leaders.sort(key=sort_key, reverse=True)
-        non_leaders.sort(key=sort_key, reverse=True)
-
+        division_leaders, non_leaders = conference_seeding(stats.values(), conf)
         conf_data[conf] = {
             "division_leaders": [make_row(t) for t in division_leaders],
             "wildcard": [make_row(t) for t in non_leaders[:3]],
@@ -659,6 +645,41 @@ def get_playoff_picture(year: int, db=Depends(get_db)):
         }
 
     return {"season": year, "weeks_played": max_week, "has_playoff_picture": max_week >= 10, **conf_data}
+
+
+# In-memory playoff-odds cache: (season, as_of_week, sims) → (result_dict, timestamp)
+_playoff_odds_cache: dict = {}
+
+
+@router.get("/api/seasons/{year}/playoff-odds", response_model=PlayoffOddsResponse, tags=["seasons"])
+@limiter.limit("5/minute")
+def get_playoff_odds(
+    request: Request,
+    year: int = Path(..., ge=1990, le=2100),
+    as_of_week: Optional[int] = Query(None, ge=1, le=18),
+    sims: int = Query(1000, ge=100, le=2000),
+    db=Depends(get_db),
+):
+    """Monte Carlo playoff odds. Retro mode via as_of_week ("odds entering week N+1")."""
+    from datetime import datetime, timezone
+
+    cache_key = (year, as_of_week, sims)
+    now = time.time()
+    cached = _playoff_odds_cache.get(cache_key)
+    if cached and (now - cached[1]) < _CACHE_TTL:
+        return PlayoffOddsResponse(**cached[0])
+
+    engine = get_engine()
+    # Fixed RNG seed keeps results deterministic and cache-consistent
+    result = simulate_season(db, engine, year, as_of_week=as_of_week, n_sims=sims, seed=42)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"No regular-season games found for {year}")
+
+    result["generated_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    if len(_playoff_odds_cache) >= 50:
+        _playoff_odds_cache.pop(next(iter(_playoff_odds_cache)))
+    _playoff_odds_cache[cache_key] = (result, now)
+    return PlayoffOddsResponse(**result)
 
 
 @router.get("/api/picks/value", response_model=ValuePicksResponse, tags=["predictions"])

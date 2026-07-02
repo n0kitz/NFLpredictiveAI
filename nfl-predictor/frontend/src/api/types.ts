@@ -693,6 +693,34 @@ export interface ValuePickHistoryResponse {
   hit_rate: number | null;
 }
 
+// ── Playoff Odds (Monte Carlo) ────────────────────────────────────────────────
+
+export interface PlayoffOddsTeam {
+  team_id: number;
+  team_abbr: string;
+  team_name: string;
+  conference: string;
+  division: string;
+  wins: number;
+  losses: number;
+  ties: number;
+  mean_wins: number;
+  playoff_pct: number;
+  division_pct: number;
+  top_seed_pct: number;
+  seed_distribution: Record<string, number>;
+}
+
+export interface PlayoffOdds {
+  season: number;
+  as_of_week: number | null;
+  weeks_completed: number;
+  games_simulated: number;
+  n_sims: number;
+  generated_at: string;
+  teams: PlayoffOddsTeam[];
+}
+
 // ── Model Hub ─────────────────────────────────────────────────────────────────
 
 export interface WeeklyRecordEntry {

@@ -372,6 +372,34 @@ class AccuracyDetailResponse(BaseModel):
     biggest_misses: List[NotableGameEntry]  # most confident wrong picks
 
 
+# ── Playoff odds (Monte Carlo) ─────────────────────────
+
+class PlayoffOddsTeam(BaseModel):
+    team_id: int
+    team_abbr: str
+    team_name: str
+    conference: str
+    division: str
+    wins: int
+    losses: int
+    ties: int
+    mean_wins: float
+    playoff_pct: float
+    division_pct: float
+    top_seed_pct: float
+    seed_distribution: Dict[str, float]
+
+
+class PlayoffOddsResponse(BaseModel):
+    season: int
+    as_of_week: Optional[int] = None
+    weeks_completed: int
+    games_simulated: int
+    n_sims: int
+    generated_at: str
+    teams: List[PlayoffOddsTeam]
+
+
 # ── Data coverage ──────────────────────────────────────
 
 class DataCoverageEntry(BaseModel):

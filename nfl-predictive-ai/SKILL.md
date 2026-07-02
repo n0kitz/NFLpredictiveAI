@@ -17,7 +17,7 @@ description: >
 | DB | SQLite + WAL, `data/nfl.db`, `src/database/db.py`, schema in `schema.sql` |
 | ML | GradientBoostingClassifier, **34 features** (docstrings corrected), trained 2013-2022; `load_model()` guards feature mismatch |
 | Frontend | React 19 + TypeScript + Tailwind v4, `frontend/src/` |
-| Tests | pytest, 258 backend tests across 14 files + 18 frontend (vitest), `tests/` & `frontend/src/**/*.test.*` |
+| Tests | pytest, 297 backend tests across 16 files + 39 frontend (vitest), `tests/` & `frontend/src/**/*.test.*` |
 | Infra | Docker Compose: api + frontend + cron |
 
 ## Critical Gotchas (from 2026-05 audit)
@@ -83,7 +83,7 @@ Check plan file for granular sub-tasks. Update Status as phases complete.
 - 258 backend tests, 14 files — **all pass** in a clean `.venv` (`pip install -r requirements.txt`: numpy<2, shap 0.46, httpx) with `data/nfl.db` present. Anaconda base (numpy 2.x) fails the player-ML tests.
 - Tests with `pytestmark = pytest.mark.skipif(not DEFAULT_DB_PATH.exists(), ...)` skip silently without DB
 - Frontend tests: ✅ vitest + RTL set up 2026-06-25 (`npm test` / `npm run test:watch`); config in `vitest.config.ts` (separate from vite.config). **18 tests** (config, DataBadge, fantasy helpers, MatchupGradePill, OptimizerTab) — expand coverage.
-- `test_roster.py` inserts test data into real DB, never cleans up
+- `test_roster.py` — ✅ FIXED 2026-07-02: module fixture deletes its `TEST_ESPN_*` rows (players + roster_entries + player_season_stats) on teardown
 
 ## Key File Map
 
@@ -96,6 +96,8 @@ Check plan file for granular sub-tasks. Update Status as phases complete.
 | Feature vector | `src/prediction/feature_builder.py` (34 features) |
 | Fantasy scoring | `src/prediction/fantasy_scorer.py` |
 | Matchup grades | `src/prediction/matchup_engine.py` (DvP/pace/PROE → A–F) |
+| Playoff odds sim | `src/prediction/season_simulator.py` (Monte Carlo) + `standings.py` (shared seeding) |
+| Model Hub UI | `frontend/src/pages/ModelHub.tsx` (`/model`: calibration, replay, importance, coverage) |
 | Lineup optimizer | `src/prediction/lineup_optimizer.py` (MILP/PuLP; `routers/matchup.py`) |
 | Settings / env | `src/config.py` (backend), `frontend/src/config.ts` (seasons) |
 | Logging / metrics | `src/observability.py` (`/api/metrics`) |

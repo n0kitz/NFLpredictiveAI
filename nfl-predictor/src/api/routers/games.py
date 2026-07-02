@@ -149,6 +149,11 @@ def get_game_detail(
     )
 
 
+# Retrodiction results are deterministic per played game → TTL-cache them
+_retrodiction_cache: dict = {}
+_RETRO_CACHE_TTL = 86400  # 24 hours
+
+
 @router.get("/api/games/{game_id}/retrodiction", response_model=GameRetrodictionResponse)
 def get_game_retrodiction(
     game_id: int = Path(..., ge=1, le=9_223_372_036_854_775_807),
@@ -161,6 +166,13 @@ def get_game_retrodiction(
     (weighted-sum, no manual factors, no ML). Compares against the actual
     winner to report a hit/miss.
     """
+    import time as _time
+
+    now = _time.time()
+    cached = _retrodiction_cache.get(game_id)
+    if cached and (now - cached[1]) < _RETRO_CACHE_TTL:
+        return GameRetrodictionResponse(**cached[0])
+
     game = db.get_game_detail(game_id)
     if not game:
         raise HTTPException(status_code=404, detail=f"Game {game_id} not found")
@@ -198,7 +210,7 @@ def get_game_retrodiction(
         actual_winner_abbr = g["home_abbr"] if winner_id == g["home_team_id"] else g["away_abbr"]
         correct = predicted_winner_id == winner_id
 
-    return GameRetrodictionResponse(
+    result = GameRetrodictionResponse(
         game_id=game_id,
         season=g["season"],
         week=str(g.get("week", "")),
@@ -216,6 +228,10 @@ def get_game_retrodiction(
         correct=correct,
         key_factors=list(pred.key_factors or [])[:6],
     )
+    if len(_retrodiction_cache) >= 500:
+        _retrodiction_cache.pop(next(iter(_retrodiction_cache)))
+    _retrodiction_cache[game_id] = (result.model_dump(), now)
+    return result
 
 
 @router.get("/api/games/{game_id}/odds", response_model=GameOddsResponse)
@@ -258,7 +274,8 @@ def simulate_game(req: SimulateRequest, db=Depends(get_db)):
     away_abbr = away_team["abbreviation"] if away_team else req.away_team
 
     # Use predicted spread to calibrate scoring if available
-    predicted_spread = base_pred.predicted_spread  # home-relative (negative = home favored)
+    # predicted_spread = modelled home margin (home_score - away_score; positive = home favored)
+    predicted_spread = base_pred.predicted_spread
 
     home_wins = 0
     home_scores: list[float] = []
@@ -276,10 +293,10 @@ def simulate_game(req: SimulateRequest, db=Depends(get_db)):
 
         # If spread model gave a prediction, use it to calibrate score split
         if predicted_spread is not None:
-            # spread = home_score - away_score (negative means home favored)
+            # spread = home_score - away_score → home gets the margin added
             half = total / 2.0
-            home_s = half - predicted_spread / 2.0
-            away_s = half + predicted_spread / 2.0
+            home_s = half + predicted_spread / 2.0
+            away_s = half - predicted_spread / 2.0
         else:
             # Split proportional to win probability
             home_s = total * noisy_prob

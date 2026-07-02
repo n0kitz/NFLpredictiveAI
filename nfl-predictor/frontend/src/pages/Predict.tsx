@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useTeams, usePrediction, useExplainPrediction, useH2H } from '../hooks/useApi';
 import TeamSelector from '../components/TeamSelector';
 import PredictionCard from '../components/PredictionCard';
@@ -11,11 +12,24 @@ import type { InlineFactor } from '../api/types';
 
 export default function Predict() {
   const { data: teamList } = useTeams();
-  const [homeAbbr, setHomeAbbr] = useState('');
-  const [awayAbbr, setAwayAbbr] = useState('');
+  const [params] = useSearchParams();
+  const [homeAbbr, setHomeAbbr] = useState(params.get('home')?.toUpperCase() ?? '');
+  const [awayAbbr, setAwayAbbr] = useState(params.get('away')?.toUpperCase() ?? '');
   const [factors, setFactors] = useState<InlineFactor[]>([]);
   const { data: prediction, loading, error, predict } = usePrediction();
   const { data: explanationData, loading: explainLoading, explain } = useExplainPrediction();
+
+  // Auto-run once when arriving via a deep link (?away=KC&home=PHI)
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (autoRan.current) return;
+    autoRan.current = true;
+    if (homeAbbr && awayAbbr && homeAbbr !== awayAbbr) {
+      predict(homeAbbr, awayAbbr, undefined);
+      explain(homeAbbr, awayAbbr, undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const showH2H = !!(prediction && homeAbbr && awayAbbr);
 

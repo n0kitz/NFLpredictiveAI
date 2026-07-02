@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import type { PlayerEntry } from '../api/types';
 import type { TeamColor } from '../theme/teamColors';
 
@@ -271,6 +272,16 @@ export default function PlayerModal({ player, teamColors, onClose }: Props) {
             No season stats available.
           </div>
         )}
+
+        {/* Full profile link */}
+        <div className="px-6 pb-5 pt-2 text-center border-t border-border">
+          <Link
+            to={`/players/${player.player_id}`}
+            className="inline-flex items-center gap-1.5 mt-3 font-display text-[11px] font-bold uppercase tracking-[0.12em] text-accent hover:text-accent-hover transition-colors"
+          >
+            Full profile — game log, trends &amp; more →
+          </Link>
+        </div>
       </div>
     </div>
   );

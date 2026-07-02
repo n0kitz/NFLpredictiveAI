@@ -8,7 +8,9 @@ import Spinner from '../components/Spinner';
 import { getTeamColors } from '../theme/teamColors';
 import { CURRENT_SEASON } from '../config';
 
-const FEATURED_MATCHUPS: [string, string][] = [
+// Classic rivalries — used only in the offseason when no games are scheduled,
+// and labelled as previews rather than live matchups.
+const RIVALRY_PREVIEWS: [string, string][] = [
   ['KC', 'PHI'],
   ['SF', 'DAL'],
   ['BAL', 'BUF'],
@@ -130,7 +132,7 @@ function EditorialHeader({ accuracy, top }: { accuracy: AccuracyStats; top: Matc
 
 // ── StoryCard ────────────────────────────────────────────────────────────────
 
-function StoryCard({ m, index }: { m: MatchupResult; index: number }) {
+function StoryCard({ m, index, preview }: { m: MatchupResult; index: number; preview: boolean }) {
   const { prediction: pred, homeAbbr, awayAbbr } = m;
   const awayPct = Math.round(pred.away_win_probability * 100);
   const homePct = 100 - awayPct;
@@ -164,7 +166,9 @@ function StoryCard({ m, index }: { m: MatchupResult; index: number }) {
       <div className="p-5">
         {/* Meta row */}
         <div className="flex items-center justify-between mb-4 font-display text-[10px] font-bold tracking-[0.14em]">
-          <span className="text-text-muted">{isFeatured ? 'FEATURED' : 'THIS WEEK'}</span>
+          <span className="text-text-muted">
+            {preview ? 'RIVALRY PREVIEW' : isFeatured ? 'FEATURED' : 'THIS WEEK'}
+          </span>
           <span
             className="px-2 py-0.5 rounded-sm text-[9px]"
             style={{ color: confColor, background: `${confColor}18`, border: `1px solid ${confColor}30` }}
@@ -207,7 +211,7 @@ function StoryCard({ m, index }: { m: MatchupResult; index: number }) {
             </div>
           </div>
           <Link
-            to="/predict"
+            to={`/predict?away=${awayAbbr}&home=${homeAbbr}`}
             className="font-display text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-sm transition-colors"
             style={{ color: winnerColors.primary, border: `1px solid ${winnerColors.primary}40`, background: `${winnerColors.primary}10` }}
             onMouseEnter={e => (e.currentTarget.style.background = `${winnerColors.primary}25`)}
@@ -223,19 +227,23 @@ function StoryCard({ m, index }: { m: MatchupResult; index: number }) {
 
 // ── WeekStoryGrid ────────────────────────────────────────────────────────────
 
-function WeekStoryGrid({ matchups }: { matchups: MatchupResult[] }) {
+function WeekStoryGrid({ matchups, preview }: { matchups: MatchupResult[]; preview: boolean }) {
   const highCount = matchups.filter(m => m.prediction.confidence === 'high').length;
   return (
     <div className="animate-fade-up stagger-2">
       <div className="flex items-baseline gap-4 mb-6">
-        <h2 className="font-display text-[26px] font-extrabold tracking-[-0.03em]">The Slate</h2>
+        <h2 className="font-display text-[26px] font-extrabold tracking-[-0.03em]">
+          {preview ? 'Offseason Previews' : 'The Slate'}
+        </h2>
         <span className="font-display text-[11px] text-text-muted tracking-[0.04em]">
-          {matchups.length} matchups &middot; {highCount} high-confidence {highCount === 1 ? 'call' : 'calls'}
+          {preview
+            ? 'No scheduled games — classic rivalry predictions'
+            : <>{matchups.length} matchups &middot; {highCount} high-confidence {highCount === 1 ? 'call' : 'calls'}</>}
         </span>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {matchups.map((m, i) => (
-          <StoryCard key={`${m.awayAbbr}-${m.homeAbbr}`} m={m} index={i} />
+          <StoryCard key={`${m.awayAbbr}-${m.homeAbbr}`} m={m} index={i} preview={preview} />
         ))}
       </div>
     </div>
@@ -264,8 +272,10 @@ function SleeperRow({ pick, rank }: { pick: ValuePick; rank: number }) {
   })();
 
   return (
-    <div
-      className={`grid items-center py-4 px-3.5 border-b border-border transition-colors cursor-default ${
+    <Link
+      to={`/predict?away=${pick.away_team}&home=${pick.home_team}`}
+      aria-label={`Predict ${pick.away_team} at ${pick.home_team}`}
+      className={`grid items-center py-4 px-3.5 border-b border-border transition-colors ${
         isOdd ? 'border-r border-border' : ''
       }`}
       style={{ gridTemplateColumns: '28px auto 1fr auto auto', gap: '12px' }}
@@ -300,7 +310,7 @@ function SleeperRow({ pick, rank }: { pick: ValuePick; rank: number }) {
           {pick.model_confidence}
         </div>
       </div>
-    </div>
+    </Link>
   );
 }
 
@@ -366,6 +376,7 @@ function SleeperColumn({ picks }: { picks: ValuePick[] }) {
 
 export default function Dashboard() {
   const [matchups, setMatchups] = useState<MatchupResult[]>([]);
+  const [isPreview, setIsPreview] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { data: accuracy } = useAccuracy(String(CURRENT_SEASON));
@@ -376,10 +387,9 @@ export default function Dashboard() {
     async function load() {
       try {
         // Try to use upcoming games from the current season
-        const currentYear = new Date().getFullYear();
         let matchupPairs: [string, string][] = [];
         try {
-          const gameData = await api.getGames(currentYear, 'regular');
+          const gameData = await api.getGames(CURRENT_SEASON, 'regular');
           const upcoming = gameData.games
             .filter(g => g.home_score === null && g.home_abbr && g.away_abbr)
             .slice(0, 8);
@@ -387,10 +397,11 @@ export default function Dashboard() {
             matchupPairs = upcoming.map(g => [g.away_abbr!, g.home_abbr!]);
           }
         } catch {
-          // Fall through to hardcoded list
+          // Fall through to rivalry previews
         }
         if (matchupPairs.length === 0) {
-          matchupPairs = FEATURED_MATCHUPS;
+          matchupPairs = RIVALRY_PREVIEWS;
+          if (!cancelled) setIsPreview(true);
         }
 
         const settled = await Promise.allSettled(
@@ -442,7 +453,7 @@ export default function Dashboard() {
 
       {/* The Slate — matchup story grid */}
       {slateMatchups.length > 0 && (
-        <WeekStoryGrid matchups={slateMatchups} />
+        <WeekStoryGrid matchups={slateMatchups} preview={isPreview} />
       )}
 
       {/* Value picks column */}

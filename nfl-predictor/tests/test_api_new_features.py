@@ -171,6 +171,41 @@ class TestTeamQBHistory:
         assert client.get("/api/teams/ZZZZ/qb-history").status_code == 404
 
 
+# ── Spread sign convention ──────────────────────────────────────────────────────
+
+class TestSpreadSignConvention:
+    """predicted_spread = home_score - away_score (positive = home favored).
+
+    Regression guard: the Monte Carlo simulate endpoint and the frontend once
+    interpreted it Vegas-style (negative = home favored), inverting margins.
+    """
+
+    def test_retrodiction_spread_agrees_with_pick(self):
+        # Find a decisively predicted played game and check sign coherence
+        r = client.get("/api/accuracy/detail?season=2024")
+        best = r.json()["best_calls"][0]  # most confident correct pick
+        retro = client.get(f"/api/games/{best['game_id']}/retrodiction").json()
+        if retro.get("predicted_spread") is None:
+            pytest.skip("spread model not loaded")
+        home_picked = retro["home_prob"] > retro["away_prob"]
+        if home_picked:
+            assert retro["predicted_spread"] > 0
+        else:
+            assert retro["predicted_spread"] < 0
+
+    def test_simulated_favorite_outscores_on_average(self):
+        r = client.post(
+            "/api/games/simulate",
+            json={"home_team": "PHI", "away_team": "KC", "n": 500},
+        )
+        assert r.status_code == 200
+        d = r.json()
+        if d["home_win_pct"] >= 0.65:
+            assert d["avg_home_score"] > d["avg_away_score"]
+        elif d["home_win_pct"] <= 0.35:
+            assert d["avg_away_score"] > d["avg_home_score"]
+
+
 # ── Model info feature importance ───────────────────────────────────────────────
 
 class TestModelFeatureImportance:

@@ -162,7 +162,7 @@ export default function PredictionCard({ prediction, homeAbbr, awayAbbr, compact
         </div>
 
         {/* Footer bar */}
-        <div className="mt-3 pt-3 border-t border-border flex items-center justify-between">
+        <div className="mt-3 pt-3 border-t border-border flex items-center justify-between gap-3">
           <span className="text-[11px] text-text-muted tracking-wide">
             Confidence:{' '}
             <span
@@ -177,6 +177,20 @@ export default function PredictionCard({ prediction, homeAbbr, awayAbbr, compact
               {prediction.confidence.toUpperCase()}
             </span>
           </span>
+          {prediction.predicted_spread != null && prediction.predicted_spread !== 0 && (
+            <span
+              className="text-[11px] text-text-muted tracking-wide"
+              title="The model's own point spread (negative number = favored by that many points)"
+            >
+              Model line:{' '}
+              <span className="font-semibold text-text-secondary tabular-nums">
+                {/* predicted_spread = modelled home margin; positive → home favored */}
+                {prediction.predicted_spread > 0
+                  ? `${homeAbbr} -${prediction.predicted_spread.toFixed(1)}`
+                  : `${awayAbbr} -${Math.abs(prediction.predicted_spread).toFixed(1)}`}
+              </span>
+            </span>
+          )}
           <span
             className="font-display text-sm font-semibold uppercase tracking-wide"
             style={{ color: homeIsWinner ? homeColors.primary : awayColors.primary }}

@@ -155,10 +155,10 @@ function RetrodictionCard({ gameId }: { gameId: number }) {
           </span>
           {data.predicted_spread != null && (
             <span>
-              {/* predicted_spread uses Vegas convention: negative = home favored */}
+              {/* predicted_spread is the modelled home margin (home_score − away_score) */}
               Predicted margin:{' '}
               <span className="text-text-secondary font-semibold tabular-nums">
-                {data.home_abbr} {data.predicted_spread < 0 ? '+' : ''}{(-data.predicted_spread).toFixed(1)}
+                {data.home_abbr} {data.predicted_spread > 0 ? '+' : ''}{data.predicted_spread.toFixed(1)}
               </span>
             </span>
           )}

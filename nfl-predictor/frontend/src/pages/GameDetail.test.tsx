@@ -13,7 +13,8 @@ const retro = (over: Partial<GameRetrodiction> = {}): GameRetrodiction => ({
   game_id: 1, season: 2023, week: '1', cutoff_date: '2023-09-07', model: 'weighted_sum',
   home_abbr: 'KC', away_abbr: 'DET', home_prob: 0.6332, away_prob: 0.3668,
   predicted_winner_abbr: 'KC', predicted_winner_prob: 0.6332, confidence: 'low',
-  predicted_spread: -0.9, actual_winner_abbr: 'DET', actual_margin: -1, correct: false,
+  // predicted_spread = modelled home margin: model picked KC (home) → positive
+  predicted_spread: 0.9, actual_winner_abbr: 'DET', actual_margin: -1, correct: false,
   key_factors: ['KC: 0-0 record, +280 point diff'],
   ...over,
 });
@@ -96,6 +97,8 @@ describe('GameDetail', () => {
     expect(screen.getByText('DET 37%')).toBeInTheDocument();
     expect(screen.getByText('KC 63%')).toBeInTheDocument();
     expect(screen.getByText(/before 2023-09-07/)).toBeInTheDocument();
+    // predicted_spread is the home margin: +0.9 → shown as "KC +0.9", never inverted
+    expect(screen.getByText('KC +0.9')).toBeInTheDocument();
   });
 
   it('shows a HIT verdict when the model called it right', async () => {

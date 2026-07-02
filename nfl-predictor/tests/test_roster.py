@@ -16,7 +16,19 @@ pytestmark = pytest.mark.skipif(
 def db():
     database = Database(DEFAULT_DB_PATH)
     yield database
-    database.close()
+    # Clean up every row these tests created (marker: espn_id TEST_ESPN_*)
+    try:
+        rows = database.fetchall(
+            "SELECT player_id FROM players WHERE espn_id LIKE 'TEST_ESPN_%'", ()
+        )
+        for r in rows:
+            pid = r["player_id"]
+            database.execute("DELETE FROM player_season_stats WHERE player_id = ?", (pid,))
+            database.execute("DELETE FROM roster_entries WHERE player_id = ?", (pid,))
+            database.execute("DELETE FROM players WHERE player_id = ?", (pid,))
+        database.commit()
+    finally:
+        database.close()
 
 
 class TestPlayerUpsert:

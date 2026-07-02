@@ -139,6 +139,8 @@ docker compose run scraper               # One-off data scrape
 - `GET  /api/teams/{id}/season/{year}` — Season stats
 - `GET  /api/teams/{id}/games` — Recent games
 - `GET  /api/teams/{id}/roster` — Current roster with player stats (`?season=`)
+- `GET  /api/teams/{id}/advanced` — Advanced per-season stats + league ranks (turnover margin, 3rd down, RZ, YPP, sack rate, QB EPA; `?season=`, defaults latest)
+- `GET  /api/teams/{id}/qb-history` — Starting-QB history per season from `weekly_qb_starts` (2010+; EPA/play + snap counts; `?season=` for weekly detail)
 - `GET  /api/games` — Games (filter by season/type, `?limit=` param, no limit when season is set)
 - `GET  /api/games/{game_id}` — Full game detail: meta (venue/attendance) + odds + weather + factors + box score (top performers from `player_weekly_stats`, regular season 2018+)
 - `GET  /api/games/{game_id}/retrodiction` — What the model would have predicted (cutoff-aware, mirrors backtester config: weighted-sum, no factors); HIT/MISS vs actual winner; 400 for unplayed games
@@ -148,7 +150,11 @@ docker compose run scraper               # One-off data scrape
 - `GET  /api/predict/{away}/{home}` — Predict via URL; add `?model=ml` for ML model
 - `GET  /api/h2h/{team1}/{team2}` — Head-to-head (default 10 games)
 - `GET/POST/DELETE /api/factors` — Game factors CRUD
-- `GET  /api/accuracy` — Backtest accuracy (`?seasons=2024,2025`)
+- `GET  /api/accuracy` — Backtest accuracy incl. calibration buckets + per-season (`?seasons=2024,2025`, TTL-cached)
+- `GET  /api/accuracy/detail` — One-season replay: weekly W-L record + most confident hits/misses with game links (`?season=`, TTL-cached, 5/min)
+- `GET  /api/data/coverage` — Per-table season range, row counts, freshness (powers Model Hub coverage card)
+- `GET  /api/picks/value` — Upcoming games where model disagrees with Vegas ≥ `min_edge` (needs `game_odds` rows)
+- `GET  /api/picks/history` — Value-pick track record with hit rate (`?min_edge=&limit=`)
 - `GET  /api/predictions/history` — Prediction history with accuracy stats (`?limit=&offset=`)
 - `POST /api/predictions/enrich` — Match unresolved predictions to completed game results
 - `GET  /api/model/info` — Model info (active model, ML availability, OOS accuracy)
@@ -168,6 +174,7 @@ docker compose run scraper               # One-off data scrape
 - `POST /api/fantasy/optimize/dfs` — DFS optimizer for DraftKings/FanDuel (salary cap, lock/exclude)
 - `POST /api/fantasy/roster/import-by-names` — Match roster names to DB players (body: `{names, season}`)
 - `GET  /api/seasons/{year}/playoff-picture` — Playoff seeding by conference/division/wildcard
+- `GET  /api/seasons/{year}/playoff-odds` — Monte Carlo playoff odds (`?as_of_week=` retro replay, `?sims=` ≤2000; deterministic seed, TTL-cached, 5/min)
 - `GET  /api/teams/{id}/upcoming` — Next N scheduled games with difficulty rating (`?season=&limit=`)
 - `GET  /docs` — Swagger UI
 
@@ -206,8 +213,12 @@ Replace `YYYY` with the season year (e.g. 2025).
 | `/players/:id` | PlayerPage | Full player detail: bio, position-specific stats, fantasy points, game-by-game log |
 | `/games/:id` | GameDetail | Played-game detail: scoreboard, venue/attendance, model retrodiction (HIT/MISS), betting line + ATS cover, weather, box score (2018+), factors |
 | `/fantasy` | FantasyPage | 7 tabs: Dashboard, Leaderboards, Waiver Wire, Draft, Trade Analyzer, Power Rankings, Optimizer (MILP lineups + matchup-grade pills in Dashboard) |
+| `/model` | ModelHub | Model transparency: calibration chart, per-season/confidence accuracy, season replay (weekly W-L + confident hits/misses → game links), edge-picks track record, feature importance, data coverage |
+| `/players/compare` | PlayerCompare | Two-player side-by-side: season stats + overlaid weekly PPR chart (`?a=&b=` deep-linkable; "Compare" chip on PlayerPage) |
 
-**PlayerModal**: overlay component on TeamDetail; shows headshot, position badge, jersey, bio, position-specific stats (QB/RB/WR/TE logic), fantasy points PPR+Standard.
+**PlayerModal**: overlay component on TeamDetail; shows headshot, position badge, jersey, bio, position-specific stats (QB/RB/WR/TE logic), fantasy points PPR+Standard, "Full profile →" link to `/players/:id`.
+
+**TeamDetail extras (2026-07)**: `TeamAdvancedStatsCard` (advanced stats + league ranks, "these feed the model") and `QBHistoryCard` (EPA-colored weekly starter chips + per-season starts, 2010+). Season page has a 4th tab **Playoff Odds** (Monte Carlo, retro week selector).
 
 **PlayerSearch**: debounced navbar search (250ms), renders dropdown, navigates to `/players/:id` on selection.
 
@@ -230,7 +241,9 @@ Replace `YYYY` with the season year (e.g. 2025).
 - Input validation: `Query(ge=1, le=N)` on all limit params; `Field(max_length=...)` on list fields in schemas
 - ErrorBoundary wraps entire route tree; lazy imports + Suspense for all heavy pages; NotFound at `path="*"`
 - `PredictionCard` surfaces `vegas_context` (spread/O/U/implied probs) and `conditions` (injuries/weather) inline
-- Dashboard dynamically sources matchups from upcoming games API; falls back to hardcoded if <4 found
+- Dashboard dynamically sources matchups from upcoming games API; in the offseason it falls back to `RIVALRY_PREVIEWS`, honestly labelled "Rivalry Preview" (not "This Week"); uses `CURRENT_SEASON` from config, never `getFullYear()`
+- Predict page supports deep links: `/predict?away=KC&home=PHI` prefills + auto-runs (Dashboard cards + value picks link there)
+- Retrodiction responses TTL-cached in-process (deterministic per played game; `_retrodiction_cache` in routers/games.py)
 - Prediction weights: 25% record, 20% strength, 15% form, 15% SOS, 15% splits, 10% H2H
 - Dynamic home field advantage: team-specific HFA from historical home/away win rate differential (capped 0-10%)
 - Bye week rest: +1.5% bonus when a team has ≥10 rest days vs opponent's ≤8
@@ -243,7 +256,7 @@ Replace `YYYY` with the season year (e.g. 2025).
 - Scraper has cloudscraper fallback: if requests gets 403, it retries with cloudscraper automatically
 - Cron container runs weekly_scrape.py every Wednesday 06:00 UTC (enriches predictions + odds + conditions + roster + weekly player stats + regenerates projections). Player-model **retrain is intentionally NOT in the cron** (manual only — run `scripts/train_player_models.py`; decided 2026-06-29).
 - Frontend uses Recharts for trend charts on TeamDetail page
-- 258 backend pytest tests (14 files; +test_player_ml, +test_http_retry, +test_observability, +test_matchup_engine, +test_lineup_optimizer) + 18 frontend vitest tests. All pass in the clean `.venv` (numpy<2); anaconda base (numpy 2.x) fails the player-ML tests.
+- **297 backend pytest tests** (16 files; +test_api_new_features, +test_season_simulator in 2026-07) + **39 frontend vitest tests**. All pass in the clean `.venv` (numpy<2); anaconda base (numpy 2.x) fails the player-ML tests.
 - ML model (GradientBoostingClassifier, **34 features**, trained 2013-2022): `load_model()` refuses a model whose feature list ≠ current builder (falls back to weighted-sum). Retrain still deferred (numpy env).
 - Feature vector: `feature_builder.py` FEATURE_NAMES = **34** entries (docstrings corrected); `explainer.py` FEATURE_LABELS now **derived from FEATURE_NAMES** (drift-proof, test-guarded).
 - `models.py` dataclasses: `Team, Game, GameFactor, TeamSeasonStats, Prediction` + opt-in `Player, RosterEntry, InjuryReport, GameWeather, GameOdds` (with `from_row`); DB layer still returns raw `sqlite3.Row` by default.
@@ -289,6 +302,21 @@ Replace `YYYY` with the season year (e.g. 2025).
 - `player_season_stats` — Per-player per-season: pass/rush/rec stats, passer_rating, fantasy_points_ppr/standard
 - `matchup_cache` — Advanced Matchup Engine grades (player×opp×season×week: grade, score, DvP/pace/PROE, components)
 - `user_rosters` — Lineup-optimizer player pool (user×player×season×week: salary, locked/excluded flags)
+- `player_weekly_stats` — Per-player per-week statlines (2018-2024; snaps/routes/targets/air yards/fantasy) — powers box scores + game logs
+- `weekly_qb_starts` — Starting QB per team-week with EPA/play + snaps (7,806 rows, 2010-2024) — surfaced on TeamDetail QB history + ML feature
+- `draft_rankings` — Persisted fantasy draft rankings (season × scoring format, VBD/ADP/tier)
+- `fantasy_projections` — Cached weekly projections (see gotcha: served cache-first per season+week)
+- `fantasy_leagues` / `fantasy_rosters` — League import scaffolding (currently empty)
+- `db_version` — Migration bookkeeping
+
+## Recent Changes (2026-07) — Improvement round (Model Hub, Playoff Odds, Insights)
+
+- **Model Hub** (`/model`): calibration chart, per-season + per-confidence accuracy, season replay (weekly W-L, confident hits/misses linking `/games/:id`), edge-picks track record (first consumer of `/api/picks/history`), ML feature importance (unwraps `CalibratedClassifierCV`), data coverage table
+- **Playoff odds simulator**: `src/prediction/season_simulator.py` (Monte Carlo; engine probs with per-game `cutoff_date` — leak-free retro via `as_of_week`) + `src/prediction/standings.py` (seeding shared with playoff-picture); Season page 4th tab
+- **Insights**: `/api/teams/{id}/advanced` (+ league ranks) and `/api/teams/{id}/qb-history` (from `weekly_qb_starts`) with TeamDetail cards; `/players/compare` page; PPR trend chart in the Game Log card; defensive stat card (tackles/sacks/def INT added to `PlayerStatsEntry`)
+- **New endpoints**: `/api/data/coverage`, `/api/accuracy/detail`, `/api/seasons/{year}/playoff-odds`, `/api/teams/{id}/advanced`, `/api/teams/{id}/qb-history`
+- **Polish**: model's own spread on `PredictionCard` ("Model line"); Predict deep links (`?away=&home=` auto-run); Dashboard offseason fallback honestly labelled + `CURRENT_SEASON` fix; PlayerModal "Full profile" link; value-pick rows link to prefilled Predict; retrodiction TTL cache; `test_roster.py` now cleans up after itself; dev-command copy removed from roster empty state
+- **Data note**: 2025 `player_weekly_stats` / `player_season_stats` import still pending (nflverse blocked from the remote container — run locally, see Pending Data Operations)
 
 ## Recent Changes (2026-04)
 
@@ -359,6 +387,12 @@ python scripts/train_model.py             # Retrain ML model (34-feature vector;
 python scripts/train_player_models.py     # Retrain per-position fantasy models (now TimeSeriesSplit)
 python scripts/import_rosters.py          # Import rosters + player season stats (Step1: ESPN, Step2: nfl_data_py)
 # Review data/unmatched_players.txt after roster import to assess matching quality
+
+# ⚠️ PENDING (2026-07): 2025 season player data is missing — the remote container's
+# proxy blocks nflverse GitHub downloads, so run these LOCALLY (in the .venv):
+python scripts/import_player_weekly.py --start 2025 --end 2025   # 2025 box scores + game logs light up
+python scripts/import_rosters.py                                  # Step 2 fills 2025 player_season_stats
+# Then commit data/nfl.db deliberately (the repo ships the DB) — /api/data/coverage confirms the ranges.
 ```
 
 ## Known Issues (from 2026-05 audit)

@@ -359,7 +359,7 @@ export default function TeamDetail() {
           {rLoading && <Spinner text="Loading roster..." />}
           {roster && roster.players.length === 0 && (
             <div className="text-center py-16 text-text-muted text-sm">
-              No roster data available. Run <code className="text-accent">python scripts/import_rosters.py</code> to fetch rosters.
+              No roster data available for this team yet.
             </div>
           )}
           {roster && roster.players.length > 0 && (

@@ -15,6 +15,7 @@ import type {
   ValuePicksResponse, ValuePickHistoryResponse, TeamScheduleResponse, SimulationResult,
   PlayerWeeklyStatsResponse, GameDetail, GameRetrodiction,
   MatchupGrade, OptimizeRequest, OptimizeDFSRequest, OptimizeResponse,
+  AccuracyDetail, ModelInfo, DataCoverage,
 } from './types';
 import { CURRENT_SEASON, LAST_COMPLETED_SEASON, ACCURACY_SEASONS } from '../config';
 
@@ -93,6 +94,12 @@ export const api = {
   // Accuracy
   getAccuracy: (seasons = ACCURACY_SEASONS) =>
     get<AccuracyStats>(`/accuracy?seasons=${encodeURIComponent(seasons)}`),
+  getAccuracyDetail: (season: number) =>
+    get<AccuracyDetail>(`/accuracy/detail?season=${season}`),
+
+  // Model hub
+  getModelInfo: () => get<ModelInfo>('/model/info'),
+  getDataCoverage: () => get<DataCoverage>('/data/coverage'),
 
   // Prediction history
   getPredictionHistory: (limit = 50, offset = 0) =>

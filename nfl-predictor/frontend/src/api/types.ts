@@ -693,6 +693,74 @@ export interface ValuePickHistoryResponse {
   hit_rate: number | null;
 }
 
+// ── Model Hub ─────────────────────────────────────────────────────────────────
+
+export interface WeeklyRecordEntry {
+  week: string;
+  total: number;
+  correct: number;
+  accuracy: number;
+}
+
+export interface NotableGameEntry {
+  game_id: number;
+  week: string;
+  home_team: string;
+  away_team: string;
+  predicted_winner: string;
+  actual_winner: string;
+  winner_prob: number;
+  correct: boolean;
+}
+
+export interface AccuracyDetail {
+  season: number;
+  total_games: number;
+  correct_predictions: number;
+  accuracy: number;
+  weekly: WeeklyRecordEntry[];
+  best_calls: NotableGameEntry[];
+  biggest_misses: NotableGameEntry[];
+}
+
+export interface FeatureImportanceEntry {
+  feature: string;
+  label: string;
+  importance: number;
+}
+
+export interface ModelInfo {
+  model_type: string;
+  active_model: string;
+  ml_model_loaded: boolean;
+  ml_available: boolean;
+  ensemble_available: boolean;
+  feature_count: number | null;
+  model_file_exists: boolean;
+  ml_oos_accuracy: number | null;
+  weighted_sum_oos_accuracy: number | null;
+  ensemble_oos_accuracy: number | null;
+  recommendation: string | null;
+  spread_model_loaded: boolean;
+  spread_model_mae: number | null;
+  vegas_feature_removed: boolean;
+  feature_importance: FeatureImportanceEntry[];
+}
+
+export interface DataCoverageEntry {
+  table: string;
+  rows: number;
+  season_min: number | null;
+  season_max: number | null;
+  last_updated: string | null;
+  powers: string;
+}
+
+export interface DataCoverage {
+  tables: DataCoverageEntry[];
+  generated_at: string;
+}
+
 // ── Team Schedule ─────────────────────────────────────────────────────────────
 
 export interface TeamScheduleEntry {

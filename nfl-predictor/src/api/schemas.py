@@ -344,6 +344,50 @@ class AccuracyResponse(BaseModel):
     season_accuracy: dict
 
 
+class WeeklyRecordEntry(BaseModel):
+    week: str
+    total: int
+    correct: int
+    accuracy: float
+
+
+class NotableGameEntry(BaseModel):
+    game_id: int
+    week: str
+    home_team: str
+    away_team: str
+    predicted_winner: str
+    actual_winner: str
+    winner_prob: float
+    correct: bool
+
+
+class AccuracyDetailResponse(BaseModel):
+    season: int
+    total_games: int
+    correct_predictions: int
+    accuracy: float
+    weekly: List[WeeklyRecordEntry]
+    best_calls: List[NotableGameEntry]      # most confident correct picks
+    biggest_misses: List[NotableGameEntry]  # most confident wrong picks
+
+
+# ── Data coverage ──────────────────────────────────────
+
+class DataCoverageEntry(BaseModel):
+    table: str
+    rows: int
+    season_min: Optional[int] = None
+    season_max: Optional[int] = None
+    last_updated: Optional[str] = None
+    powers: str
+
+
+class DataCoverageResponse(BaseModel):
+    tables: List[DataCoverageEntry]
+    generated_at: str
+
+
 # ── Prediction History ────────────────────────────────
 
 class PredictionHistoryItem(BaseModel):
@@ -399,6 +443,12 @@ class VegasContext(BaseModel):
 
 # ── Model info ─────────────────────────────────────────
 
+class FeatureImportanceEntry(BaseModel):
+    feature: str
+    label: str
+    importance: float
+
+
 class ModelInfoResponse(BaseModel):
     model_type: str                         # always "weighted_sum" (default)
     active_model: str = "weighted_sum"
@@ -414,6 +464,7 @@ class ModelInfoResponse(BaseModel):
     spread_model_loaded: bool = False
     spread_model_mae: Optional[float] = None
     vegas_feature_removed: bool = True
+    feature_importance: List[FeatureImportanceEntry] = []
 
 
 # ── Injuries / Weather / Conditions ────────────────────

@@ -237,6 +237,45 @@ class PredictionEngine:
             "vegas_feature_removed":      True,
         }
 
+    def get_feature_importance(self, top_n: int = 12) -> List[Dict[str, Any]]:
+        """Global feature importance of the ML game model ([] when ML unavailable)."""
+        importances = self._extract_importances()
+        if importances is None:
+            return []
+        from .explainer import FEATURE_LABELS
+
+        names = self._ml_features or FEATURE_NAMES
+        pairs = sorted(
+            zip(names, importances),
+            key=lambda p: p[1], reverse=True,
+        )[:top_n]
+        return [
+            {
+                "feature": name,
+                "label": FEATURE_LABELS.get(name, name),
+                "importance": round(float(imp), 4),
+            }
+            for name, imp in pairs
+        ]
+
+    def _extract_importances(self) -> Optional[List[float]]:
+        """Unwrap feature_importances_ from the model (handles CalibratedClassifierCV)."""
+        model = self._ml_model
+        if model is None:
+            return None
+        if hasattr(model, "feature_importances_"):
+            return list(model.feature_importances_)
+        # CalibratedClassifierCV: average importances across the fold estimators
+        folds = getattr(model, "calibrated_classifiers_", None) or []
+        per_fold = [
+            f.estimator.feature_importances_
+            for f in folds
+            if hasattr(getattr(f, "estimator", None), "feature_importances_")
+        ]
+        if not per_fold:
+            return None
+        return [float(sum(vals) / len(vals)) for vals in zip(*per_fold)]
+
     def explain_prediction(
         self,
         home_team: str,

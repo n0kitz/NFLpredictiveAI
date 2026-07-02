@@ -17,6 +17,8 @@ from ..schemas import (
     PlayerProfile, PlayerStatsEntry, PlayerSearchResult,
     ValuePick, ValuePicksResponse, ValuePickHistoryItem, ValuePickHistoryResponse,
     PlayerWeeklyStatsResponse, PlayerWeekCell,
+    AccuracyDetailResponse, WeeklyRecordEntry, NotableGameEntry,
+    DataCoverageEntry, DataCoverageResponse,
 )
 from ...prediction.backtester import Backtester
 from ...prediction.factors import FactorAdjuster
@@ -78,6 +80,56 @@ def get_metrics():
     return {**metrics.snapshot(), "metrics_cache": cache_stats()}
 
 
+# Data-coverage spec: (table, season_col, updated_col, powers).
+# Table/column names are hardcoded constants — never user input.
+_COVERAGE_TABLES = [
+    ("games", "season", "created_at", "Schedules, scores, standings, predictions"),
+    ("player_weekly_stats", "season", None, "Box scores, player game logs, weekly heatmaps"),
+    ("player_season_stats", "season", None, "Player pages, fantasy leaderboards, draft rankings"),
+    ("roster_entries", "season", "fetched_at", "Team rosters, fantasy projections"),
+    ("players", None, "updated_at", "Player bios, search, headshots"),
+    ("game_odds", None, "fetched_at", "Betting lines, value picks, implied win %"),
+    ("game_weather", None, "fetched_at", "Weather cards on game pages"),
+    ("injury_reports", None, "report_date", "Injury reports on predictions"),
+    ("fantasy_projections", "season", "generated_at", "Fantasy dashboard, lineup optimizer"),
+    ("team_advanced_stats", "season", None, "Advanced team stats, model features"),
+    ("weekly_qb_starts", "season", None, "QB start history, QB EPA model features"),
+    ("prediction_history", None, "predicted_at", "History page, model track record"),
+]
+
+
+@router.get("/api/data/coverage", response_model=DataCoverageResponse, tags=["system"])
+def get_data_coverage(db=Depends(get_db)):
+    """Season range, row count and freshness per data table."""
+    from datetime import datetime, timezone
+
+    entries = []
+    for table, season_col, updated_col, powers in _COVERAGE_TABLES:
+        season_sel = (
+            f"MIN({season_col}) AS smin, MAX({season_col}) AS smax"
+            if season_col else "NULL AS smin, NULL AS smax"
+        )
+        updated_sel = f"MAX({updated_col}) AS updated" if updated_col else "NULL AS updated"
+        try:
+            row = db.fetchone(f"SELECT COUNT(*) AS n, {season_sel}, {updated_sel} FROM {table}")
+        except Exception:
+            entries.append(DataCoverageEntry(table=table, rows=0, powers=powers))
+            continue
+        entries.append(DataCoverageEntry(
+            table=table,
+            rows=row["n"] or 0,
+            season_min=row["smin"],
+            season_max=row["smax"],
+            last_updated=str(row["updated"])[:19] if row["updated"] else None,
+            powers=powers,
+        ))
+
+    return DataCoverageResponse(
+        tables=entries,
+        generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+    )
+
+
 @router.get("/api/accuracy", response_model=AccuracyResponse, tags=["system"])
 @limiter.limit("5/minute")
 def get_accuracy(
@@ -113,6 +165,72 @@ def get_accuracy(
     result = report.to_dict()
     _backtest_cache[cache_key] = (result, now)
     return AccuracyResponse(**result)
+
+
+# In-memory accuracy-detail cache: season → (result_dict, timestamp)
+_accuracy_detail_cache: dict = {}
+
+
+@router.get("/api/accuracy/detail", response_model=AccuracyDetailResponse, tags=["system"])
+@limiter.limit("5/minute")
+def get_accuracy_detail(
+    request: Request,
+    season: int = Query(..., ge=1990, le=2100),
+    db=Depends(get_db),
+):
+    """Per-week model record + most confident hits/misses for one season (backtest replay)."""
+    now = time.time()
+    cached = _accuracy_detail_cache.get(season)
+    if cached and (now - cached[1]) < _CACHE_TTL:
+        return AccuracyDetailResponse(**cached[0])
+
+    bt = Backtester(db)
+    report = bt.run(seasons=[season])
+
+    weekly_map: dict = {}
+    for r in report.results:
+        wk = str(r.week)
+        w = weekly_map.setdefault(wk, {"total": 0, "correct": 0})
+        w["total"] += 1
+        if r.correct:
+            w["correct"] += 1
+
+    def week_sort(w: str):
+        return (0, int(w)) if w.isdigit() else (1, w)
+
+    weekly = [
+        WeeklyRecordEntry(
+            week=w, total=v["total"], correct=v["correct"],
+            accuracy=round(v["correct"] / v["total"], 4),
+        )
+        for w, v in sorted(weekly_map.items(), key=lambda kv: week_sort(kv[0]))
+    ]
+
+    def notable(want_correct: bool) -> List[NotableGameEntry]:
+        picks = [r for r in report.results if r.correct is want_correct]
+        picks.sort(key=lambda r: max(r.home_prob, r.away_prob), reverse=True)
+        return [
+            NotableGameEntry(
+                game_id=r.game_id, week=str(r.week),
+                home_team=r.home_team, away_team=r.away_team,
+                predicted_winner=r.predicted_winner, actual_winner=r.actual_winner,
+                winner_prob=round(max(r.home_prob, r.away_prob), 4),
+                correct=r.correct,
+            )
+            for r in picks[:5]
+        ]
+
+    result = AccuracyDetailResponse(
+        season=season,
+        total_games=report.total_games,
+        correct_predictions=report.correct_predictions,
+        accuracy=round(report.accuracy, 4),
+        weekly=weekly,
+        best_calls=notable(True),
+        biggest_misses=notable(False),
+    ).model_dump()
+    _accuracy_detail_cache[season] = (result, now)
+    return AccuracyDetailResponse(**result)
 
 
 @router.get("/api/factors/{game_id}", response_model=FactorListResponse, tags=["factors"])
@@ -175,6 +293,7 @@ def scrape_status(db=Depends(get_db)):
 def model_info():
     engine = get_engine()
     info = engine.get_model_info()
+    info["feature_importance"] = engine.get_feature_importance()
     return ModelInfoResponse(**info)
 
 

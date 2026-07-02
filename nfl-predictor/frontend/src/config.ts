@@ -26,6 +26,12 @@ export const CURRENT_SEASON = currentNflSeason();
  */
 export const LAST_COMPLETED_SEASON = CURRENT_SEASON - 1;
 
+/**
+ * The season being drafted for. During the offseason (Feb–Aug) fantasy drafts
+ * target the *next* season label, i.e. CURRENT_SEASON + 1.
+ */
+export const UPCOMING_SEASON = CURRENT_SEASON + 1;
+
 export const SEASON_COUNT = CURRENT_SEASON - FIRST_SEASON + 1;
 
 /** e.g. "1990–2025" */

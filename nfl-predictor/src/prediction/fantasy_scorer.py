@@ -737,6 +737,15 @@ class FantasyScorer:
         # Boom/bust from prior season weekly data (same as projections)
         boom_bust_by_player = self.bulk_boom_bust(prev_season)
 
+        # Real ADP (imported via scripts/import_adp.py) beats synthetic rank
+        real_adp: Dict[int, float] = {
+            r['player_id']: float(r['adp'])
+            for r in self.db.fetchall(
+                "SELECT player_id, adp FROM player_adp WHERE season = ?",
+                (season,),
+            )
+        }
+
         pos_rank_counter: Dict[str, int] = {}
         results: List[Dict[str, Any]] = []
 
@@ -751,7 +760,7 @@ class FantasyScorer:
                     tier = i
                     break
 
-            adp = float(overall_rank)
+            adp = real_adp.get(entry['player_id'], float(overall_rank))
             vbd = entry['vbd']
             bb = boom_bust_by_player.get(entry['player_id']) or {}
 

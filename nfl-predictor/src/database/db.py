@@ -59,6 +59,15 @@ MIGRATIONS: List[str] = [
     "ALTER TABLE player_weekly_stats ADD COLUMN dst_points_allowed INTEGER DEFAULT 0",
     # v24: league size on fantasy_leagues (8-20 team VBD support)
     "ALTER TABLE fantasy_leagues ADD COLUMN league_size INTEGER DEFAULT 10",
+    # v25: real ADP storage (merged into draft rankings when present)
+    """CREATE TABLE IF NOT EXISTS player_adp (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        season INTEGER NOT NULL,
+        player_id INTEGER NOT NULL REFERENCES players(player_id),
+        adp REAL NOT NULL,
+        source TEXT DEFAULT 'csv',
+        UNIQUE(season, player_id)
+    )""",
 ]
 
 

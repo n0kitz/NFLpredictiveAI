@@ -302,6 +302,16 @@ CREATE TABLE IF NOT EXISTS draft_rankings (
     UNIQUE(season, scoring_format, player_id)
 );
 
+-- Real ADP (e.g. FantasyPros CSV import) — preferred over synthetic rank ADP
+CREATE TABLE IF NOT EXISTS player_adp (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    season INTEGER NOT NULL,
+    player_id INTEGER NOT NULL REFERENCES players(player_id),
+    adp REAL NOT NULL,
+    source TEXT DEFAULT 'csv',
+    UNIQUE(season, player_id)
+);
+
 -- Weekly per-player stats (nfl_data_py weekly import) — powers ML player projections
 CREATE TABLE IF NOT EXISTS player_weekly_stats (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

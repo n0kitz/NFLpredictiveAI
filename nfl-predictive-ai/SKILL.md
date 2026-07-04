@@ -1,116 +1,50 @@
----
-name: nfl-predictive-ai
-description: >
-  NFL Game Prediction System project conventions, active improvement plan, and known gotchas.
-  Auto-activates at session start for this project. Use when navigating architecture,
-  reviewing code, planning changes, or debugging. Prevents re-discovering known traps.
-  Trigger: any code work in this repo, or "what's the plan", "remind me", "project status".
----
-
 # NFL Predictive AI — Project Conventions & Active State
+
+> Status, definition of done, roadmap: **`nfl-predictor/GUIDEBOOK.md`** (canonical).
+> Structure, endpoint map, architecture notes: **root `CLAUDE.md`**.
+> This file: the working conventions + gotchas an agent needs in every session.
 
 ## Stack Quick Reference
 
 | Layer | Tech |
 |-------|------|
-| API | FastAPI + Uvicorn, `src/api/app.py` (~70 lines, CORS+observability middleware), 6 routers in `src/api/routers/` (teams, games, predictions, fantasy, matchup, misc) |
-| DB | SQLite + WAL, `data/nfl.db`, `src/database/db.py`, schema in `schema.sql` |
-| ML | GradientBoostingClassifier, **34 features** (docstrings corrected), trained 2013-2022; `load_model()` guards feature mismatch |
-| Frontend | React 19 + TypeScript + Tailwind v4, `frontend/src/` |
-| Tests | pytest, 324 backend tests across 18 files + 46 frontend (vitest), `tests/` & `frontend/src/**/*.test.*` |
-| Infra | Docker Compose: api + frontend + cron |
+| API | FastAPI + Uvicorn, thin `src/api/app.py`, 7 routers (teams, games, predictions, fantasy, matchup, nfl_league, misc) |
+| DB | SQLite + WAL, `data/nfl.db`, schema in `schema.sql` + `MIGRATIONS` in `db.py` (v25) |
+| ML | Game: GradientBoosting **34 feat** (OOS 0.668; weighted-sum 0.672 default). Player: per-position **16 feat** (QB/RB/WR/TE). K/DST heuristic |
+| Fantasy | `fantasy_scorer.py` + `league_settings.py` (scoring **standard default**, league_size 8–20) + `matchup_engine.py` + `lineup_optimizer.py` |
+| Frontend | React 19 + TS + Tailwind v4; localStorage hooks are the state layer (`leagueSettings`, `myRoster`, `draftBoard`) |
+| Tests | **337 backend** (pytest, 21 files) + **57 frontend** (vitest, run from `frontend/`) |
+| Infra | Docker Compose (nginx frontend → internal api + cron); CI in `.github/workflows/ci.yml`; GHCR on `v*` tags |
 
-## Critical Gotchas (2026-07 fantasy wave)
+## Hard Rules
 
-- **nfl_data_py `import_weekly_data` is DEAD for 2025+** — nflverse retired the `player_stats_{year}` release. Use `fetch_stats_player_week(years)` in `src/scraper/player_weekly_importer.py` (`stats_player/stats_player_week_{year}.parquet`). Renames vs old feed: `interceptions`→`passing_interceptions`, `recent_team`→`team`. Filter `season_type=='REG'`.
-- **DST = synthetic players** (`espn_id='DST-{abbr}'`, position='DST', per season via `ensure_dst_players` in `src/scraper/dst_importer.py`) — flows through rankings/projections/optimizer via normal joins.
-- **ESPN codes kickers `PK`** — `roster_scraper` normalizes to `K`; DB UPDATEd once. Don't reintroduce PK.
-- **Draft rankings computed per request** (`/api/fantasy/draft-rankings?league_size=N&scoring=standard`), ordered by **VBD** not raw points; `draft_rankings` table = last-request cache only. Real ADP in `player_adp` (`scripts/import_adp.py`) beats synthetic rank ADP.
-- **LeagueSettings** (`src/prediction/league_settings.py`) owns scoring (**'standard' is the default now**, not ppr), league_size 8-20, replacement ranks, tiers. Frontend twin: `frontend/src/pages/fantasy/leagueSettings.ts` (localStorage hook `useLeagueSettings`). Don't hardcode 'ppr' or 12-team cutoffs.
-- **vitest localStorage**: jsdom ships none — polyfilled in `frontend/src/test/setup.ts`. Run vitest from `frontend/` cwd or the setup file silently doesn't load.
-- **Live draft board** `/draft`: pure logic in `frontend/src/pages/fantasy/draftBoard.ts` (snake, needs, tier breaks), state in localStorage `nfl-predictor.draftBoard.v1`.
+1. **Env first**: `cd nfl-predictor && source .venv/bin/activate` — anaconda base (numpy 2.x) breaks player-ML and poisons the projections cache.
+2. **No leakage**: Vegas/injuries/weather never become game-prediction inputs (player projections may use Vegas totals — deliberate).
+3. **Schema**: every change → `schema.sql` **and** `MIGRATIONS` list. Never inline DDL elsewhere.
+4. **`sqlite3.Row`**: bracket access `r["col"]` only — `.get()` does not exist.
+5. **Scraper HTTP**: `src/scraper/http.get_with_retry` — never raw `requests.get` in scrapers.
+6. **Frontend seasons**: use `frontend/src/config.ts` (`CURRENT_SEASON`, `UPCOMING_SEASON`, …) — never `new Date().getFullYear()` (calendar ≠ NFL season).
+7. **Fantasy defaults**: scoring `'standard'`, league size parametric via `LeagueSettings` — never hardcode `'ppr'` or 12-team cutoffs.
 
-## Critical Gotchas (from 2026-05 audit)
+## Live Gotchas
 
-- **`sqlite3.Row`**: bracket access `r["col"]` only — `.get()` not supported
-- **Feature count**: `feature_builder.py` FEATURE_NAMES has **34** entries, not 35; docstring stale
-- **`explainer.py` FEATURE_LABELS**: ✅ FIXED 2026-06-24 — now derived from `FEATURE_NAMES` (`{name: pretty.get(name, ...) for name in FEATURE_NAMES}`), cannot drift. Guarded by `test_feature_labels_match_feature_names`.
-- **`_fatal_error` in `weekly_scrape.py`**: never actually set — always reports success regardless of step failures
-- **`player_ml_model.py`**: ✅ FIXED 2026-06-24 — now `TimeSeriesSplit` (was `KFold(shuffle=True)`). Training rows are chronologically ordered by `build_training_rows`. ✅ RETRAINED 2026-06-29 on the **16-feature** vector → `data/player_models/{QB,RB,WR,TE}_model.joblib` (meta records feature list).
-- **Player feature vector**: ✅ 16 features as of 2026-06-29 (`player_features.py`; was 13). Phase-2 additions `opp_pace`, `opp_proe`, `opp_pos_dvp_6wk` lazy-import from `matchup_engine`. `test_player_ml.py` asserts `len(FEATURE_NAMES)==16`. (Distinct from the **34-feature game** vector in `feature_builder.py`.)
-- **requirements / clean venv**: ✅ FIXED 2026-06-29 — `shap==0.46.0` (0.47+ forces numpy>=2, conflicting with the numpy<2 pin) + `httpx` added (starlette TestClient dep). A fresh `.venv` now installs and runs all 258 tests green; anaconda base numpy 2.x still fails player-ML tests, so always use the `.venv`.
-- **`db.py` schema**: ✅ FIXED 2026-06-24 — `schema.sql` is now the single source; `connection` init runs `executescript(schema.sql)` + `run_migrations`. Inline duplicate deleted. Add new tables to `schema.sql`; add ALTERs to `MIGRATIONS` list in `db.py`.
-- **`models.py`**: only has dataclasses for `Team, Game, GameFactor, TeamSeasonStats, Prediction` — all other entities (Player, RosterEntry, InjuryReport, etc.) are raw `sqlite3.Row` dicts
-- **Scraper HTTP retry**: ✅ FIXED 2026-06-25 — use `src.scraper.http.get_with_retry(url, ..., session=optional)` for all new HTTP calls (backoff+jitter, retries 429/5xx/conn-errors, honours Retry-After). Don't call `requests.get` directly in scrapers.
-- **Power rankings endpoint**: ✅ FIXED 2026-06-25 — bulk-loads games/adv-stats once (~256→~4 queries) in `src/api/routers/fantasy.py` `_compute()`.
-- **`datetime.utcnow()`**: deprecated in Python 3.12 — used in `db.py` (3x), `injury_scraper.py`, `odds_scraper.py`
-- **Port 8000**: currently exposed directly in `docker-compose.yml` — should route through nginx only
-- **Hardcoded years**: ✅ FIXED 2026-06-25 — use `frontend/src/config.ts` (`CURRENT_SEASON`, `LAST_COMPLETED_SEASON`, `SEASON_RANGE_LABEL`, `recentSeasons(n)`, …). Don't hardcode years or `new Date().getFullYear()` (calendar ≠ NFL season).
-- **Fantasy projections are cached**: `/api/fantasy/projections` reads persisted `fantasy_projections` rows first, only generating (and persisting) when empty. So `model_source`/points reflect **whatever server generated them** — a stale anaconda-base server (numpy 2.x, ML fails to load) bakes in `heuristic` rows that survive a restart. If projections look heuristic/zeroed: `DELETE FROM fantasy_projections WHERE season=? AND week=?` and regenerate from the `.venv`. Also: projections need a season with `roster_entries` (only **2025**); 2024 returns empty.
-- **`opponent_team_id` on projections**: ✅ exposed 2026-06-29 — already stored in `fantasy_projections` + set by `fantasy_scorer`; flows `fp.*`→`FantasyProjectionEntry`→API→`types.ts`→`OptimizerTab` (correlation stacks). Don't reintroduce the `null` placeholder.
+- **nfl_data_py `import_weekly_data` is DEAD for 2025+** — nflverse retired the `player_stats_{year}` release. Weekly data: `fetch_stats_player_week(years)` in `player_weekly_importer.py` (`stats_player_week_{year}.parquet`; renames: `interceptions`→`passing_interceptions`, `recent_team`→`team`; filter `season_type=='REG'`).
+- **DST = synthetic players** (`espn_id='DST-{abbr}'`, position `DST`, per-season roster entries via `ensure_dst_players`). ESPN kickers arrive `PK` → normalized `K` in `roster_scraper`.
+- **Draft rankings compute per request** (`?season=&scoring=&league_size=`), board ordered by **VBD**; `draft_rankings` table is only a last-request cache. Real ADP lives in `player_adp` and wins over synthetic rank ADP.
+- **Projections cache**: `/api/fantasy/projections` serves persisted `fantasy_projections` rows first. Stale/heuristic rows → `DELETE FROM fantasy_projections WHERE season=? AND week=?` and regenerate from the `.venv`. Projections need the season to have `roster_entries`.
+- **Backend suite is slow (~30 min)** since draft-rankings went compute-per-request — known issue, fix ideas in GUIDEBOOK §5 "Next". Split runs or target files during development; run full before claiming green.
+- **vitest**: run from `frontend/` (setup file + jsdom config only load there); localStorage is polyfilled in `src/test/setup.ts`.
+- **`matchup_cache` / metrics TTL**: `calculate_team_metrics()` cached 1h keyed `(team_id, season)`, bypassed with `cutoff_date` (backtests/retrodictions rely on this).
+- **Retrodiction contract**: `/api/games/{id}/retrodiction` mirrors backtester config (weighted-sum, cutoff-aware, no factors); 400 for unplayed games.
 
 ## Architecture Conventions
 
-- CLI: singleton `Database()`; API: per-request via `FastAPI Depends → get_db()`
-- Prediction weights: 25% record, 20% strength, 15% form, 15% SOS, 15% splits, 10% H2H
-- Vegas/injuries/weather: display-only enrichment, NEVER prediction inputs
-- Ensemble blend (when `?model=ensemble`): 60% weighted-sum + 40% ML
-- `calculate_team_metrics()`: TTL-cached 1h, keyed `(team_id, season)`, bypassed when `cutoff_date` given
-- All `Query(ge=1, le=N)` bounds on limit params; `Field(max_length=)` on list fields
-- `sqlite3.Row` everywhere in DB layer — no ORM
+- CLI: singleton `Database()`; API: per-request via `Depends(get_db)`.
+- Prediction weights: 25/20/15/15/15/10 (record/strength/form/SOS/splits/H2H); dynamic HFA 0–10%; bye-rest +1.5%.
+- Draft value: 2-season ppg blend 65/35 + shrinkage (<8 games) + age/injury penalties → VBD vs `replacement_ranks()`.
+- K scoring: FG 0-49 = 3, 50+ = 5, XP = 1. DST: NFL.com brackets (sack 1, INT 2, FR 2, safety 2, TD 6, block 2, points-allowed 10…−4). Verify vs the user's actual league page before draft (GUIDEBOOK DoD 1.5).
+- Cron (`weekly_scrape.py`, Wed): data refresh + projection purge/regen; **model retraining is manual by design**.
 
-## ▶️ NEXT STEPS — ALL DONE (2026-06-29 sess2)
+## Season Context (rolls forward)
 
-**Plan file:** `/Users/normenkitzmann/.claude/plans/nfl-next-steps.md` (full detail). All 5 roadmap steps complete. ⚠️ **4 commits sit local on `main`, UNPUSHED** (`c09fdda`, `1c58cbc`, `a02c60b`, `89b00a5`) — `git push origin main` was blocked, needs explicit user OK.
-
-- **Env first:** `cd nfl-predictor && source .venv/bin/activate` (never anaconda base — numpy 2.x). requirements is self-consistent (numpy<2, shap 0.46, httpx).
-1. ✅ **Retrain verified live** — `/api/model/info` shows ML loaded (game OOS 0.668); player projections serve `model_source: ml`; matchup engine grades A–F. ⚠️ Gotcha: a stale anaconda-base `run_api.py` had cached **heuristic** rows in `fantasy_projections` (endpoint serves cache first). Fix: kill stale server, run from `.venv`, `DELETE FROM fantasy_projections WHERE season=? AND week=?`, regenerate. Projections need a season with roster data (only 2025 has roster_entries).
-2. ✅ **`opponent_team_id` exposed on projections** (commit `c09fdda`) — was already stored/set by scorer; surfaced via `fp.*`→schema→API→`types.ts`→OptimizerTab.
-3. ✅ **Cron retrain → MANUAL** (commit `1c58cbc`) — cron WAS retraining weekly; user chose manual, removed the block. Cron now only refreshes stats + regenerates projections. Retrain manually: `scripts/train_player_models.py`.
-4. ✅ **CI hardening** (commit `89b00a5`) — `black`/`mypy` non-blocking on backend; `docker` job builds+pushes api/frontend/cron → GHCR on `v*` tags only. eslint already present.
-5. ✅ **Frontend tests** (commit `a02c60b`) — 9→18 vitest: fantasy helper colours, MatchupGradePill, OptimizerTab (opponent_team_id pass-through).
-
-**Nothing mandatory left.** Optional follow-ups: tighten black/mypy to blocking once backlog clean (black 62 files, mypy 55 errors); push a `v*` tag to publish images; more frontend coverage.
-
-## Active Improvement Plan (Wave 5 — COMPLETE)
-
-Plan file: `/Users/normenkitzmann/.claude/plans/immutable-munching-elephant.md` (all 7 phases ✅)
-
-| Phase | Focus | Status |
-|-------|-------|--------|
-| 1 | Config centralization + quick security wins | ✅ Done 2026-06-24 — `src/config.py`; cron `_fatal_error` fixed; `utcnow` removed; port 8000 unpublished; nginx CSP |
-| 2 | DB layer hardening (schema dedup, transactions, N+1) | ✅ Done 2026-06-24 — schema.sql single source (fixes fresh-DB bug), power-rankings N+1 256→4, 5 dataclasses, f-string SQL whitelisted |
-| 3 | ML pipeline correctness (TimeSeriesSplit, versioning, SHAP) | ✅ Done — code 2026-06-24; **retrain done 2026-06-29** (game 34-feat OOS 66.3%; player models 16-feat in clean `.venv`); **verified live sess2** (`/api/model/info` ML loaded OOS 0.668, projections `model_source: ml`). requirements numpy<2 conflict fixed (shap 0.46 + httpx) |
-| 4 | Scraper resilience + cron safety | ✅ Done 2026-06-25 — shared `get_with_retry` (backoff+jitter+Retry-After) on all scrapers; cron `fcntl` singleton lock; 6 retry tests |
-| 5 | Frontend quality + component library | ✅ Done 2026-06-25 — vitest+RTL (9 tests), `src/config.ts` season config (de-hardcoded), FantasyPage 1213→67 lines (pages/fantasy/ modules) |
-| 6 | Performance + observability | ✅ Done 2026-06-26 — `src/observability.py` (JSON logs + request-id/timing middleware + Metrics), cache hit/miss stats, `GET /api/metrics` |
-| 7 | Documentation + CI/CD | ✅ Done 2026-06-26 — `.github/workflows/ci.yml` (ruff+pytest / eslint+build+vitest); README Testing/CI/Observability sections |
-
-Check plan file for granular sub-tasks. Update Status as phases complete.
-
-## Test Coverage Notes
-
-- 258 backend tests, 14 files — **all pass** in a clean `.venv` (`pip install -r requirements.txt`: numpy<2, shap 0.46, httpx) with `data/nfl.db` present. Anaconda base (numpy 2.x) fails the player-ML tests.
-- Tests with `pytestmark = pytest.mark.skipif(not DEFAULT_DB_PATH.exists(), ...)` skip silently without DB
-- Frontend tests: ✅ vitest + RTL set up 2026-06-25 (`npm test` / `npm run test:watch`); config in `vitest.config.ts` (separate from vite.config). **18 tests** (config, DataBadge, fantasy helpers, MatchupGradePill, OptimizerTab) — expand coverage.
-- `test_roster.py` inserts test data into real DB, never cleans up
-
-## Key File Map
-
-| Need | File |
-|------|------|
-| Add API endpoint | `src/api/routers/{domain}.py` + schema in `schemas.py` |
-| DB query | `src/database/db.py` |
-| Prediction logic | `src/prediction/engine.py` |
-| Team metrics | `src/prediction/metrics.py` |
-| Feature vector | `src/prediction/feature_builder.py` (34 features) |
-| Fantasy scoring | `src/prediction/fantasy_scorer.py` |
-| Matchup grades | `src/prediction/matchup_engine.py` (DvP/pace/PROE → A–F) |
-| Lineup optimizer | `src/prediction/lineup_optimizer.py` (MILP/PuLP; `routers/matchup.py`) |
-| Settings / env | `src/config.py` (backend), `frontend/src/config.ts` (seasons) |
-| Logging / metrics | `src/observability.py` (`/api/metrics`) |
-| Scraper HTTP | `src/scraper/http.py` (`get_with_retry`) |
-| Weekly cron | `scripts/weekly_scrape.py` |
-| Frontend API calls | `frontend/src/api/client.ts` + `types.ts` |
-| React hooks | `frontend/src/hooks/useApi.ts` |
-| CI | `.github/workflows/ci.yml` |
+User's fantasy.nfl.com draft: **Aug/Sep 2026**, league size 8/10/12 (was 20), NFL.com Standard. Pre-draft ritual: weekly `import_rosters.py --season 2026 --skip-stats`, ADP CSV import, scoring verification. The `/draft` board is the draft-night tool.

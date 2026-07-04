@@ -1,119 +1,169 @@
 # NFL Predictor — Guidebook
 
-> Single source of truth for **what this project is, whether it's "done", how to operate it, and how to get value out of it.**
-> Last updated: 2026-06-29. Supersedes the (now stale) `PROJECT_PLAN.md` for planning purposes.
-> For dev setup see `README.md`; for data scraping see `SCRAPING_GUIDE.md`.
+> **The canonical answer to four questions: what is this project, what does "as good as it can possibly be" look like, how far along is it, and what do I do next?**
+> Last updated: 2026-07-04 · Supersedes `PROJECT_PLAN.md` · Dev setup: `README.md` · Data scraping: `SCRAPING_GUIDE.md` · Agent conventions: `../CLAUDE.md`
 
 ---
 
-## 1. What this project is
+## 1. Mission
 
-A full-stack NFL **game-prediction + fantasy-football** system:
+**Own the best NFL decision engine in your league — end to end.**
 
-- **Backend** — Python 3.12 / FastAPI / SQLite, 35 years of games (1990–2025), a 7-factor weighted prediction engine, a retrained ML game model (GradientBoosting, 34 features, ~66% OOS) and per-position fantasy ML models (16 features), an advanced matchup engine (A–F grades), and a MILP lineup optimizer.
-- **Frontend** — React 19 / TypeScript / Tailwind v4: dashboards, team pages, prediction UI, a 7-tab fantasy hub (projections, waiver, draft, trades, power rankings, optimizer).
-- **Infra** — Docker Compose (api + frontend + cron), a weekly cron, GitHub Actions CI, JSON logging + `/api/metrics`.
+Every football decision you make — a draft pick, a start/sit call, a waiver claim, a trade, a "who wins Sunday?" argument — should be made with better information than anyone you're competing against, produced by software you built, understand, and control. No subscriptions, no black boxes, no rented opinions.
 
-It is **display-only honest**: Vegas odds, injuries, and weather are shown but **never fed into predictions**.
+Two concrete scoreboards tell you whether the mission is being met:
 
----
-
-## 2. Is it finished? — Honest verdict
-
-**As an engineering artifact: ~95% done.** Architecture is clean and modular, 258 backend + 18 frontend tests pass, CI is green, ML is retrained and verified live, observability and Docker are in place. There is very little "code work" left.
-
-**As an operational product: not finished.** It is a polished engine that is **not deployed and running on fresh data**. The blockers are operational, not architectural:
-
-| Gap | Reality today | Impact |
-|-----|---------------|--------|
-| **Stale player data** | `player_weekly_stats` ends at **2024**; 2025 games exist (with scores) but no 2025 player weekly rows | Fantasy projections for the latest season are degenerate (only matchup features fire); player models trained through 2024 |
-| **Not deployed** | Runs locally / in Docker on this machine only; the weekly cron isn't scheduled on any host | No live, always-on product; data never refreshes on its own |
-| **Empty enrichment** | `game_odds` = 0 rows, `injury_reports` = 0 rows (no `ODDS_API_KEY` set, conditions fetch never run) | Vegas-context and injury/weather panels are empty |
-| **Unpushed work** | 4 commits sit local on `main` | Collaborators / deploys don't see the latest |
-
-**Bottom line:** the *software* is essentially complete; the *service* is not. To call the project "finished" you need to **deploy it and keep its data current** — see §3.
+1. **Win the fantasy.nfl.com league.** The fantasy stack (draft board, projections, waivers, trades, optimizer) exists to convert modeling into league championships.
+2. **Beat the naive baselines, honestly.** The game model must outperform "always pick the home team" (~57%) and "always pick the favorite" — with its accuracy tracked, published by the app itself, and never inflated by leaking Vegas into the inputs.
 
 ---
 
-## 3. What to do to finish it (operational checklist)
+## 2. The best-case picture
 
-> Always work from the clean venv: `cd nfl-predictor && source .venv/bin/activate` (anaconda base has numpy 2.x and breaks player-ML).
+What this project looks like fully realized — the standard every piece of work should be measured against:
 
-### 3a. Bring data current (do first — unblocks everything)
+**🏆 The Fantasy Edge.** On draft night you open `/draft`, and while everyone else squints at a magazine cheat sheet, you have a live VBD board tuned to *your* league's exact size and scoring, tier-break alarms, positional-need weighting, and market-vs-model value gaps from real ADP. In season, Wednesday morning the system has already refreshed itself: projections regenerated, waiver targets ranked by value-over-replacement with your own roster excluded, matchup grades A–F on every player, and the MILP optimizer producing your best legal lineup in one click. Trades get an objective verdict before emotions do. **The league doesn't know what hit it.**
+
+**📊 The Honest Model.** The prediction engine is a *trustworthy instrument*, not a hype machine. Every prediction auto-saves and self-grades when the game finishes. Every played game has a retrodiction page showing what the model *would* have said — hit or miss, in public. Vegas lines, injuries, and weather appear alongside predictions as context but are never smuggled into the game-model inputs, so when the model beats the market on a pick, that edge is real. Accuracy, calibration, and the model-vs-Vegas ledger are first-class UI, not buried logs.
+
+**⚙️ The Self-Running Service.** The whole thing lives on a small host you control: Docker Compose, nginx in front, cron container firing every Wednesday at 06:00 UTC — games, rosters, weekly stats, odds, injuries, weather, projections, all refreshed with zero touches. CI gates every change; tagged releases publish images to GHCR; `/api/metrics` and JSON logs tell you it's healthy. Your league mates use it from a URL on their phones. When the season ends, one retrain command folds the new season into the models and the cycle starts again.
+
+Three pillars. Each has a definition of done below. **The project is "done" when all three checklists are fully checked — and "alive" as long as the operating calendar (§4) keeps running.**
+
+---
+
+## 3. Definition of Done
+
+Legend: ✅ done · 🟡 partial / needs action · ⬜ open
+
+### Pillar 1 — Fantasy Edge
+
+| # | Criterion | Status |
+|---|-----------|--------|
+| 1.1 | Draft rankings driven by **VBD over replacement**, parametric in league size (8–20) and scoring (standard / half-PPR / PPR) | ✅ |
+| 1.2 | **All NFL.com roster positions** projectable: QB/RB/WR/TE ✅ ML, K/DST ✅ heuristic from real weekly data | ✅ |
+| 1.3 | **Live draft board** (`/draft`): snake tracking, best-available by need-boosted VBD, tier-break alerts, refresh-proof | ✅ |
+| 1.4 | **Real ADP** loaded so the board shows value-vs-market (`scripts/import_adp.py`) | 🟡 code done — `player_adp` is empty; import a FantasyPros CSV before draft night |
+| 1.5 | League scoring **verified against the actual fantasy.nfl.com settings page** (esp. K/DST rules) | ⬜ user action, ~10 min, do before draft |
+| 1.6 | In-season loop: projections → start/sit → waiver (own roster excluded, VBD-ranked) → trade analyzer → optimizer, all league-settings-aware | ✅ |
+| 1.7 | 2026 rosters current on draft night (weekly `import_rosters.py --season 2026 --skip-stats` through August; final run day before draft) | 🟡 imported 2026-07-02 (2,957 entries); repeat weekly |
+| 1.8 | **The league is won.** (The only criterion that matters; graded in January.) | ⬜ |
+
+### Pillar 2 — Honest Model
+
+| # | Criterion | Status |
+|---|-----------|--------|
+| 2.1 | Game model beats naive baselines out-of-sample (weighted-sum 67.2%, ML 66.8% vs ~57% home-pick) | ✅ |
+| 2.2 | **No input leakage**: Vegas/injuries/weather display-only for game predictions (player projections may use Vegas totals — documented, deliberate) | ✅ |
+| 2.3 | Predictions auto-save, self-grade on completion, and link to their game (`/history` → `/games/:id`) | ✅ |
+| 2.4 | Every played game has a **retrodiction** (cutoff-aware HIT/MISS, `/api/games/{id}/retrodiction`) | ✅ |
+| 2.5 | Model-vs-Vegas ledger (`/api/picks/value` + history) surfaces where the model disagrees with the market | ✅ code — empty until odds flow (see 3.3) |
+| 2.6 | **Calibration**: predicted 60% wins ≈ 60% of the time, measured and displayed (reliability curve or bucketed table) | ⬜ the biggest open modeling gap |
+| 2.7 | Projection floors/ceilings from actual distributions (Monte-Carlo or quantile models) instead of ±25/35% placeholders | ⬜ |
+| 2.8 | Annual retrain ritual after the Super Bowl folds the finished season into game + player models | ⬜ recurring (first: Feb 2027) |
+
+### Pillar 3 — Self-Running Service
+
+| # | Criterion | Status |
+|---|-----------|--------|
+| 3.1 | **Deployed on an always-on host** (VPS/Fly/Render), frontend behind nginx, API internal, HTTPS | ⬜ **the** gap between "codebase" and "product" |
+| 3.2 | Cron container verified firing Wednesdays on the host; a missed run is visible (`scrape_log`, `/api/metrics`) | ⬜ blocked by 3.1 |
+| 3.3 | Enrichment live: `ODDS_API_KEY` set + `fetch_odds.py` / `fetch_conditions.py` populating (today: `game_odds` = 0, `injury_reports` = 0) | ⬜ key + two commands |
+| 3.4 | A `v*` tag published → GHCR images built by CI (pipeline ✅, first tag ⬜) | 🟡 |
+| 3.5 | CI green on every push: ruff + pytest / eslint + tsc + vitest; Docker job on tags | ✅ |
+| 3.6 | Full test suite green: **337 backend + 57 frontend** | ✅ |
+| 3.7 | Observability: JSON logs, `X-Request-ID`, `/api/metrics` | ✅ |
+| 3.8 | Data pipeline survives upstream drift (nflverse URL scheme change of 2025 already absorbed; retry/backoff on all scrapers) | ✅ |
+
+**Score today: Pillar 1 ~85% · Pillar 2 ~70% · Pillar 3 ~55%.**
+The software is nearly done; the *service* and the *pre-draft data chores* are what remain. Nothing left is hard — it's a deploy, an API key, a CSV, and a ten-minute settings check.
+
+---
+
+## 4. The operating calendar
+
+This project is calendar-driven. "Done" is not a state, it's a rhythm:
+
+| When | What | Tooling |
+|------|------|---------|
+| **July (now)** | Import real ADP · verify league scoring · weekly 2026 roster refresh · deploy (§5 Now) | `import_adp.py`, `import_rosters.py` |
+| **Aug/Sep — draft night** | Final roster refresh the day before · run the draft from `/draft` | Draft board |
+| **In season, Wed AM** | Cron refreshes everything; you check waivers + set lineup | `weekly_scrape.py` (auto) |
+| **In season, Sunday** | Watch the model's picks self-grade; check `/history` accuracy | auto |
+| **Monthly (optional)** | Refresh models on new weeks of data | `train_player_models.py` |
+| **February** | Season post-mortem: accuracy report, calibration check, full retrain, GUIDEBOOK update | `run_backtest.py`, `train_model.py` |
+
+---
+
+## 5. Roadmap
+
+### Now — before the draft (highest leverage, days not weeks)
+1. **Deploy** (3.1/3.2): `docker compose up -d` on a small host; confirm cron fires; set `ODDS_API_KEY` + `CORS_ORIGINS`. Tag `v1.0.0` → images publish.
+2. **Load ADP** (1.4): download FantasyPros 2026 ADP CSV → `python scripts/import_adp.py --file <csv> --season 2026`.
+3. **Verify league scoring** (1.5): screenshot the league's scoring settings; diff against `kicker_fantasy_points` / `dst_importer.py` defaults; encode any deltas.
+4. **Weekly roster refresh** (1.7) until draft.
+
+### Next — in-season quality
+- **Calibration page** (2.6): bucket historical predictions by confidence, plot predicted vs actual win rate; show on Dashboard next to accuracy.
+- **Real floors/ceilings** (2.7): quantile regression or Monte-Carlo from weekly variance instead of fixed ±%.
+- **Backend test-suite speed**: the suite went from seconds to ~30 min after draft-rankings became compute-per-request (every API test regenerates ~1,000 rankings + boom/bust). Add an in-process cache keyed `(season, scoring, league_size)` with TTL, or a test fixture that stubs generation. Known, not urgent, fix before it erodes the testing habit.
+- **Mobile pass** on the fantasy hub + draft board (draft night happens on couches, not desks).
+- Flip `black`/`mypy` from non-blocking to blocking once the backlog (62 files / 55 errors) is cleared.
+
+### Later — v2 ambitions (only if the itch strikes)
+- **Season simulator**: Monte-Carlo the remaining schedule → playoff odds per team, magic numbers on the Season page.
+- **Multi-league / multi-user**: auth + per-user rosters; the NFL.com sync (`NFL_FANTASY_COOKIE`, experimental) graduates from cookie hack to real onboarding.
+- **Notification layer**: Discord/Telegram bot — Wednesday waiver digest, injury-news pings for rostered players, "you're on the clock" relays.
+- **LLM analyst**: a weekly natural-language brief ("bench X, stream Y against Z's bottom-5 pass D") generated from the data the system already has.
+- **Live scoring**: in-game win-probability updates on game day.
+
+---
+
+## 6. Runbook
+
+> **Always** `cd nfl-predictor && source .venv/bin/activate` first — anaconda base has numpy 2.x and breaks the player-ML stack.
+
+### Steady state (weekly, automated by cron)
+`weekly_scrape.py`: games + enrich predictions → rosters → weekly player stats (offense/K/DST via nflverse) → season aggregates → odds (if key) → conditions → stale-projection purge → regenerate projections. Singleton-locked (`fcntl`), failures accumulate to `scrape_log` + exit 1.
+
+### Manual rituals
 ```bash
-python scripts/import_schedule.py            # ensure latest season schedule/games
-python scripts/import_rosters.py             # ESPN rosters + player_season_stats
-python scripts/import_player_weekly.py       # weekly player stats (the stale piece → import 2025)
-python scripts/import_advanced_stats.py      # team advanced stats + QB EPA
-python scripts/train_model.py                # retrain game + spread model (34-feat)
-python scripts/train_player_models.py        # retrain per-position fantasy models (16-feat)
-```
-Then regenerate any cached projections for the target season/week (the endpoint serves cached `fantasy_projections` rows first):
-```sql
-DELETE FROM fantasy_projections WHERE season=<S> AND week=<W>;  -- then hit /api/fantasy/projections to regenerate
-```
+# Pre-draft (July–Sep)
+python scripts/import_rosters.py --season 2026 --skip-stats   # weekly roster churn
+python scripts/import_adp.py --file <FantasyPros.csv> --season 2026
 
-### 3b. Wire up enrichment (optional but completes the UI)
-```bash
-export ODDS_API_KEY=<key>                    # The Odds API (free tier OK)
+# Model refresh (monthly in-season; mandatory each February)
+python scripts/train_model.py              # game + spread (34-feat)
+python scripts/train_player_models.py      # QB/RB/WR/TE (16-feat)
+
+# Enrichment (once ODDS_API_KEY is set)
 python scripts/fetch_odds.py
-python scripts/fetch_conditions.py           # injuries (ESPN) + weather (Open-Meteo), no key needed
+python scripts/fetch_conditions.py
+
+# Backtest / accuracy report
+python scripts/run_backtest.py
 ```
 
-### 3c. Deploy + schedule (the real "finish" step)
-- Stand up `docker compose up -d` on a small host (VPS / Fly.io / Render). Frontend behind nginx, API internal, cron container running.
-- Confirm the **cron** (`weekly_scrape.py`, Wednesdays 06:00 UTC) actually fires on the host — it refreshes games, rosters, weekly stats, odds/conditions, and regenerates projections. (Player-model **retrain is intentionally manual** — run §3a's last two commands when you want fresher models.)
-- Set `ODDS_API_KEY` and `CORS_ORIGINS` in the host env.
-
-### 3d. Ship the code
+### Verification (before any "it works" claim)
 ```bash
-git push origin main                         # 4 commits waiting
-git tag v1.0.0 && git push origin v1.0.0     # triggers the GHCR Docker image build/publish CI job
+python -m pytest -q                         # 337 backend (slow ~30 min, see §5 Next)
+cd frontend && npm run build && npm test    # tsc + 57 vitest
 ```
 
-**Definition of done:** a public/owned URL where predictions and fantasy tools show **current-week** data, refreshed automatically each Wednesday, with images published on tag.
+### Gotchas (the ones that actually bite)
+- **nfl_data_py `import_weekly_data` is dead for 2025+** — nflverse retired that release. Weekly data comes from `fetch_stats_player_week()` (`src/scraper/player_weekly_importer.py`). Don't "fix" imports back to nfl_data_py.
+- **Projections look heuristic/zeroed** → stale cached rows from a wrong-env server. `DELETE FROM fantasy_projections WHERE season=? AND week=?`, regenerate from the `.venv`. (Cron now purges before regenerating.)
+- **Projections empty for a season** → that season has no `roster_entries`.
+- **`sqlite3.Row`**: bracket access only, `.get()` doesn't exist.
+- **DST are synthetic players** (`espn_id='DST-{abbr}'`); ESPN kickers arrive as `PK` and are normalized to `K`.
+- **Schema changes** go to `schema.sql` **and** the `MIGRATIONS` list in `db.py` (currently at v25).
 
 ---
 
-## 4. What to do next to utilize it
+## 7. State snapshot — 2026-07-04
 
-Once it's live and current, the value shows up in-season:
-
-1. **Personal fantasy command center** — weekly projections, start/sit, waiver-wire targets, trade analyzer, and the **MILP lineup optimizer** (season-long + DraftKings/FanDuel salary modes). The **matchup engine** A–F grades tell you which players have soft/tough matchups at a glance.
-2. **Game-prediction dashboard** — pick any matchup, get win probabilities with the factor breakdown and (display-only) Vegas context. Backtest accuracy is tracked, and predictions auto-save + self-grade once games complete.
-3. **Vegas-edge finder** — `/api/picks/value` surfaces where the model disagrees with the market (display-only; a research/curiosity tool, not betting advice).
-4. **Share it** — give a read-only URL to your fantasy league; the fantasy hub is genuinely useful to non-technical users.
-
-### Highest-leverage enhancements (if you want to keep building)
-- **Expose `opponent_team_id`** is done → now use it: turn on QB/bring-back **correlation stacks** in the optimizer UI and validate they improve DFS lineups.
-- **Calibration + confidence intervals** on projections (Monte-Carlo floor/ceiling instead of the ±25/35% placeholders).
-- **Mobile-responsive pass** on the fantasy hub (currently desktop-first).
-- **Auth + multi-user rosters** if you ever want others to save their own lineups.
-- **Tighten CI**: flip `black`/`mypy` from non-blocking to blocking after clearing the backlog (62 files / 55 type errors).
-
----
-
-## 5. Operating runbook (steady state)
-
-| Cadence | Action |
-|---------|--------|
-| **Automatic, weekly (Wed)** | Cron refreshes games, rosters, weekly stats, odds/conditions, regenerates projections |
-| **Monthly (manual)** | `train_model.py` + `train_player_models.py` from the `.venv` to refresh models on new data |
-| **Each new season** | Add the season HTML import if PFR blocks automated scraping (see `SCRAPING_GUIDE.md`); verify `roster_entries` populate for the new year (projections need a season with rosters) |
-| **On any code change** | `python -m pytest -q` (258) + `cd frontend && npm run build && npm test` (18); commit per logical change |
-
-### Common gotchas
-- **Projections look heuristic/zeroed** → a stale or wrong-env server cached `heuristic` rows; `DELETE FROM fantasy_projections WHERE season=? AND week=?` and regenerate from the `.venv`.
-- **Projections empty** → that season has no `roster_entries` (only the current roster season is populated).
-- **Tests fail on player-ML** → you're on anaconda base (numpy 2.x); use the `.venv`.
-- **`sqlite3.Row`** → bracket access `r["col"]`, never `.get()`.
-
----
-
-## 6. Project state snapshot (2026-06-29)
-
-- Tests: 258 backend + 18 frontend, all green in the clean `.venv`.
-- ML: game model OOS 0.668 (weighted-sum 0.672 still the default); player models 16-feat, retrained, verified serving `model_source: ml`.
-- CI: ruff + black/mypy (non-blocking) + pytest; eslint + build + vitest; Docker→GHCR on `v*` tags.
-- Data: games through 2025 (complete); **player weekly stats only through 2024** (refresh needed); odds/injuries empty.
-- Git: 4 commits unpushed on `main`.
+- **Data**: 9,455 games (1990–2025) · player weekly stats 2018–2025 incl. K + DST · 2,957 roster entries for 2026 · `game_odds` 0 · `injury_reports` 0 · `player_adp` 0 (the three empties are §5-Now items).
+- **Models**: game GradientBoosting 34-feat OOS 0.668 (weighted-sum 0.672 remains default; ML opt-in via `?model=ml`) · player models 16-feat, MAE QB 6.48 / RB 5.66 / WR 5.50 / TE 4.26 · K/DST heuristic.
+- **Tests**: 337 backend + 57 frontend, all green.
+- **Git/CI**: main in sync with origin · CI green · no release tag yet.
+- **Deployment**: none — local/Docker only. This is the top of the list.

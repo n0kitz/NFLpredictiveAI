@@ -58,9 +58,10 @@ describe('GameDetail', () => {
   it('renders the scoreboard, meta and box-score leaders', async () => {
     renderAt(detail());
     await waitFor(() => expect(screen.getByText('Arrowhead Stadium')).toBeInTheDocument());
-    // both teams + scores
-    expect(screen.getByText('KC')).toBeInTheDocument();
-    expect(screen.getByText('DET')).toBeInTheDocument();
+    // both teams + scores ("KC"/"DET" also appear in the retrodiction panel,
+    // so assert at-least-one rather than exactly-one)
+    expect(screen.getAllByText('KC').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('DET').length).toBeGreaterThan(0);
     expect(screen.getByText('73,000')).toBeInTheDocument();
     // box-score leaders (a QB with rush yards lists in both passing + rushing)
     expect(screen.getAllByRole('link', { name: /Patrick Mahomes/ }).length).toBeGreaterThan(0);

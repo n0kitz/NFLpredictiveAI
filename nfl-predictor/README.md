@@ -24,7 +24,7 @@
 - **Experimental**: read-only fantasy.nfl.com league sync (settings + rosters)
 
 ### Platform
-- FastAPI + SQLite backend (60+ endpoints, Swagger at `/docs`), React 19 + TypeScript + Tailwind v4 frontend (12 routes)
+- FastAPI + SQLite backend (51 endpoints across 7 domain routers, Swagger at `/docs`), React 19 + TypeScript + Tailwind v4 frontend (13 routes)
 - Docker Compose: nginx frontend → internal API + weekly cron container (Wed 06:00 UTC full data refresh)
 - GitHub Actions CI: lint + 337 backend / 57 frontend tests on every push; GHCR images on `v*` tags
 - Observability: structured JSON logs, `X-Request-ID`, `GET /api/metrics`

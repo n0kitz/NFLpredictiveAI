@@ -121,6 +121,9 @@ python scripts/train_model.py && python scripts/train_player_models.py
 
 # Enrichment (needs ODDS_API_KEY; conditions are keyless)
 python scripts/fetch_odds.py && python scripts/fetch_conditions.py
+
+# New season bootstrap (each September)
+python scripts/import_schedule.py
 ```
 
 ## History

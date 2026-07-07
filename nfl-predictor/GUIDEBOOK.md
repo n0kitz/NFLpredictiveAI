@@ -1,7 +1,7 @@
 # NFL Predictor — Guidebook
 
 > **The canonical answer to four questions: what is this project, what does "as good as it can possibly be" look like, how far along is it, and what do I do next?**
-> Last updated: 2026-07-04 · Supersedes `PROJECT_PLAN.md` · Dev setup: `README.md` · Data scraping: `SCRAPING_GUIDE.md` · Agent conventions: `../CLAUDE.md`
+> Last updated: 2026-07-07 (all statuses re-verified against the live DB and test suites) · Supersedes `PROJECT_PLAN.md` · Dev setup: `README.md` · Data scraping: `SCRAPING_GUIDE.md` · Agent conventions: `../CLAUDE.md`
 
 ---
 
@@ -142,6 +142,9 @@ python scripts/fetch_conditions.py
 
 # Backtest / accuracy report
 python scripts/run_backtest.py
+
+# New season bootstrap (each September)
+python scripts/import_schedule.py          # load the new season's schedule/games
 ```
 
 ### Verification (before any "it works" claim)
@@ -160,7 +163,7 @@ cd frontend && npm run build && npm test    # tsc + 57 vitest
 
 ---
 
-## 7. State snapshot — 2026-07-04
+## 7. State snapshot — 2026-07-07 (re-verified)
 
 - **Data**: 9,455 games (1990–2025) · player weekly stats 2018–2025 incl. K + DST · 2,957 roster entries for 2026 · `game_odds` 0 · `injury_reports` 0 · `player_adp` 0 (the three empties are §5-Now items).
 - **Models**: game GradientBoosting 34-feat OOS 0.668 (weighted-sum 0.672 remains default; ML opt-in via `?model=ml`) · player models 16-feat, MAE QB 6.48 / RB 5.66 / WR 5.50 / TE 4.26 · K/DST heuristic.

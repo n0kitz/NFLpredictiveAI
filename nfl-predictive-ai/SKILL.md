@@ -13,7 +13,7 @@
 | ML | Game: GradientBoosting **34 feat** (OOS 0.668; weighted-sum 0.672 default). Player: per-position **16 feat** (QB/RB/WR/TE). K/DST heuristic |
 | Fantasy | `fantasy_scorer.py` + `league_settings.py` (scoring **standard default**, league_size 8–20) + `matchup_engine.py` + `lineup_optimizer.py` |
 | Frontend | React 19 + TS + Tailwind v4; localStorage hooks are the state layer (`leagueSettings`, `myRoster`, `draftBoard`) |
-| Tests | **337 backend** (pytest, 21 files) + **64 frontend** (vitest, run from `frontend/`) |
+| Tests | **349 backend** (pytest, 22 files) + **64 frontend** (vitest, run from `frontend/`) |
 | Infra | Docker Compose (nginx frontend → internal api + cron); CI in `.github/workflows/ci.yml`; GHCR on `v*` tags |
 
 ## Hard Rules

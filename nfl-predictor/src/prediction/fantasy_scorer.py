@@ -5,7 +5,6 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from .player_features import (
-    FEATURE_NAMES as PLAYER_FEATURE_NAMES,
     build_player_feature_vector,
     feature_dict_to_array,
 )
@@ -79,12 +78,30 @@ def _played_week(r: Any) -> bool:
     return snaps > 0 or snap_pct > 0
 
 
+def percentile(values: List[float], pct: float) -> float:
+    """Linear-interpolated percentile (numpy 'linear' method), pct in [0, 100]."""
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    rank = (pct / 100.0) * (len(ordered) - 1)
+    lo = int(rank)
+    frac = rank - lo
+    if lo + 1 >= len(ordered):
+        return ordered[-1]
+    return ordered[lo] + frac * (ordered[lo + 1] - ordered[lo])
+
+
 def calc_boom_bust_from_rows(rows: List[Any]) -> Optional[Dict[str, float]]:
     """
-    Compute boom/bust percentages from a list of weekly rows for one player.
+    Compute boom/bust percentages plus floor/ceiling multipliers from one
+    player's weekly rows.
 
     Counts weeks where snaps>0 or snap_pct>0 (importer fills only one of the two).
     Returns None when fewer than 4 active weeks (sample too small).
+
+    floor_mult / ceiling_mult are p20/mean and p80/mean of the player's actual
+    weekly PPR points — the empirical week-to-week band, applied to whatever
+    this week's projection is (GUIDEBOOK 2.7). floor_mult is clamped to >= 0.
     """
     pts = [float(r['fantasy_points_ppr'] or 0) for r in rows if _played_week(r)]
     if len(pts) < 4:
@@ -98,7 +115,32 @@ def calc_boom_bust_from_rows(rows: List[Any]) -> Optional[Dict[str, float]]:
         'boom_pct': round(100.0 * boom / len(pts), 1),
         'bust_pct': round(100.0 * bust / len(pts), 1),
         'weeks_played': len(pts),
+        'floor_mult': round(max(0.0, percentile(pts, 20) / avg), 3),
+        'ceiling_mult': round(max(1.0, percentile(pts, 80) / avg), 3),
     }
+
+
+def floor_ceiling_from_projection(
+    proj_ppr: float,
+    bb: Dict[str, float],
+    model_source: str,
+) -> tuple:
+    """Floor/ceiling for one projection.
+
+    Distribution multipliers (from calc_boom_bust_from_rows) win whenever the
+    player has weekly history. Without history, the old ±25/35% placeholder
+    survives only for ML projections; heuristic projections stay unbounded.
+    """
+    if proj_ppr <= 0:
+        return None, None
+    if 'floor_mult' in bb and 'ceiling_mult' in bb:
+        return (
+            round(proj_ppr * bb['floor_mult'], 2),
+            round(proj_ppr * bb['ceiling_mult'], 2),
+        )
+    if model_source == 'ml':
+        return round(proj_ppr * 0.70, 2), round(proj_ppr * 1.35, 2)
+    return None, None
 
 
 class FantasyScorer:
@@ -457,8 +499,6 @@ class FantasyScorer:
             model_source: str = 'heuristic'
             model_version: Optional[str] = None
             contributions: list = []
-            floor_ppr: Optional[float] = None
-            ceiling_ppr: Optional[float] = None
 
             # Skip ML when player is ruled out — keep the zeroed heuristic output
             ruled_out = injury_status in ('Out', 'IR', 'PUP')
@@ -497,14 +537,16 @@ class FantasyScorer:
                     model_source = 'ml'
                     model_version = f"{PLAYER_MODEL_VERSION}-{pos}"
                     contributions = explain_player_prediction(feat_arr, feats, pos, top_k=5)
-                    # Simple placeholder floor/ceiling (±25%) until Phase 2 adds MC sims
-                    floor_ppr = round(proj_ppr * 0.70, 2)
-                    ceiling_ppr = round(proj_ppr * 1.35, 2)
                     # Confidence bumps up when we have 4+ weeks of recent data
                     if feats.get('weeks_of_experience', 0) >= 4 and injury_status is None:
                         confidence = 'high'
 
             bb = boom_bust_by_player.get(player_id) or {}
+            # Floor/ceiling from the player's actual weekly distribution (p20/p80);
+            # ±25/35% placeholder only for ML projections without weekly history.
+            floor_ppr, ceiling_ppr = floor_ceiling_from_projection(
+                proj_ppr, bb, model_source
+            )
             proj: Dict[str, Any] = {
                 'player_id':            player_id,
                 'full_name':            name,

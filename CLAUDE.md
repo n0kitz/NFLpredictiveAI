@@ -35,7 +35,7 @@ Full-stack NFL **game-prediction + fantasy-football decision engine**. Python 3.
 
 ```bash
 cd nfl-predictor && source .venv/bin/activate
-python -m pytest -q                        # 337 tests (~16 s in a clean .venv)
+python -m pytest -q                        # 349 tests (~16 s in a clean .venv)
 cd frontend && npm run build && npm test   # tsc + vite build, 64 vitest tests (run from frontend/ — vitest setup needs that cwd)
 ```
 

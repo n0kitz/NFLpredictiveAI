@@ -26,7 +26,7 @@
 ### Platform
 - FastAPI + SQLite backend (51 endpoints across 7 domain routers, Swagger at `/docs`), React 19 + TypeScript + Tailwind v4 frontend (13 routes)
 - Docker Compose: nginx frontend → internal API + weekly cron container (Wed 06:00 UTC full data refresh)
-- GitHub Actions CI: lint + 337 backend / 57 frontend tests on every push; GHCR images on `v*` tags
+- GitHub Actions CI: lint + 337 backend / 64 frontend tests on every push; GHCR images on `v*` tags
 - Observability: structured JSON logs, `X-Request-ID`, `GET /api/metrics`
 
 ---
@@ -58,7 +58,7 @@ docker compose up --build -d              # frontend :3000 (nginx) → api inter
 ### Tests
 ```bash
 python -m pytest -q                       # backend (337)
-cd frontend && npm test && npm run build  # frontend (57) + typecheck
+cd frontend && npm test && npm run build  # frontend (64) + typecheck
 ```
 
 ---

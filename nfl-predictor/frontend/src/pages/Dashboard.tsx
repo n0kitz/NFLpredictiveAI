@@ -5,6 +5,7 @@ import type { Prediction, ValuePick, AccuracyStats } from '../api/types';
 import { useAccuracy, useValuePicks } from '../hooks/useApi';
 import TeamLogo from '../components/TeamLogo';
 import Spinner from '../components/Spinner';
+import CalibrationPanel from '../components/CalibrationPanel';
 import { getTeamColors } from '../theme/teamColors';
 import { CURRENT_SEASON } from '../config';
 
@@ -375,11 +376,10 @@ export default function Dashboard() {
     let cancelled = false;
     async function load() {
       try {
-        // Try to use upcoming games from the current season
-        const currentYear = new Date().getFullYear();
+        // Try to use upcoming games from the current NFL season (calendar ≠ season)
         let matchupPairs: [string, string][] = [];
         try {
-          const gameData = await api.getGames(currentYear, 'regular');
+          const gameData = await api.getGames(CURRENT_SEASON, 'regular');
           const upcoming = gameData.games
             .filter(g => g.home_score === null && g.home_abbr && g.away_abbr)
             .slice(0, 8);
@@ -447,6 +447,11 @@ export default function Dashboard() {
 
       {/* Value picks column */}
       <SleeperColumn picks={picks} />
+
+      {/* Model calibration — predicted confidence vs actual win rate */}
+      {accuracy && accuracy.total_games > 0 && (
+        <CalibrationPanel calibration={accuracy.calibration} />
+      )}
     </div>
   );
 }

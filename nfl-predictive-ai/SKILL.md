@@ -13,7 +13,7 @@
 | ML | Game: GradientBoosting **34 feat** (OOS 0.668; weighted-sum 0.672 default). Player: per-position **16 feat** (QB/RB/WR/TE). K/DST heuristic |
 | Fantasy | `fantasy_scorer.py` + `league_settings.py` (scoring **standard default**, league_size 8–20) + `matchup_engine.py` + `lineup_optimizer.py` |
 | Frontend | React 19 + TS + Tailwind v4; localStorage hooks are the state layer (`leagueSettings`, `myRoster`, `draftBoard`) |
-| Tests | **337 backend** (pytest, 21 files) + **57 frontend** (vitest, run from `frontend/`) |
+| Tests | **337 backend** (pytest, 21 files) + **64 frontend** (vitest, run from `frontend/`) |
 | Infra | Docker Compose (nginx frontend → internal api + cron); CI in `.github/workflows/ci.yml`; GHCR on `v*` tags |
 
 ## Hard Rules
@@ -32,7 +32,6 @@
 - **DST = synthetic players** (`espn_id='DST-{abbr}'`, position `DST`, per-season roster entries via `ensure_dst_players`). ESPN kickers arrive `PK` → normalized `K` in `roster_scraper`.
 - **Draft rankings compute per request** (`?season=&scoring=&league_size=`), board ordered by **VBD**; `draft_rankings` table is only a last-request cache. Real ADP lives in `player_adp` and wins over synthetic rank ADP.
 - **Projections cache**: `/api/fantasy/projections` serves persisted `fantasy_projections` rows first. Stale/heuristic rows → `DELETE FROM fantasy_projections WHERE season=? AND week=?` and regenerate from the `.venv`. Projections need the season to have `roster_entries`.
-- **Backend suite is slow (~30 min)** since draft-rankings went compute-per-request — known issue, fix ideas in GUIDEBOOK §5 "Next". Split runs or target files during development; run full before claiming green.
 - **vitest**: run from `frontend/` (setup file + jsdom config only load there); localStorage is polyfilled in `src/test/setup.ts`.
 - **`matchup_cache` / metrics TTL**: `calculate_team_metrics()` cached 1h keyed `(team_id, season)`, bypassed with `cutoff_date` (backtests/retrodictions rely on this).
 - **Retrodiction contract**: `/api/games/{id}/retrodiction` mirrors backtester config (weighted-sum, cutoff-aware, no factors); 400 for unplayed games.

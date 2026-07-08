@@ -1,7 +1,7 @@
 # NFL Predictor — Guidebook
 
 > **The canonical answer to four questions: what is this project, what does "as good as it can possibly be" look like, how far along is it, and what do I do next?**
-> Last updated: 2026-07-07 (all statuses re-verified against the live DB and test suites) · Supersedes `PROJECT_PLAN.md` · Dev setup: `README.md` · Data scraping: `SCRAPING_GUIDE.md` · Agent conventions: `../CLAUDE.md`
+> Last updated: 2026-07-08 (calibration shipped; suite-runtime issue re-measured and resolved) · Supersedes `PROJECT_PLAN.md` · Dev setup: `README.md` · Data scraping: `SCRAPING_GUIDE.md` · Agent conventions: `../CLAUDE.md`
 
 ---
 
@@ -58,7 +58,7 @@ Legend: ✅ done · 🟡 partial / needs action · ⬜ open
 | 2.3 | Predictions auto-save, self-grade on completion, and link to their game (`/history` → `/games/:id`) | ✅ |
 | 2.4 | Every played game has a **retrodiction** (cutoff-aware HIT/MISS, `/api/games/{id}/retrodiction`) | ✅ |
 | 2.5 | Model-vs-Vegas ledger (`/api/picks/value` + history) surfaces where the model disagrees with the market | ✅ code — empty until odds flow (see 3.3) |
-| 2.6 | **Calibration**: predicted 60% wins ≈ 60% of the time, measured and displayed (reliability curve or bucketed table) | ⬜ the biggest open modeling gap |
+| 2.6 | **Calibration**: predicted 60% wins ≈ 60% of the time, measured and displayed (reliability curve or bucketed table) | ✅ bucketed reliability panel on Dashboard (from `/api/accuracy` backtest calibration) |
 | 2.7 | Projection floors/ceilings from actual distributions (Monte-Carlo or quantile models) instead of ±25/35% placeholders | ⬜ |
 | 2.8 | Annual retrain ritual after the Super Bowl folds the finished season into game + player models | ⬜ recurring (first: Feb 2027) |
 
@@ -71,11 +71,11 @@ Legend: ✅ done · 🟡 partial / needs action · ⬜ open
 | 3.3 | Enrichment live: `ODDS_API_KEY` set + `fetch_odds.py` / `fetch_conditions.py` populating (today: `game_odds` = 0, `injury_reports` = 0) | ⬜ key + two commands |
 | 3.4 | A `v*` tag published → GHCR images built by CI (pipeline ✅, first tag ⬜) | 🟡 |
 | 3.5 | CI green on every push: ruff + pytest / eslint + tsc + vitest; Docker job on tags | ✅ |
-| 3.6 | Full test suite green: **337 backend + 57 frontend** | ✅ |
+| 3.6 | Full test suite green: **337 backend + 64 frontend** | ✅ |
 | 3.7 | Observability: JSON logs, `X-Request-ID`, `/api/metrics` | ✅ |
 | 3.8 | Data pipeline survives upstream drift (nflverse URL scheme change of 2025 already absorbed; retry/backoff on all scrapers) | ✅ |
 
-**Score today: Pillar 1 ~85% · Pillar 2 ~70% · Pillar 3 ~55%.**
+**Score today: Pillar 1 ~85% · Pillar 2 ~80% · Pillar 3 ~55%.**
 The software is nearly done; the *service* and the *pre-draft data chores* are what remain. Nothing left is hard — it's a deploy, an API key, a CSV, and a ten-minute settings check.
 
 ---
@@ -104,9 +104,7 @@ This project is calendar-driven. "Done" is not a state, it's a rhythm:
 4. **Weekly roster refresh** (1.7) until draft.
 
 ### Next — in-season quality
-- **Calibration page** (2.6): bucket historical predictions by confidence, plot predicted vs actual win rate; show on Dashboard next to accuracy.
 - **Real floors/ceilings** (2.7): quantile regression or Monte-Carlo from weekly variance instead of fixed ±%.
-- **Backend test-suite speed**: the suite went from seconds to ~30 min after draft-rankings became compute-per-request (every API test regenerates ~1,000 rankings + boom/bust). Add an in-process cache keyed `(season, scoring, league_size)` with TTL, or a test fixture that stubs generation. Known, not urgent, fix before it erodes the testing habit.
 - **Mobile pass** on the fantasy hub + draft board (draft night happens on couches, not desks).
 - Flip `black`/`mypy` from non-blocking to blocking once the backlog (62 files / 55 errors) is cleared.
 
@@ -149,8 +147,8 @@ python scripts/import_schedule.py          # load the new season's schedule/game
 
 ### Verification (before any "it works" claim)
 ```bash
-python -m pytest -q                         # 337 backend (slow ~30 min, see §5 Next)
-cd frontend && npm run build && npm test    # tsc + 57 vitest
+python -m pytest -q                         # 337 backend (~16 s in a clean .venv)
+cd frontend && npm run build && npm test    # tsc + 64 vitest
 ```
 
 ### Gotchas (the ones that actually bite)
@@ -167,6 +165,6 @@ cd frontend && npm run build && npm test    # tsc + 57 vitest
 
 - **Data**: 9,455 games (1990–2025) · player weekly stats 2018–2025 incl. K + DST · 2,957 roster entries for 2026 · `game_odds` 0 · `injury_reports` 0 · `player_adp` 0 (the three empties are §5-Now items).
 - **Models**: game GradientBoosting 34-feat OOS 0.668 (weighted-sum 0.672 remains default; ML opt-in via `?model=ml`) · player models 16-feat, MAE QB 6.48 / RB 5.66 / WR 5.50 / TE 4.26 · K/DST heuristic.
-- **Tests**: 337 backend + 57 frontend, all green.
+- **Tests**: 337 backend + 64 frontend, all green.
 - **Git/CI**: main in sync with origin · CI green · no release tag yet.
 - **Deployment**: none — local/Docker only. This is the top of the list.

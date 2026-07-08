@@ -231,7 +231,7 @@ function DraftRoom({ state, rankings, loading, onPick, onUndo, onReset }: {
             />
           </div>
           {loading ? <Spinner text="Loading rankings…" /> : (
-            <div className="rounded-xl border border-border bg-surface-850 overflow-hidden">
+            <div className="rounded-xl border border-border bg-surface-850 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border">

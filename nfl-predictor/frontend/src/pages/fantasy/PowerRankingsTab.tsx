@@ -36,7 +36,7 @@ export default function PowerRankingsTab() {
       </div>
 
       {loading ? <Spinner text="Computing power rankings…" /> : (
-        <div className="rounded-xl border border-border bg-surface-850 overflow-hidden">
+        <div className="rounded-xl border border-border bg-surface-850 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border">

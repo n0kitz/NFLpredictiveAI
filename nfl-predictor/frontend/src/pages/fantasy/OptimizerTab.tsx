@@ -221,7 +221,7 @@ export default function OptimizerTab() {
                   Player Exposure ({result.total_lineups} lineups)
                 </span>
               </div>
-              <div className="p-4 grid grid-cols-2 gap-2">
+              <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {Object.entries(result.exposure)
                   .sort((a, b) => b[1].pct - a[1].pct)
                   .map(([pid, e]) => (

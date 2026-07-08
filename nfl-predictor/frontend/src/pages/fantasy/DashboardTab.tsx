@@ -76,7 +76,7 @@ export default function DashboardTab() {
       {loading ? (
         <Spinner text="Generating projections…" />
       ) : (
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {DASH_POSITIONS.map((pos) => {
             const data = projections[pos] ?? [];
             return (

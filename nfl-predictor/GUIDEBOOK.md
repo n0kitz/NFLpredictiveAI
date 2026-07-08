@@ -104,7 +104,7 @@ This project is calendar-driven. "Done" is not a state, it's a rhythm:
 4. **Weekly roster refresh** (1.7) until draft.
 
 ### Next — in-season quality
-- **Mobile pass** on the fantasy hub + draft board (draft night happens on couches, not desks).
+- **Mobile pass** on the fantasy hub + draft board (draft night happens on couches, not desks). First code pass done 2026-07-08 (tables scroll horizontally instead of clipping, dashboards stack on small screens) — still needs a check on a real phone.
 - Flip `black`/`mypy` from non-blocking to blocking once the backlog (62 files / 55 errors) is cleared.
 
 ### Later — v2 ambitions (only if the itch strikes)

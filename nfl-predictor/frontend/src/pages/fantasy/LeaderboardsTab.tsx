@@ -39,7 +39,7 @@ export default function LeaderboardsTab() {
       </div>
 
       {loading ? <Spinner text="Loading leaderboard…" /> : (
-        <div className="rounded-xl border border-border bg-surface-850 overflow-hidden">
+        <div className="rounded-xl border border-border bg-surface-850 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border">

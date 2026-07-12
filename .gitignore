@@ -17,3 +17,6 @@ venv/
 # SQLite transient files (WAL/SHM) — never commit
 nfl-predictor/data/nfl.db-wal
 nfl-predictor/data/nfl.db-shm
+
+# graphify knowledge graph output — regenerated via `graphify update .`
+graphify-out/

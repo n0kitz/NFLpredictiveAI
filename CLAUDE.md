@@ -14,6 +14,15 @@
 ### /wissensdatenbank-capture
 @wissensdatenbank-capture/SKILL.md
 
+### /session-protocol (auto-active — start/end ritual + hygiene rules)
+@session-protocol/SKILL.md
+
+### /lessons-learned (auto-active — verified past mistakes, consult before fixing)
+@lessons-learned/SKILL.md
+
+### /season-ops (auto-active — calendar-driven duties, surface what's due)
+@season-ops/SKILL.md
+
 ---
 
 ## What this project is — and where it's going

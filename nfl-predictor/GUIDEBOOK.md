@@ -1,7 +1,7 @@
 # NFL Predictor — Guidebook
 
 > **The canonical answer to four questions: what is this project, what does "as good as it can possibly be" look like, how far along is it, and what do I do next?**
-> Last updated: 2026-07-08 (calibration shipped; suite-runtime issue re-measured and resolved) · Supersedes `PROJECT_PLAN.md` · Dev setup: `README.md` · Data scraping: `SCRAPING_GUIDE.md` · Agent conventions: `../CLAUDE.md`
+> Last updated: 2026-07-17 (black+mypy blocking in CI; rosters refreshed) · Supersedes `PROJECT_PLAN.md` · Dev setup: `README.md` · Data scraping: `SCRAPING_GUIDE.md` · Agent conventions: `../CLAUDE.md`
 
 ---
 
@@ -46,7 +46,7 @@ Legend: ✅ done · 🟡 partial / needs action · ⬜ open
 | 1.4 | **Real ADP** loaded so the board shows value-vs-market (`scripts/import_adp.py`) | 🟡 code done — `player_adp` is empty; import a FantasyPros CSV before draft night |
 | 1.5 | League scoring **verified against the actual fantasy.nfl.com settings page** (esp. K/DST rules) | ⬜ user action, ~10 min, do before draft |
 | 1.6 | In-season loop: projections → start/sit → waiver (own roster excluded, VBD-ranked) → trade analyzer → optimizer, all league-settings-aware | ✅ |
-| 1.7 | 2026 rosters current on draft night (weekly `import_rosters.py --season 2026 --skip-stats` through August; final run day before draft) | 🟡 imported 2026-07-02 (2,957 entries); repeat weekly |
+| 1.7 | 2026 rosters current on draft night (weekly `import_rosters.py --season 2026 --skip-stats` through August; final run day before draft) | 🟡 refreshed 2026-07-17 (2,961 entries); repeat weekly |
 | 1.8 | **The league is won.** (The only criterion that matters; graded in January.) | ⬜ |
 
 ### Pillar 2 — Honest Model
@@ -70,7 +70,7 @@ Legend: ✅ done · 🟡 partial / needs action · ⬜ open
 | 3.2 | Cron container verified firing Wednesdays on the host; a missed run is visible (`scrape_log`, `/api/metrics`) | ⬜ blocked by 3.1 |
 | 3.3 | Enrichment live: `ODDS_API_KEY` set + `fetch_odds.py` / `fetch_conditions.py` populating (today: `game_odds` = 0, `injury_reports` = 0) | ⬜ key + two commands |
 | 3.4 | A `v*` tag published → GHCR images built by CI (pipeline ✅, first tag ⬜) | 🟡 |
-| 3.5 | CI green on every push: ruff + pytest / eslint + tsc + vitest; Docker job on tags | ✅ |
+| 3.5 | CI green on every push: ruff + black + mypy (blocking) + pytest / eslint + tsc + vitest; Docker job on tags | ✅ |
 | 3.6 | Full test suite green: **349 backend + 64 frontend** | ✅ |
 | 3.7 | Observability: JSON logs, `X-Request-ID`, `/api/metrics` | ✅ |
 | 3.8 | Data pipeline survives upstream drift (nflverse URL scheme change of 2025 already absorbed; retry/backoff on all scrapers) | ✅ |
@@ -105,7 +105,7 @@ This project is calendar-driven. "Done" is not a state, it's a rhythm:
 
 ### Next — in-season quality
 - **Mobile pass** on the fantasy hub + draft board (draft night happens on couches, not desks). First code pass done 2026-07-08 (tables scroll horizontally instead of clipping, dashboards stack on small screens) — still needs a check on a real phone.
-- Flip `black`/`mypy` from non-blocking to blocking once the backlog (62 files / 55 errors) is cleared.
+- ~~Flip `black`/`mypy` to blocking~~ ✅ 2026-07-17: backlog cleared (73 files formatted, 55 type errors → 0), both CI steps blocking. Frontend eslint stays non-blocking (react-hooks findings, tracked separately).
 
 ### Later — v2 ambitions (only if the itch strikes)
 - **Season simulator**: Monte-Carlo the remaining schedule → playoff odds per team, magic numbers on the Season page.
@@ -162,7 +162,7 @@ cd frontend && npm run build && npm test    # tsc + 64 vitest
 
 ## 7. State snapshot — 2026-07-07 (re-verified)
 
-- **Data**: 9,455 games (1990–2025) · player weekly stats 2018–2025 incl. K + DST · 2,957 roster entries for 2026 · `game_odds` 0 · `injury_reports` 0 · `player_adp` 0 (the three empties are §5-Now items).
+- **Data**: 9,455 games (1990–2025) · player weekly stats 2018–2025 incl. K + DST · 2,961 roster entries for 2026 (refreshed 2026-07-17) · `game_odds` 0 · `injury_reports` 0 · `player_adp` 0 (the three empties are §5-Now items).
 - **Models**: game GradientBoosting 34-feat OOS 0.668 (weighted-sum 0.672 remains default; ML opt-in via `?model=ml`) · player models 16-feat, MAE QB 6.48 / RB 5.66 / WR 5.50 / TE 4.26 · K/DST heuristic.
 - **Tests**: 349 backend + 64 frontend, all green.
 - **Git/CI**: main in sync with origin · CI green · no release tag yet.

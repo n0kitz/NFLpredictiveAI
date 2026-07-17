@@ -82,7 +82,7 @@ cd nfl-predictor && docker compose up --build       # frontend :3000 (nginx) →
 | API client / types | `frontend/src/api/client.ts` + `types.ts` |
 | Weekly cron | `scripts/weekly_scrape.py` (Wed 06:00 UTC; fcntl-locked; purges stale projections before regen) |
 | Observability | `src/observability.py` → `/api/metrics`, JSON logs, `X-Request-ID` |
-| CI | `.github/workflows/ci.yml` (ruff+pytest / eslint+tsc+vitest; GHCR images on `v*` tags) |
+| CI | `.github/workflows/ci.yml` (ruff+black+mypy+pytest / eslint+tsc+vitest; GHCR images on `v*` tags) |
 
 ## API surface (by router)
 

@@ -20,6 +20,6 @@ Always on. No invocation needed. Applies to every session in this repo.
 
 1. Full verification: backend pytest (~16 s) + `cd frontend && npm run build && npm test`.
 2. Docs sync: any DoD status change → GUIDEBOOK §3 checkboxes + pillar score + §7 snapshot; test-count changes → GUIDEBOOK + CLAUDE.md + SKILL.md + README (all four, they drift independently).
-3. Commit locally. **Push only with explicit user OK.**
+3. **Never `git commit` or `git push` — committing is Normen's job** (his explicit instruction, 2026-07-17). Leave changes in the working tree, report what changed, optionally suggest a commit message.
 4. Write Wissensdatenbank session file (`/wissensdatenbank-capture`) — German prose, template applies, also for pure planning sessions.
 5. New durable lesson learned? → append to /lessons-learned skill table + update auto-memory.

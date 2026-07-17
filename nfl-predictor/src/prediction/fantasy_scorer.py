@@ -24,15 +24,15 @@ _AVG_RZ_EFF = 0.15
 
 # Injury status → (points_multiplier, confidence_label)
 _INJURY_RULES: Dict[str, tuple] = {
-    'Out':          (0.0, 'high'),
-    'IR':           (0.0, 'high'),
-    'PUP':          (0.0, 'high'),
-    'Doubtful':     (0.2, 'low'),
-    'Questionable': (0.7, 'low'),
+    "Out": (0.0, "high"),
+    "IR": (0.0, "high"),
+    "PUP": (0.0, "high"),
+    "Doubtful": (0.2, "low"),
+    "Questionable": (0.7, "low"),
 }
 
-_FANTASY_POSITIONS = ('QB', 'RB', 'WR', 'TE', 'K', 'DST')
-_POSITIONS_SQL = ','.join(f"'{p}'" for p in _FANTASY_POSITIONS)
+_FANTASY_POSITIONS = ("QB", "RB", "WR", "TE", "K", "DST")
+_POSITIONS_SQL = ",".join(f"'{p}'" for p in _FANTASY_POSITIONS)
 
 # Two-season blend weights for projected season points (recency-weighted ppg)
 _BLEND_LAST = 0.65
@@ -40,8 +40,9 @@ _BLEND_PRIOR = 0.35
 _SEASON_GAMES = 17
 
 
-def blend_projected_season_points(last_pts: float, last_games: int,
-                                  prior_pts: float, prior_games: int) -> float:
+def blend_projected_season_points(
+    last_pts: float, last_games: int, prior_pts: float, prior_games: int
+) -> float:
     """Project season points from a recency-weighted per-game blend.
 
     Uses ppg so partial seasons extrapolate instead of penalizing; falls back
@@ -61,6 +62,7 @@ def blend_projected_season_points(last_pts: float, last_games: int,
     shrink = min(1.0, (last_games + prior_games) / 8)
     return round(ppg * _SEASON_GAMES * shrink, 1)
 
+
 # Boom/bust thresholds (multipliers of player's season average PPR points)
 _BOOM_THRESHOLD = 1.5
 _BUST_THRESHOLD = 0.5
@@ -72,9 +74,9 @@ def _played_week(r: Any) -> bool:
     The current importer leaves snaps=0 for rows where only snap_pct is populated,
     so checking both keeps boom/bust working regardless of which column is filled.
     """
-    keys = r.keys() if hasattr(r, 'keys') else r
-    snaps = (r['snaps'] if 'snaps' in keys else 0) or 0
-    snap_pct = (r['snap_pct'] if 'snap_pct' in keys else 0) or 0
+    keys = r.keys() if hasattr(r, "keys") else r
+    snaps = (r["snaps"] if "snaps" in keys else 0) or 0
+    snap_pct = (r["snap_pct"] if "snap_pct" in keys else 0) or 0
     return snaps > 0 or snap_pct > 0
 
 
@@ -103,7 +105,7 @@ def calc_boom_bust_from_rows(rows: List[Any]) -> Optional[Dict[str, float]]:
     weekly PPR points — the empirical week-to-week band, applied to whatever
     this week's projection is (GUIDEBOOK 2.7). floor_mult is clamped to >= 0.
     """
-    pts = [float(r['fantasy_points_ppr'] or 0) for r in rows if _played_week(r)]
+    pts = [float(r["fantasy_points_ppr"] or 0) for r in rows if _played_week(r)]
     if len(pts) < 4:
         return None
     avg = sum(pts) / len(pts)
@@ -112,11 +114,11 @@ def calc_boom_bust_from_rows(rows: List[Any]) -> Optional[Dict[str, float]]:
     boom = sum(1 for p in pts if p >= _BOOM_THRESHOLD * avg)
     bust = sum(1 for p in pts if p <= _BUST_THRESHOLD * avg)
     return {
-        'boom_pct': round(100.0 * boom / len(pts), 1),
-        'bust_pct': round(100.0 * bust / len(pts), 1),
-        'weeks_played': len(pts),
-        'floor_mult': round(max(0.0, percentile(pts, 20) / avg), 3),
-        'ceiling_mult': round(max(1.0, percentile(pts, 80) / avg), 3),
+        "boom_pct": round(100.0 * boom / len(pts), 1),
+        "bust_pct": round(100.0 * bust / len(pts), 1),
+        "weeks_played": len(pts),
+        "floor_mult": round(max(0.0, percentile(pts, 20) / avg), 3),
+        "ceiling_mult": round(max(1.0, percentile(pts, 80) / avg), 3),
     }
 
 
@@ -133,12 +135,12 @@ def floor_ceiling_from_projection(
     """
     if proj_ppr <= 0:
         return None, None
-    if 'floor_mult' in bb and 'ceiling_mult' in bb:
+    if "floor_mult" in bb and "ceiling_mult" in bb:
         return (
-            round(proj_ppr * bb['floor_mult'], 2),
-            round(proj_ppr * bb['ceiling_mult'], 2),
+            round(proj_ppr * bb["floor_mult"], 2),
+            round(proj_ppr * bb["ceiling_mult"], 2),
         )
-    if model_source == 'ml':
+    if model_source == "ml":
         return round(proj_ppr * 0.70, 2), round(proj_ppr * 1.35, 2)
     return None, None
 
@@ -170,17 +172,17 @@ class FantasyScorer:
         if not stats:
             return 1.0
 
-        pos = (position or '').upper()
-        ypp = float(stats['yards_per_play'] or _AVG_YPP)
-        sack_rate = float(stats['sack_rate_allowed'] or _AVG_SACK_RATE)
-        rz_eff = float(stats['redzone_efficiency'] or _AVG_RZ_EFF)
+        pos = (position or "").upper()
+        ypp = float(stats["yards_per_play"] or _AVG_YPP)
+        sack_rate = float(stats["sack_rate_allowed"] or _AVG_SACK_RATE)
+        rz_eff = float(stats["redzone_efficiency"] or _AVG_RZ_EFF)
 
-        if pos == 'QB':
+        if pos == "QB":
             # Opponent takes more sacks → weaker team overall → better matchup
             sack_factor = sack_rate / _AVG_SACK_RATE
             ypp_factor = ypp / _AVG_YPP
             raw = sack_factor * 0.5 + ypp_factor * 0.5
-        elif pos in ('RB', 'FB'):
+        elif pos in ("RB", "FB"):
             raw = ypp / _AVG_YPP
         else:  # WR, TE, K, other
             rz_factor = 1.0 + (rz_eff - _AVG_RZ_EFF)
@@ -208,17 +210,19 @@ class FantasyScorer:
         if not player:
             return {}
 
-        name = player['full_name']
-        pos = (player['position'] or '').upper()
+        name = player["full_name"]
+        pos = (player["position"] or "").upper()
 
         # Base: average weekly points from the most relevant season stats
         stats = self.db.get_player_stats(player_id, season)
         if not stats:
             stats = self.db.get_player_stats(player_id)  # most recent season
 
-        if stats and stats['games_played'] and stats['games_played'] > 0:
-            base_ppr = float(stats['fantasy_points_ppr'] or 0) / stats['games_played']
-            base_std = float(stats['fantasy_points_standard'] or 0) / stats['games_played']
+        if stats and stats["games_played"] and stats["games_played"] > 0:
+            base_ppr = float(stats["fantasy_points_ppr"] or 0) / stats["games_played"]
+            base_std = (
+                float(stats["fantasy_points_standard"] or 0) / stats["games_played"]
+            )
         else:
             base_ppr = 0.0
             base_std = 0.0
@@ -231,14 +235,14 @@ class FantasyScorer:
 
         proj_ppr = base_ppr * matchup_score
         proj_std = base_std * matchup_score
-        confidence = 'medium'
+        confidence = "medium"
         injury_status: Optional[str] = None
         weather_impact = False
 
         # Injury adjustment
         inj = self._get_injury_for_player(name)
         if inj:
-            status = inj['injury_status']
+            status = inj["injury_status"]
             injury_status = status
             if status in _INJURY_RULES:
                 mult, conf = _INJURY_RULES[status]
@@ -247,16 +251,16 @@ class FantasyScorer:
                 confidence = conf
 
         # Weather adjustment for outdoor skill positions
-        if opponent_team_id and pos in ('QB', 'WR', 'TE'):
+        if opponent_team_id and pos in ("QB", "WR", "TE"):
             wx = self._get_weather_for_matchup(opponent_team_id, season, week)
-            if wx and not wx['is_dome']:
-                if float(wx['precipitation_mm'] or 0) > 0:
+            if wx and not wx["is_dome"]:
+                if float(wx["precipitation_mm"] or 0) > 0:
                     proj_ppr *= 0.93
                     proj_std *= 0.93
                     weather_impact = True
 
         # Over/under scaling for skill positions (neutral O/U ≈ 44)
-        if opponent_team_id and pos in ('QB', 'WR', 'TE', 'RB'):
+        if opponent_team_id and pos in ("QB", "WR", "TE", "RB"):
             ou = self._get_over_under(opponent_team_id, season, week)
             if ou and ou > 0:
                 ou_factor = max(0.9, min(1.1, ou / 44.0))
@@ -264,15 +268,15 @@ class FantasyScorer:
                 proj_std *= ou_factor
 
         return {
-            'player_id':            player_id,
-            'full_name':            name,
-            'position':             pos,
-            'projected_points_ppr': round(proj_ppr, 2),
-            'projected_points_std': round(proj_std, 2),
-            'matchup_score':        matchup_score,
-            'confidence':           confidence,
-            'injury_status':        injury_status,
-            'weather_impact':       weather_impact,
+            "player_id": player_id,
+            "full_name": name,
+            "position": pos,
+            "projected_points_ppr": round(proj_ppr, 2),
+            "projected_points_std": round(proj_std, 2),
+            "matchup_score": matchup_score,
+            "confidence": confidence,
+            "injury_status": injury_status,
+            "weather_impact": weather_impact,
         }
 
     # ── Opportunity score ────────────────────────────────────────────────────
@@ -291,13 +295,13 @@ class FantasyScorer:
         """
         stats = self.db.get_player_stats(player_id, season)
         player = self.db.get_player_by_id(player_id)
-        if not stats or not stats['games_played'] or not player:
+        if not stats or not stats["games_played"] or not player:
             return 0.0
 
-        gp = stats['games_played']
-        pos = (player['position'] or '').upper()
+        gp = stats["games_played"]
+        pos = (player["position"] or "").upper()
 
-        targets_per_game = float(stats['targets'] or 0) / gp
+        targets_per_game = float(stats["targets"] or 0) / gp
         snap_pct_proxy = 0.8 if self._is_starter(player_id, season) else 0.4
 
         matchup = 1.0
@@ -316,7 +320,9 @@ class FantasyScorer:
 
     # ── Weekly projections (batch) ───────────────────────────────────────────
 
-    def generate_weekly_projections(self, season: int, week: int) -> List[Dict[str, Any]]:
+    def generate_weekly_projections(
+        self, season: int, week: int
+    ) -> List[Dict[str, Any]]:
         """
         Generate and persist projections for all active skill-position players.
 
@@ -345,10 +351,10 @@ class FantasyScorer:
         # ── 2. All injuries (most recent report date) keyed by lowercase last name ─
         injuries_by_last: Dict[str, str] = {}
         for inj in self.db.get_all_current_injuries():
-            name = (inj['player_name'] or '').strip()
+            name = (inj["player_name"] or "").strip()
             if name:
                 last = name.split()[-1].lower()
-                injuries_by_last[last] = inj['injury_status']
+                injuries_by_last[last] = inj["injury_status"]
 
         # ── 3. All games for this week → map team_id → game row ──────────────
         week_games = self.db.fetchall(
@@ -362,8 +368,8 @@ class FantasyScorer:
         )
         game_by_team: Dict[int, Any] = {}
         for g in week_games:
-            game_by_team[g['home_team_id']] = g
-            game_by_team[g['away_team_id']] = g
+            game_by_team[g["home_team_id"]] = g
+            game_by_team[g["away_team_id"]] = g
 
         # ── 4. Weather for this week keyed by home_team_id ───────────────────
         weather_by_home: Dict[int, Any] = {}
@@ -377,18 +383,18 @@ class FantasyScorer:
             """,
             (season, week, str(week)),
         ):
-            weather_by_home[wx['home_team_id']] = wx
+            weather_by_home[wx["home_team_id"]] = wx
 
         # ── 5. Advanced stats (prior season first, current overwrites) ───────
         adv_stats: Dict[int, Any] = {}
         for r in self.db.fetchall(
             "SELECT * FROM team_advanced_stats WHERE season = ?", (season - 1,)
         ):
-            adv_stats[r['team_id']] = r
+            adv_stats[r["team_id"]] = r
         for r in self.db.fetchall(
             "SELECT * FROM team_advanced_stats WHERE season = ?", (season,)
         ):
-            adv_stats[r['team_id']] = r
+            adv_stats[r["team_id"]] = r
 
         # ── 6. Over/under + spread for this week keyed by game_id ────────────
         ou_by_game: Dict[int, float] = {}
@@ -402,10 +408,10 @@ class FantasyScorer:
             """,
             (season, week, str(week)),
         ):
-            if row['over_under'] is not None:
-                ou_by_game[row['game_id']] = float(row['over_under'])
-            if row['opening_spread'] is not None:
-                spread_by_game[row['game_id']] = float(row['opening_spread'])
+            if row["over_under"] is not None:
+                ou_by_game[row["game_id"]] = float(row["over_under"])
+            if row["opening_spread"] is not None:
+                spread_by_game[row["game_id"]] = float(row["opening_spread"])
 
         # ── 7. Boom/bust % from prior season weekly stats (bulk) ─────────────
         boom_bust_by_player = self.bulk_boom_bust(season - 1)
@@ -415,32 +421,34 @@ class FantasyScorer:
 
         # Pre-warm ML model cache (one joblib load per position)
         model_cache = get_player_model_cache()
-        ml_positions = {pos: model_cache.get_model(pos) is not None
-                        for pos in ('QB', 'RB', 'WR', 'TE')}
+        ml_positions = {
+            pos: model_cache.get_model(pos) is not None
+            for pos in ("QB", "RB", "WR", "TE")
+        }
 
         # ── Loop: compute projections from prefetched data ───────────────────
         results: List[Dict[str, Any]] = []
 
         for p in player_rows:
-            player_id = p['player_id']
-            team_id   = p['team_id']
-            pos       = (p['position'] or '').upper()
-            name      = p['full_name'] or ''
+            player_id = p["player_id"]
+            team_id = p["team_id"]
+            pos = (p["position"] or "").upper()
+            name = p["full_name"] or ""
 
             game = game_by_team.get(team_id)
             opponent_team_id: Optional[int] = None
             if game:
                 opponent_team_id = (
-                    game['away_team_id']
-                    if game['home_team_id'] == team_id
-                    else game['home_team_id']
+                    game["away_team_id"]
+                    if game["home_team_id"] == team_id
+                    else game["home_team_id"]
                 )
 
             # Base points per game from prefetched stats
-            gp = int(p['games_played'] or 0)
+            gp = int(p["games_played"] or 0)
             if gp > 0:
-                base_ppr = float(p['fantasy_points_ppr'] or 0) / gp
-                base_std = float(p['fantasy_points_standard'] or 0) / gp
+                base_ppr = float(p["fantasy_points_ppr"] or 0) / gp
+                base_std = float(p["fantasy_points_standard"] or 0) / gp
             else:
                 base_ppr = 0.0
                 base_std = 0.0
@@ -449,9 +457,9 @@ class FantasyScorer:
             opp_adv = adv_stats.get(opponent_team_id) if opponent_team_id else None
             matchup_score = self._matchup_score_from_stats(opp_adv, pos)
 
-            proj_ppr  = base_ppr * matchup_score
-            proj_std  = base_std * matchup_score
-            confidence = 'medium'
+            proj_ppr = base_ppr * matchup_score
+            proj_std = base_std * matchup_score
+            confidence = "medium"
             injury_status: Optional[str] = None
             weather_impact = False
 
@@ -468,45 +476,47 @@ class FantasyScorer:
                         confidence = conf
 
             # Weather from prefetched dict (keyed by game's home_team_id)
-            if game and pos in ('QB', 'WR', 'TE'):
-                wx = weather_by_home.get(game['home_team_id'])
-                if wx and not wx['is_dome']:
-                    if float(wx['precipitation_mm'] or 0) > 0:
+            if game and pos in ("QB", "WR", "TE"):
+                wx = weather_by_home.get(game["home_team_id"])
+                if wx and not wx["is_dome"]:
+                    if float(wx["precipitation_mm"] or 0) > 0:
                         proj_ppr *= 0.93
                         proj_std *= 0.93
                         weather_impact = True
 
             # Over/under from prefetched dict
-            if game and pos in ('QB', 'WR', 'TE', 'RB'):
-                ou = ou_by_game.get(game['game_id'])
+            if game and pos in ("QB", "WR", "TE", "RB"):
+                ou = ou_by_game.get(game["game_id"])
                 if ou and ou > 0:
                     ou_factor = max(0.9, min(1.1, ou / 44.0))
                     proj_ppr *= ou_factor
                     proj_std *= ou_factor
 
             # Opportunity score (inline — all data already prefetched)
-            targets_per_game = float(p['targets'] or 0) / gp if gp > 0 else 0.0
-            snap_pct_proxy   = 0.8 if p['is_starter'] else 0.4
-            tpg_norm   = min(targets_per_game / 1.2, 10.0)
-            snap_norm  = snap_pct_proxy * 10.0
+            targets_per_game = float(p["targets"] or 0) / gp if gp > 0 else 0.0
+            snap_pct_proxy = 0.8 if p["is_starter"] else 0.4
+            tpg_norm = min(targets_per_game / 1.2, 10.0)
+            snap_norm = snap_pct_proxy * 10.0
             match_norm = (matchup_score - 0.7) / 0.6 * 10.0
-            opp_score  = round(
-                min(10.0, max(0.0, 0.4 * tpg_norm + 0.3 * snap_norm + 0.3 * match_norm)),
+            opp_score = round(
+                min(
+                    10.0, max(0.0, 0.4 * tpg_norm + 0.3 * snap_norm + 0.3 * match_norm)
+                ),
                 2,
             )
 
             # ── ML override (when a model for this position is loaded) ──────
-            model_source: str = 'heuristic'
+            model_source: str = "heuristic"
             model_version: Optional[str] = None
             contributions: list = []
 
             # Skip ML when player is ruled out — keep the zeroed heuristic output
-            ruled_out = injury_status in ('Out', 'IR', 'PUP')
+            ruled_out = injury_status in ("Out", "IR", "PUP")
 
             if ml_positions.get(pos) and not ruled_out and game:
-                game_id = game['game_id']
-                wx = weather_by_home.get(game['home_team_id'])
-                adverse = bool(wx and wx['is_adverse'])
+                game_id = game["game_id"]
+                wx = weather_by_home.get(game["home_team_id"])
+                adverse = bool(wx and wx["is_adverse"])
                 feats = build_player_feature_vector(
                     self.db,
                     player_id=player_id,
@@ -514,7 +524,7 @@ class FantasyScorer:
                     season=season,
                     week=week,
                     opponent_team_id=opponent_team_id,
-                    is_home=(game['home_team_id'] == team_id),
+                    is_home=(game["home_team_id"] == team_id),
                     spread=spread_by_game.get(game_id),
                     over_under=ou_by_game.get(game_id),
                     weather_is_adverse=adverse,
@@ -524,9 +534,9 @@ class FantasyScorer:
                 if ml_pred is not None:
                     # Apply injury multiplier (Doubtful/Questionable only — Out is skipped above)
                     inj_mult = 1.0
-                    if injury_status == 'Doubtful':
+                    if injury_status == "Doubtful":
                         inj_mult = 0.2
-                    elif injury_status == 'Questionable':
+                    elif injury_status == "Questionable":
                         inj_mult = 0.7
                     proj_ppr = ml_pred * inj_mult
                     # Scale standard projection from the PPR/Standard ratio of season base
@@ -534,12 +544,17 @@ class FantasyScorer:
                         proj_std = proj_ppr * (base_std / base_ppr)
                     else:
                         proj_std = proj_ppr * 0.85
-                    model_source = 'ml'
+                    model_source = "ml"
                     model_version = f"{PLAYER_MODEL_VERSION}-{pos}"
-                    contributions = explain_player_prediction(feat_arr, feats, pos, top_k=5)
+                    contributions = explain_player_prediction(
+                        feat_arr, feats, pos, top_k=5
+                    )
                     # Confidence bumps up when we have 4+ weeks of recent data
-                    if feats.get('weeks_of_experience', 0) >= 4 and injury_status is None:
-                        confidence = 'high'
+                    if (
+                        feats.get("weeks_of_experience", 0) >= 4
+                        and injury_status is None
+                    ):
+                        confidence = "high"
 
             bb = boom_bust_by_player.get(player_id) or {}
             # Floor/ceiling from the player's actual weekly distribution (p20/p80);
@@ -548,47 +563,51 @@ class FantasyScorer:
                 proj_ppr, bb, model_source
             )
             proj: Dict[str, Any] = {
-                'player_id':            player_id,
-                'full_name':            name,
-                'position':             pos,
-                'projected_points_ppr': round(proj_ppr, 2),
-                'projected_points_std': round(proj_std, 2),
-                'matchup_score':        matchup_score,
-                'confidence':           confidence,
-                'injury_status':        injury_status,
-                'weather_impact':       weather_impact,
-                'opportunity_score':    opp_score,
-                'week':                 week,
-                'season':               season,
-                'opponent_team_id':     opponent_team_id,
-                'team_abbr':            p['team_abbr'],
-                'headshot_url':         p['headshot_url'],
-                'model_source':         model_source,
-                'model_version':        model_version,
-                'floor_ppr':            floor_ppr,
-                'ceiling_ppr':          ceiling_ppr,
-                'contributions':        contributions,
-                'boom_pct':             bb.get('boom_pct'),
-                'bust_pct':             bb.get('bust_pct'),
-                'bye_week':             bye_by_team.get(team_id),
+                "player_id": player_id,
+                "full_name": name,
+                "position": pos,
+                "projected_points_ppr": round(proj_ppr, 2),
+                "projected_points_std": round(proj_std, 2),
+                "matchup_score": matchup_score,
+                "confidence": confidence,
+                "injury_status": injury_status,
+                "weather_impact": weather_impact,
+                "opportunity_score": opp_score,
+                "week": week,
+                "season": season,
+                "opponent_team_id": opponent_team_id,
+                "team_abbr": p["team_abbr"],
+                "headshot_url": p["headshot_url"],
+                "model_source": model_source,
+                "model_version": model_version,
+                "floor_ppr": floor_ppr,
+                "ceiling_ppr": ceiling_ppr,
+                "contributions": contributions,
+                "boom_pct": bb.get("boom_pct"),
+                "bust_pct": bb.get("bust_pct"),
+                "bye_week": bye_by_team.get(team_id),
             }
 
-            self.db.upsert_fantasy_projection({
-                'player_id':            player_id,
-                'season':               season,
-                'week':                 week,
-                'opponent_team_id':     opponent_team_id,
-                'projected_points_ppr': proj['projected_points_ppr'],
-                'projected_points_std': proj['projected_points_std'],
-                'matchup_score':        matchup_score,
-                'opportunity_score':    opp_score,
-                'confidence':           confidence,
-                'model_source':         model_source,
-                'model_version':        model_version,
-                'floor_ppr':            floor_ppr,
-                'ceiling_ppr':          ceiling_ppr,
-                'contributions_json':   json.dumps(contributions) if contributions else None,
-            })
+            self.db.upsert_fantasy_projection(
+                {
+                    "player_id": player_id,
+                    "season": season,
+                    "week": week,
+                    "opponent_team_id": opponent_team_id,
+                    "projected_points_ppr": proj["projected_points_ppr"],
+                    "projected_points_std": proj["projected_points_std"],
+                    "matchup_score": matchup_score,
+                    "opportunity_score": opp_score,
+                    "confidence": confidence,
+                    "model_source": model_source,
+                    "model_version": model_version,
+                    "floor_ppr": floor_ppr,
+                    "ceiling_ppr": ceiling_ppr,
+                    "contributions_json": (
+                        json.dumps(contributions) if contributions else None
+                    ),
+                }
+            )
 
             results.append(proj)
 
@@ -624,7 +643,7 @@ class FantasyScorer:
         rows = self.db.fetchall(query, tuple(params))
         by_player: Dict[int, list] = {}
         for r in rows:
-            by_player.setdefault(r['player_id'], []).append(r)
+            by_player.setdefault(r["player_id"], []).append(r)
         result: Dict[int, Dict[str, float]] = {}
         for pid, rs in by_player.items():
             bb = calc_boom_bust_from_rows(rs)
@@ -634,8 +653,9 @@ class FantasyScorer:
 
     # ── Draft rankings ───────────────────────────────────────────────────────
 
-    def generate_draft_rankings(self, season: int, scoring_format: str,
-                                league_size: int = 10) -> List[Dict[str, Any]]:
+    def generate_draft_rankings(
+        self, season: int, scoring_format: str, league_size: int = 10
+    ) -> List[Dict[str, Any]]:
         """
         Generate and persist draft rankings for a season, scoring format and
         league size.
@@ -651,8 +671,8 @@ class FantasyScorer:
         settings = LeagueSettings(scoring=scoring_format, league_size=league_size)
         prev_season = season - 1
         prior_season = season - 2
-        pts_expr = settings.points_expr('pss')
-        pts_expr_prior = settings.points_expr('pss2')
+        pts_expr = settings.points_expr("pss")
+        pts_expr_prior = settings.points_expr("pss2")
 
         rows = self.db.fetchall(
             f"""
@@ -703,24 +723,27 @@ class FantasyScorer:
         injury_counts: Dict[str, int] = {}
         for r in self.db.fetchall(
             "SELECT player_name, COUNT(*) AS cnt FROM injury_reports "
-            "GROUP BY player_name", ()
+            "GROUP BY player_name",
+            (),
         ):
-            name = (r['player_name'] or '').strip()
+            name = (r["player_name"] or "").strip()
             if name:
                 last = name.split()[-1].lower()
-                injury_counts[last] = injury_counts.get(last, 0) + int(r['cnt'])
+                injury_counts[last] = injury_counts.get(last, 0) + int(r["cnt"])
 
         # Compute adjusted scores
         scored: List[Dict[str, Any]] = []
         for r in rows:
             projected = blend_projected_season_points(
-                float(r['season_pts'] or 0), int(r['games_played'] or 0),
-                float(r['prior_pts'] or 0), int(r['prior_games'] or 0),
+                float(r["season_pts"] or 0),
+                int(r["games_played"] or 0),
+                float(r["prior_pts"] or 0),
+                int(r["prior_games"] or 0),
             )
             score = projected
 
             # Age penalty: −2 % per year above 30
-            dob = r['date_of_birth']
+            dob = r["date_of_birth"]
             if dob:
                 try:
                     age = season - int(str(dob)[:4])
@@ -730,22 +753,28 @@ class FantasyScorer:
                     pass
 
             # Injury-frequency penalty: −5 % per report beyond 2
-            last = (r['full_name'] or '').strip().split()[-1].lower() if r['full_name'] else ''
+            last = (
+                (r["full_name"] or "").strip().split()[-1].lower()
+                if r["full_name"]
+                else ""
+            )
             inj_count = injury_counts.get(last, 0)
             if inj_count > 2:
                 score *= max(0.8, 1.0 - 0.05 * (inj_count - 2))
 
-            scored.append({
-                'player_id':  r['player_id'],
-                'full_name':  r['full_name'],
-                'position':   r['position'],
-                'headshot_url': r['headshot_url'],
-                'team_abbr':  r['team_abbr'],
-                'adj_score':  score,
-                'season_pts': projected,
-            })
+            scored.append(
+                {
+                    "player_id": r["player_id"],
+                    "full_name": r["full_name"],
+                    "position": r["position"],
+                    "headshot_url": r["headshot_url"],
+                    "team_abbr": r["team_abbr"],
+                    "adj_score": score,
+                    "season_pts": projected,
+                }
+            )
 
-        scored.sort(key=lambda x: x['adj_score'], reverse=True)
+        scored.sort(key=lambda x: x["adj_score"], reverse=True)
 
         # Replacement-level baseline points per position (for VBD),
         # derived from league size + roster slots
@@ -754,25 +783,24 @@ class FantasyScorer:
         replacement_pts: Dict[str, float] = {}
         pos_rank_walk: Dict[str, int] = {}
         for entry in scored:
-            pos = entry['position'] or 'OTH'
+            pos = entry["position"] or "OTH"
             pos_rank_walk[pos] = pos_rank_walk.get(pos, 0) + 1
             cutoff = replacement_level.get(pos)
             if cutoff and pos_rank_walk[pos] == cutoff:
-                replacement_pts[pos] = float(entry['adj_score'])
+                replacement_pts[pos] = float(entry["adj_score"])
 
         # VBD per entry, then order the board by value over replacement —
         # raw points would stack QBs at the top even when a RB is the scarcer
         # (and therefore more valuable) pick.
         for entry in scored:
-            replacement = replacement_pts.get(entry['position'] or 'OTH')
-            entry['vbd'] = (
-                round(max(0.0, float(entry['adj_score']) - replacement), 1)
+            replacement = replacement_pts.get(entry["position"] or "OTH")
+            entry["vbd"] = (
+                round(max(0.0, float(entry["adj_score"]) - replacement), 1)
                 if replacement is not None
                 else None
             )
         scored.sort(
-            key=lambda x: (x['vbd'] if x['vbd'] is not None else -1.0,
-                           x['adj_score']),
+            key=lambda x: (x["vbd"] if x["vbd"] is not None else -1.0, x["adj_score"]),
             reverse=True,
         )
 
@@ -781,7 +809,7 @@ class FantasyScorer:
 
         # Real ADP (imported via scripts/import_adp.py) beats synthetic rank
         real_adp: Dict[int, float] = {
-            r['player_id']: float(r['adp'])
+            r["player_id"]: float(r["adp"])
             for r in self.db.fetchall(
                 "SELECT player_id, adp FROM player_adp WHERE season = ?",
                 (season,),
@@ -792,7 +820,7 @@ class FantasyScorer:
         results: List[Dict[str, Any]] = []
 
         for overall_rank, entry in enumerate(scored, start=1):
-            pos = entry['position'] or 'OTH'
+            pos = entry["position"] or "OTH"
             pos_rank_counter[pos] = pos_rank_counter.get(pos, 0) + 1
             pos_rank = pos_rank_counter[pos]
 
@@ -802,44 +830,49 @@ class FantasyScorer:
                     tier = i
                     break
 
-            adp = real_adp.get(entry['player_id'], float(overall_rank))
-            vbd = entry['vbd']
-            bb = boom_bust_by_player.get(entry['player_id']) or {}
+            adp = real_adp.get(entry["player_id"], float(overall_rank))
+            vbd = entry["vbd"]
+            bb = boom_bust_by_player.get(entry["player_id"]) or {}
 
             ranking: Dict[str, Any] = {
-                'player_id':               entry['player_id'],
-                'full_name':               entry['full_name'],
-                'position':                entry['position'],
-                'headshot_url':            entry['headshot_url'],
-                'team_abbr':               entry['team_abbr'],
-                'overall_rank':            overall_rank,
-                'position_rank':           pos_rank,
-                'tier':                    tier,
-                'adp':                     adp,
-                'projected_season_points': round(entry['season_pts'], 1),
-                'vbd':                     vbd,
-                'boom_pct':                bb.get('boom_pct'),
-                'bust_pct':                bb.get('bust_pct'),
-                'season':                  season,
-                'scoring_format':          scoring_format,
+                "player_id": entry["player_id"],
+                "full_name": entry["full_name"],
+                "position": entry["position"],
+                "headshot_url": entry["headshot_url"],
+                "team_abbr": entry["team_abbr"],
+                "overall_rank": overall_rank,
+                "position_rank": pos_rank,
+                "tier": tier,
+                "adp": adp,
+                "projected_season_points": round(entry["season_pts"], 1),
+                "vbd": vbd,
+                "boom_pct": bb.get("boom_pct"),
+                "bust_pct": bb.get("bust_pct"),
+                "season": season,
+                "scoring_format": scoring_format,
             }
             results.append(ranking)
 
-            self.db.upsert_draft_ranking({
-                'season':                  season,
-                'scoring_format':          scoring_format,
-                'player_id':               entry['player_id'],
-                'overall_rank':            overall_rank,
-                'position_rank':           pos_rank,
-                'tier':                    tier,
-                'adp':                     adp,
-                'projected_season_points': round(entry['season_pts'], 1),
-                'vbd':                     vbd,
-            })
+            self.db.upsert_draft_ranking(
+                {
+                    "season": season,
+                    "scoring_format": scoring_format,
+                    "player_id": entry["player_id"],
+                    "overall_rank": overall_rank,
+                    "position_rank": pos_rank,
+                    "tier": tier,
+                    "adp": adp,
+                    "projected_season_points": round(entry["season_pts"], 1),
+                    "vbd": vbd,
+                }
+            )
 
         self.db.commit()
         logger.info(
-            "Generated %d draft rankings for %s %s", len(results), season, scoring_format
+            "Generated %d draft rankings for %s %s",
+            len(results),
+            season,
+            scoring_format,
         )
         return results
 
@@ -863,7 +896,7 @@ class FantasyScorer:
             return round(
                 sum(
                     self.calculate_projection(pid, wk, season, None).get(
-                        'projected_points_ppr', 0.0
+                        "projected_points_ppr", 0.0
                     )
                     for wk in remaining_weeks
                 ),
@@ -874,8 +907,12 @@ class FantasyScorer:
             p = self.db.get_player_by_id(pid)
             if not p:
                 return {
-                    'player_id': pid, 'full_name': 'Unknown', 'ros_projected': ros,
-                    'position': None, 'team_abbr': None, 'headshot_url': None,
+                    "player_id": pid,
+                    "full_name": "Unknown",
+                    "ros_projected": ros,
+                    "position": None,
+                    "team_abbr": None,
+                    "headshot_url": None,
                 }
             team_row = self.db.fetchone(
                 """
@@ -887,35 +924,35 @@ class FantasyScorer:
                 (pid,),
             )
             return {
-                'player_id':   pid,
-                'full_name':   p['full_name'],
-                'position':    p['position'],
-                'team_abbr':   team_row['abbreviation'] if team_row else None,
-                'headshot_url': p['headshot_url'],
-                'ros_projected': ros,
+                "player_id": pid,
+                "full_name": p["full_name"],
+                "position": p["position"],
+                "team_abbr": team_row["abbreviation"] if team_row else None,
+                "headshot_url": p["headshot_url"],
+                "ros_projected": ros,
             }
 
         give_entries = [build_entry(pid, ros_points(pid)) for pid in give_player_ids]
-        get_entries  = [build_entry(pid, ros_points(pid)) for pid in get_player_ids]
+        get_entries = [build_entry(pid, ros_points(pid)) for pid in get_player_ids]
 
-        give_total = round(sum(e['ros_projected'] for e in give_entries), 1)
-        get_total  = round(sum(e['ros_projected'] for e in get_entries), 1)
-        delta      = round(get_total - give_total, 1)
+        give_total = round(sum(e["ros_projected"] for e in give_entries), 1)
+        get_total = round(sum(e["ros_projected"] for e in get_entries), 1)
+        delta = round(get_total - give_total, 1)
 
         if get_total > give_total * 1.05:
-            verdict = 'WIN'
+            verdict = "WIN"
         elif give_total > get_total * 1.05:
-            verdict = 'LOSE'
+            verdict = "LOSE"
         else:
-            verdict = 'FAIR'
+            verdict = "FAIR"
 
         return {
-            'give':       give_entries,
-            'get':        get_entries,
-            'give_total': give_total,
-            'get_total':  get_total,
-            'verdict':    verdict,
-            'delta':      delta,
+            "give": give_entries,
+            "get": get_entries,
+            "give_total": give_total,
+            "get_total": get_total,
+            "verdict": verdict,
+            "delta": delta,
         }
 
     # ── Start / Sit recommendation ───────────────────────────────────────────
@@ -939,8 +976,8 @@ class FantasyScorer:
         def _enrich(proj: Dict, pid: int) -> Dict:
             player = self.db.get_player_by_id(pid)
             if player:
-                proj.setdefault('full_name', player['full_name'])
-                proj['headshot_url'] = player['headshot_url']
+                proj.setdefault("full_name", player["full_name"])
+                proj["headshot_url"] = player["headshot_url"]
             team_row = self.db.fetchone(
                 """
                 SELECT t.abbreviation FROM teams t
@@ -950,13 +987,13 @@ class FantasyScorer:
                 """,
                 (pid,),
             )
-            proj['team_abbr'] = team_row['abbreviation'] if team_row else None
+            proj["team_abbr"] = team_row["abbreviation"] if team_row else None
             return proj
 
         p1 = _enrich(p1, player1_id)
         p2 = _enrich(p2, player2_id)
 
-        if p1.get('projected_points_ppr', 0) >= p2.get('projected_points_ppr', 0):
+        if p1.get("projected_points_ppr", 0) >= p2.get("projected_points_ppr", 0):
             start_proj, sit_proj = p1, p2
             start_id, sit_id = player1_id, player2_id
         else:
@@ -964,58 +1001,63 @@ class FantasyScorer:
             start_id, sit_id = player2_id, player1_id
 
         def _reasoning(proj: Dict, is_start: bool) -> str:
-            inj = proj.get('injury_status')
-            if inj in ('Out', 'IR', 'PUP'):
+            inj = proj.get("injury_status")
+            if inj in ("Out", "IR", "PUP"):
                 return f"Ruled out ({inj}) — do not start."
-            if inj == 'Doubtful':
+            if inj == "Doubtful":
                 return "Doubtful to play — avoid if possible."
-            ms = proj.get('matchup_score', 1.0)
-            pts = proj.get('projected_points_ppr', 0.0)
+            ms = proj.get("matchup_score", 1.0)
+            pts = proj.get("projected_points_ppr", 0.0)
             parts = []
             if is_start:
                 parts.append(
                     f"Favorable matchup (score {ms:.2f})"
-                    if ms >= 1.1 else f"Higher projected output ({pts:.1f} pts)"
+                    if ms >= 1.1
+                    else f"Higher projected output ({pts:.1f} pts)"
                 )
             else:
                 parts.append(
                     f"Tough matchup (score {ms:.2f})"
-                    if ms < 0.9 else f"Lower projected output ({pts:.1f} pts)"
+                    if ms < 0.9
+                    else f"Lower projected output ({pts:.1f} pts)"
                 )
-            if proj.get('weather_impact'):
+            if proj.get("weather_impact"):
                 parts.append("adverse weather expected")
-            return '. '.join(parts) + '.'
+            return ". ".join(parts) + "."
 
-        conf_vals = [start_proj.get('confidence', 'medium'), sit_proj.get('confidence', 'medium')]
-        if 'low' in conf_vals:
-            overall_conf = 'low'
-        elif all(c == 'high' for c in conf_vals):
-            overall_conf = 'high'
+        conf_vals = [
+            start_proj.get("confidence", "medium"),
+            sit_proj.get("confidence", "medium"),
+        ]
+        if "low" in conf_vals:
+            overall_conf = "low"
+        elif all(c == "high" for c in conf_vals):
+            overall_conf = "high"
         else:
-            overall_conf = 'medium'
+            overall_conf = "medium"
 
         return {
-            'start': {
-                'player_id':            start_id,
-                'full_name':            start_proj.get('full_name', ''),
-                'position':             start_proj.get('position'),
-                'team_abbr':            start_proj.get('team_abbr'),
-                'headshot_url':         start_proj.get('headshot_url'),
-                'projected_points_ppr': start_proj.get('projected_points_ppr', 0.0),
-                'matchup_score':        start_proj.get('matchup_score', 1.0),
-                'reasoning':            _reasoning(start_proj, True),
+            "start": {
+                "player_id": start_id,
+                "full_name": start_proj.get("full_name", ""),
+                "position": start_proj.get("position"),
+                "team_abbr": start_proj.get("team_abbr"),
+                "headshot_url": start_proj.get("headshot_url"),
+                "projected_points_ppr": start_proj.get("projected_points_ppr", 0.0),
+                "matchup_score": start_proj.get("matchup_score", 1.0),
+                "reasoning": _reasoning(start_proj, True),
             },
-            'sit': {
-                'player_id':            sit_id,
-                'full_name':            sit_proj.get('full_name', ''),
-                'position':             sit_proj.get('position'),
-                'team_abbr':            sit_proj.get('team_abbr'),
-                'headshot_url':         sit_proj.get('headshot_url'),
-                'projected_points_ppr': sit_proj.get('projected_points_ppr', 0.0),
-                'matchup_score':        sit_proj.get('matchup_score', 1.0),
-                'reasoning':            _reasoning(sit_proj, False),
+            "sit": {
+                "player_id": sit_id,
+                "full_name": sit_proj.get("full_name", ""),
+                "position": sit_proj.get("position"),
+                "team_abbr": sit_proj.get("team_abbr"),
+                "headshot_url": sit_proj.get("headshot_url"),
+                "projected_points_ppr": sit_proj.get("projected_points_ppr", 0.0),
+                "matchup_score": sit_proj.get("matchup_score", 1.0),
+                "reasoning": _reasoning(sit_proj, False),
             },
-            'confidence': overall_conf,
+            "confidence": overall_conf,
         }
 
     # ── Private helpers ──────────────────────────────────────────────────────
@@ -1031,13 +1073,13 @@ class FantasyScorer:
         """
         if not adv_stats:
             return 1.0
-        pos       = (position or '').upper()
-        ypp       = float(adv_stats['yards_per_play'] or _AVG_YPP)
-        sack_rate = float(adv_stats['sack_rate_allowed'] or _AVG_SACK_RATE)
-        rz_eff    = float(adv_stats['redzone_efficiency'] or _AVG_RZ_EFF)
-        if pos == 'QB':
+        pos = (position or "").upper()
+        ypp = float(adv_stats["yards_per_play"] or _AVG_YPP)
+        sack_rate = float(adv_stats["sack_rate_allowed"] or _AVG_SACK_RATE)
+        rz_eff = float(adv_stats["redzone_efficiency"] or _AVG_RZ_EFF)
+        if pos == "QB":
             raw = (sack_rate / _AVG_SACK_RATE) * 0.5 + (ypp / _AVG_YPP) * 0.5
-        elif pos in ('RB', 'FB'):
+        elif pos in ("RB", "FB"):
             raw = ypp / _AVG_YPP
         else:
             raw = (1.0 + (rz_eff - _AVG_RZ_EFF)) * 0.4 + (ypp / _AVG_YPP) * 0.6
@@ -1055,7 +1097,7 @@ class FantasyScorer:
             ORDER BY report_date DESC
             LIMIT 1
             """,
-            (f'%{last}%',),
+            (f"%{last}%",),
         )
 
     def _get_injury_frequency(self, player_name: str) -> int:
@@ -1065,9 +1107,9 @@ class FantasyScorer:
         last = player_name.strip().split()[-1]
         row = self.db.fetchone(
             "SELECT COUNT(*) AS cnt FROM injury_reports WHERE player_name LIKE ?",
-            (f'%{last}%',),
+            (f"%{last}%",),
         )
-        return int(row['cnt'] or 0) if row else 0
+        return int(row["cnt"] or 0) if row else 0
 
     def _is_starter(self, player_id: int, season: int) -> bool:
         """Return True if the player is marked as a starter in roster_entries."""
@@ -1075,7 +1117,7 @@ class FantasyScorer:
             "SELECT is_starter FROM roster_entries WHERE player_id=? AND season=? LIMIT 1",
             (player_id, season),
         )
-        return bool(row and row['is_starter']) if row else False
+        return bool(row and row["is_starter"]) if row else False
 
     def _get_weather_for_matchup(
         self, team_id: int, season: int, week: int
@@ -1095,12 +1137,10 @@ class FantasyScorer:
             return None
         return self.db.fetchone(
             "SELECT * FROM game_weather WHERE home_team_id=? AND game_date=?",
-            (game['home_team_id'], str(game['date'])),
+            (game["home_team_id"], str(game["date"])),
         )
 
-    def _get_over_under(
-        self, team_id: int, season: int, week: int
-    ) -> Optional[float]:
+    def _get_over_under(self, team_id: int, season: int, week: int) -> Optional[float]:
         """Return the over/under from game_odds for the team's game in a given week."""
         game = self.db.fetchone(
             """
@@ -1116,6 +1156,6 @@ class FantasyScorer:
             return None
         odds = self.db.fetchone(
             "SELECT over_under FROM game_odds WHERE game_id=?",
-            (game['game_id'],),
+            (game["game_id"],),
         )
-        return float(odds['over_under']) if odds and odds['over_under'] else None
+        return float(odds["over_under"]) if odds and odds["over_under"] else None

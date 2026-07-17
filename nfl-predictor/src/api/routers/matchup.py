@@ -9,9 +9,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..deps import get_db
 from ..schemas import (
-    MatchupComponentScores, MatchupGradeResponse,
-    OptimizeRequest, OptimizeDFSRequest,
-    LineupPlayerOut, LineupResult, ExposureEntry, OptimizeResponse,
+    MatchupComponentScores,
+    MatchupGradeResponse,
+    OptimizeRequest,
+    OptimizeDFSRequest,
+    LineupPlayerOut,
+    LineupResult,
+    ExposureEntry,
+    OptimizeResponse,
 )
 from ...database.db import Database
 
@@ -20,39 +25,43 @@ router = APIRouter()
 
 def _build_lineup_response(result: dict) -> OptimizeResponse:
     lineups = []
-    for lu in result['lineups']:
+    for lu in result["lineups"]:
         players_out = [
             LineupPlayerOut(
-                player_id=p['player_id'],
-                full_name=p['full_name'],
-                position=p['position'],
-                team_abbr=p['team_abbr'],
-                headshot_url=p.get('headshot_url'),
-                slot=p['slot'],
-                projected_points=p['projected_points'],
-                salary=p.get('salary', 0),
+                player_id=p["player_id"],
+                full_name=p["full_name"],
+                position=p["position"],
+                team_abbr=p["team_abbr"],
+                headshot_url=p.get("headshot_url"),
+                slot=p["slot"],
+                projected_points=p["projected_points"],
+                salary=p.get("salary", 0),
             )
-            for p in lu['players']
+            for p in lu["players"]
         ]
-        lineups.append(LineupResult(
-            rank=lu['rank'],
-            players=players_out,
-            projected_points=lu['projected_points'],
-            total_salary=lu['total_salary'],
-            correlation_bonus=lu['correlation_bonus'],
-        ))
+        lineups.append(
+            LineupResult(
+                rank=lu["rank"],
+                players=players_out,
+                projected_points=lu["projected_points"],
+                total_salary=lu["total_salary"],
+                correlation_bonus=lu["correlation_bonus"],
+            )
+        )
     exposure = {
         str(pid): ExposureEntry(
-            count=e['count'], pct=e['pct'],
-            full_name=e['full_name'], position=e['position'],
+            count=e["count"],
+            pct=e["pct"],
+            full_name=e["full_name"],
+            position=e["position"],
         )
-        for pid, e in result['exposure'].items()
+        for pid, e in result["exposure"].items()
     }
     return OptimizeResponse(
         lineups=lineups,
         exposure=exposure,
-        total_lineups=result['total_lineups'],
-        slots=result['slots'],
+        total_lineups=result["total_lineups"],
+        slots=result["slots"],
     )
 
 
@@ -63,11 +72,17 @@ def optimize_lineup(req: OptimizeRequest):
 
     pool = [
         LineupPlayer(
-            player_id=p.player_id, full_name=p.full_name, position=p.position,
-            team_id=p.team_id, team_abbr=p.team_abbr,
-            projected_points=p.projected_points, salary=p.salary,
-            is_locked=p.is_locked, is_excluded=p.is_excluded,
-            headshot_url=p.headshot_url, opponent_team_id=p.opponent_team_id,
+            player_id=p.player_id,
+            full_name=p.full_name,
+            position=p.position,
+            team_id=p.team_id,
+            team_abbr=p.team_abbr,
+            projected_points=p.projected_points,
+            salary=p.salary,
+            is_locked=p.is_locked,
+            is_excluded=p.is_excluded,
+            headshot_url=p.headshot_url,
+            opponent_team_id=p.opponent_team_id,
         )
         for p in req.players
     ]
@@ -89,41 +104,52 @@ def optimize_lineup(req: OptimizeRequest):
     return _build_lineup_response(result)
 
 
-@router.post("/api/fantasy/optimize/dfs", response_model=OptimizeResponse, tags=["fantasy"])
+@router.post(
+    "/api/fantasy/optimize/dfs", response_model=OptimizeResponse, tags=["fantasy"]
+)
 def optimize_dfs(req: OptimizeDFSRequest):
     """DFS lineup optimizer for DraftKings ('dk') or FanDuel ('fd')."""
     from ...prediction.lineup_optimizer import (
-        LineupPlayer, optimize_lineup as _opt, DFS_SLOTS,
+        LineupPlayer,
+        optimize_lineup as _opt,
+        DFS_SLOTS,
     )
 
     site = req.site.lower()
     if site not in DFS_SLOTS:
-        raise HTTPException(status_code=400, detail=f"Unknown site '{site}'. Use 'dk' or 'fd'.")
+        raise HTTPException(
+            status_code=400, detail=f"Unknown site '{site}'. Use 'dk' or 'fd'."
+        )
 
     cfg = DFS_SLOTS[site]
-    locked   = set(req.locked_player_ids)
+    locked = set(req.locked_player_ids)
     excluded = set(req.excluded_player_ids)
 
     pool = [
         LineupPlayer(
-            player_id=p.player_id, full_name=p.full_name, position=p.position,
-            team_id=p.team_id, team_abbr=p.team_abbr,
-            projected_points=p.projected_points, salary=p.salary,
+            player_id=p.player_id,
+            full_name=p.full_name,
+            position=p.position,
+            team_id=p.team_id,
+            team_abbr=p.team_abbr,
+            projected_points=p.projected_points,
+            salary=p.salary,
             is_locked=(p.player_id in locked or p.is_locked),
             is_excluded=(p.player_id in excluded or p.is_excluded),
-            headshot_url=p.headshot_url, opponent_team_id=p.opponent_team_id,
+            headshot_url=p.headshot_url,
+            opponent_team_id=p.opponent_team_id,
         )
         for p in req.players
     ]
     try:
         result = _opt(
             players=pool,
-            slots=cfg['slots'],
-            flex_positions=cfg['flex_positions'],
-            salary_cap=cfg['salary_cap'],
+            slots=cfg["slots"],
+            flex_positions=cfg["flex_positions"],
+            salary_cap=cfg["salary_cap"],
             n_lineups=min(req.n_lineups, 150),
             correlations=req.correlations,
-            max_from_team=cfg['max_from_team'],
+            max_from_team=cfg["max_from_team"],
         )
     except ImportError as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -133,7 +159,11 @@ def optimize_dfs(req: OptimizeDFSRequest):
     return _build_lineup_response(result)
 
 
-@router.get("/api/fantasy/matchup/{player_id}", response_model=MatchupGradeResponse, tags=["fantasy"])
+@router.get(
+    "/api/fantasy/matchup/{player_id}",
+    response_model=MatchupGradeResponse,
+    tags=["fantasy"],
+)
 def get_matchup_grade(
     player_id: int,
     week: int = Query(..., ge=1, le=22, description="NFL week number"),
@@ -151,7 +181,7 @@ def get_matchup_grade(
     if not player:
         raise HTTPException(status_code=404, detail=f"Player {player_id} not found")
 
-    pos = (player['position'] or '').upper()
+    pos = (player["position"] or "").upper()
 
     team_row = db.fetchone(
         """
@@ -165,7 +195,7 @@ def get_matchup_grade(
     if not team_row:
         raise HTTPException(status_code=404, detail="Player has no team roster entry")
 
-    team_id = team_row['team_id']
+    team_id = team_row["team_id"]
     game = db.fetchone(
         """
         SELECT game_id, home_team_id, away_team_id FROM games
@@ -183,32 +213,34 @@ def get_matchup_grade(
         )
 
     opp_team_id = (
-        game['away_team_id'] if game['home_team_id'] == team_id else game['home_team_id']
+        game["away_team_id"]
+        if game["home_team_id"] == team_id
+        else game["home_team_id"]
     )
     opp_team_row = db.fetchone(
         "SELECT abbreviation FROM teams WHERE team_id = ?", (opp_team_id,)
     )
-    opp_abbr = opp_team_row['abbreviation'] if opp_team_row else None
+    opp_abbr = opp_team_row["abbreviation"] if opp_team_row else None
 
     result = matchup_grade(db, player_id, opp_team_id, pos, season, week)
 
     return MatchupGradeResponse(
         player_id=player_id,
-        full_name=player['full_name'],
+        full_name=player["full_name"],
         position=pos or None,
-        team_abbr=team_row['abbreviation'],
+        team_abbr=team_row["abbreviation"],
         opp_team_id=opp_team_id,
         opp_team_abbr=opp_abbr,
         week=week,
         season=season,
-        grade=result['grade'],
-        score=result['score'],
-        rank_vs_league=result['rank_vs_league'],
-        explanation=result['explanation'],
-        dvp_6wk=result['dvp_6wk'],
-        avg_league_dvp=result['avg_league_dvp'],
-        opp_ypp=result['opp_ypp'],
-        pace=result['pace'],
-        proe=result['proe'],
-        component_scores=MatchupComponentScores(**result['component_scores']),
+        grade=result["grade"],
+        score=result["score"],
+        rank_vs_league=result["rank_vs_league"],
+        explanation=result["explanation"],
+        dvp_6wk=result["dvp_6wk"],
+        avg_league_dvp=result["avg_league_dvp"],
+        opp_ypp=result["opp_ypp"],
+        pace=result["pace"],
+        proe=result["proe"],
+        component_scores=MatchupComponentScores(**result["component_scores"]),
     )

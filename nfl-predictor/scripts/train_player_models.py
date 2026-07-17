@@ -20,14 +20,14 @@ from src.database.db import create_database
 from src.prediction.player_features import POSITIONS, build_training_rows
 from src.prediction.player_ml_model import train_position_model
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument('--start', type=int, default=2018)
-    parser.add_argument('--end', type=int, default=2023)
+    parser.add_argument("--start", type=int, default=2018)
+    parser.add_argument("--end", type=int, default=2023)
     args = parser.parse_args()
 
     seasons = list(range(args.start, args.end + 1))
@@ -47,9 +47,11 @@ def main() -> None:
 
     db.close()
     for r in results:
-        print(f"{r['position']}: MAE {r['cv_mae']:.2f} ± {r['cv_std']:.2f} "
-              f"(n={r['n_training_samples']})")
+        print(
+            f"{r['position']}: MAE {r['cv_mae']:.2f} ± {r['cv_std']:.2f} "
+            f"(n={r['n_training_samples']})"
+        )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

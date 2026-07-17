@@ -6,7 +6,6 @@ from fastapi.testclient import TestClient
 from src.api.app import app
 from src.database.db import DEFAULT_DB_PATH
 
-
 # Skip entire module if the real database doesn't exist
 pytestmark = pytest.mark.skipif(
     not DEFAULT_DB_PATH.exists(),
@@ -130,15 +129,21 @@ class TestGames:
 
 class TestPredictions:
     def test_predict_post(self):
-        r = client.post("/api/predict", json={
-            "home_team": "KC",
-            "away_team": "PHI",
-        })
+        r = client.post(
+            "/api/predict",
+            json={
+                "home_team": "KC",
+                "away_team": "PHI",
+            },
+        )
         assert r.status_code == 200
         data = r.json()
         assert 0.02 <= data["home_win_probability"] <= 0.98
         assert 0.02 <= data["away_win_probability"] <= 0.98
-        assert abs(data["home_win_probability"] + data["away_win_probability"] - 1.0) < 0.001
+        assert (
+            abs(data["home_win_probability"] + data["away_win_probability"] - 1.0)
+            < 0.001
+        )
         assert data["confidence"] in ("low", "medium", "high")
         assert data["predicted_winner"] in (data["home_team"], data["away_team"])
         assert len(data["key_factors"]) > 0
@@ -148,13 +153,19 @@ class TestPredictions:
         assert r.status_code == 200
         data = r.json()
         assert 0.02 <= data["home_win_probability"] <= 0.98
-        assert abs(data["home_win_probability"] + data["away_win_probability"] - 1.0) < 0.001
+        assert (
+            abs(data["home_win_probability"] + data["away_win_probability"] - 1.0)
+            < 0.001
+        )
 
     def test_predict_invalid_team(self):
-        r = client.post("/api/predict", json={
-            "home_team": "ZZZZZ",
-            "away_team": "KC",
-        })
+        r = client.post(
+            "/api/predict",
+            json={
+                "home_team": "ZZZZZ",
+                "away_team": "KC",
+            },
+        )
         assert r.status_code == 404
 
     def test_predict_get_invalid(self):
@@ -218,10 +229,13 @@ class TestGameOdds:
 
     def test_predict_response_has_vegas_context_field(self):
         """POST /api/predict always includes vegas_context key (None when no odds stored)."""
-        r = client.post("/api/predict", json={
-            "home_team": "KC",
-            "away_team": "PHI",
-        })
+        r = client.post(
+            "/api/predict",
+            json={
+                "home_team": "KC",
+                "away_team": "PHI",
+            },
+        )
         assert r.status_code == 200
         data = r.json()
         # Field must be present; value is None when no odds are in the DB
@@ -259,10 +273,13 @@ class TestGameConditions:
 
     def test_predict_response_has_conditions_field(self):
         """POST /api/predict includes a conditions key."""
-        r = client.post("/api/predict", json={
-            "home_team": "KC",
-            "away_team": "PHI",
-        })
+        r = client.post(
+            "/api/predict",
+            json={
+                "home_team": "KC",
+                "away_team": "PHI",
+            },
+        )
         assert r.status_code == 200
         data = r.json()
         assert "conditions" in data
@@ -274,18 +291,24 @@ class TestGameConditions:
 class TestExplainEndpoint:
     def test_explain_endpoint_exists(self):
         """POST /api/predict/explain returns 200 for valid teams."""
-        r = client.post("/api/predict/explain", json={
-            "home_team": "KC",
-            "away_team": "PHI",
-        })
+        r = client.post(
+            "/api/predict/explain",
+            json={
+                "home_team": "KC",
+                "away_team": "PHI",
+            },
+        )
         assert r.status_code == 200
 
     def test_explain_response_has_explanation_key(self):
         """Response from /api/predict/explain contains an 'explanation' list."""
-        r = client.post("/api/predict/explain", json={
-            "home_team": "KC",
-            "away_team": "PHI",
-        })
+        r = client.post(
+            "/api/predict/explain",
+            json={
+                "home_team": "KC",
+                "away_team": "PHI",
+            },
+        )
         assert r.status_code == 200
         data = r.json()
         assert "explanation" in data

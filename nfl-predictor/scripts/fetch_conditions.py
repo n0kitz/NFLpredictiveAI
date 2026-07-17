@@ -78,19 +78,21 @@ def main() -> int:
             wx_skipped += 1
             continue
 
-        db.upsert_game_weather({
-            "game_id":         game_id,
-            "home_team_id":    home_team_id,
-            "game_date":       game_date,
-            "is_dome":         wx.get("is_dome", False),
-            "temperature_c":   wx.get("temperature_c"),
-            "wind_speed_kmh":  wx.get("wind_speed_kmh"),
-            "precipitation_mm": wx.get("precipitation_mm"),
-            "weather_code":    wx.get("weather_code"),
-            "condition":       wx.get("condition", "Unknown"),
-            "is_adverse":      wx.get("is_adverse", False),
-            "fetched_at":      str(today),
-        })
+        db.upsert_game_weather(
+            {
+                "game_id": game_id,
+                "home_team_id": home_team_id,
+                "game_date": game_date,
+                "is_dome": wx.get("is_dome", False),
+                "temperature_c": wx.get("temperature_c"),
+                "wind_speed_kmh": wx.get("wind_speed_kmh"),
+                "precipitation_mm": wx.get("precipitation_mm"),
+                "weather_code": wx.get("weather_code"),
+                "condition": wx.get("condition", "Unknown"),
+                "is_adverse": wx.get("is_adverse", False),
+                "fetched_at": str(today),
+            }
+        )
         wx_stored += 1
 
     print(f"Stored weather for {wx_stored} game(s). Skipped: {wx_skipped}.")

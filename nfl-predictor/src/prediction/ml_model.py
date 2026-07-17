@@ -32,12 +32,15 @@ MODEL_PATH = _DATA_DIR / "nfl_model.joblib"
 FEATURES_PATH = _DATA_DIR / "nfl_model_features.json"
 SPREAD_MODEL_PATH = _DATA_DIR / "nfl_spread_model.joblib"
 
-TRAINING_SEASONS = list(range(2013, 2023))   # 2013-2022 inclusive
+TRAINING_SEASONS = list(range(2013, 2023))  # 2013-2022 inclusive
 
 
 # ── Dataset builder ──────────────────────────────────────────────────────────
 
-def _h2h_before(db, home_id: int, away_id: int, cutoff_date: str, limit: int = 10) -> dict:
+
+def _h2h_before(
+    db, home_id: int, away_id: int, cutoff_date: str, limit: int = 10
+) -> dict:
     """Head-to-head record filtered to games strictly before cutoff_date."""
     rows = db.fetchall(
         """
@@ -54,11 +57,10 @@ def _h2h_before(db, home_id: int, away_id: int, cutoff_date: str, limit: int = 1
     team1_wins = sum(1 for r in rows if r["winner_id"] == home_id)
     team2_wins = sum(1 for r in rows if r["winner_id"] == away_id)
     return {
-        "team1_wins":   team1_wins,
-        "team2_wins":   team2_wins,
-        "total_games":  len(rows),
+        "team1_wins": team1_wins,
+        "team2_wins": team2_wins,
+        "total_games": len(rows),
     }
-
 
 
 def build_training_dataset(
@@ -95,13 +97,13 @@ def build_training_dataset(
     X_rows, y_rows = [], []
 
     for i, game in enumerate(games):
-        game_date  = str(game["date"])[:10]
-        season     = game["season"]
-        home_id    = game["home_team_id"]
-        away_id    = game["away_team_id"]
-        winner_id  = game["winner_id"]
+        game_date = str(game["date"])[:10]
+        season = game["season"]
+        home_id = game["home_team_id"]
+        away_id = game["away_team_id"]
+        winner_id = game["winner_id"]
         is_playoff = int(game["game_type"] != "regular")
-        week       = _parse_week(game["week"])
+        week = _parse_week(game["week"])
 
         try:
             home_m = calculate_team_metrics(
@@ -118,16 +120,26 @@ def build_training_dataset(
 
         week_int = _parse_week(game["week"])
         home_roll_epa = get_rolling_starter_qb_epa(
-            db, home_id, before_week=week_int, season=season,
+            db,
+            home_id,
+            before_week=week_int,
+            season=season,
             fallback=home_m.qb_epa_per_play,
         )
         away_roll_epa = get_rolling_starter_qb_epa(
-            db, away_id, before_week=week_int, season=season,
+            db,
+            away_id,
+            before_week=week_int,
+            season=season,
             fallback=away_m.qb_epa_per_play,
         )
 
         feat_dict = build_feature_vector(
-            home_m, away_m, h2h, is_playoff, week,
+            home_m,
+            away_m,
+            h2h,
+            is_playoff,
+            week,
             home_starter_qb_epa=home_roll_epa,
             away_starter_qb_epa=away_roll_epa,
         )
@@ -175,12 +187,12 @@ def build_training_dataset_with_spread(db) -> Tuple[np.ndarray, np.ndarray]:
         if diff == 0 or abs(diff) > 45:
             continue
 
-        game_date  = str(game["date"])[:10]
-        season     = game["season"]
-        home_id    = game["home_team_id"]
-        away_id    = game["away_team_id"]
+        game_date = str(game["date"])[:10]
+        season = game["season"]
+        home_id = game["home_team_id"]
+        away_id = game["away_team_id"]
         is_playoff = int(game["game_type"] != "regular")
-        week       = _parse_week(game["week"])
+        week = _parse_week(game["week"])
 
         try:
             home_m = calculate_team_metrics(
@@ -197,16 +209,26 @@ def build_training_dataset_with_spread(db) -> Tuple[np.ndarray, np.ndarray]:
 
         week_int = _parse_week(game["week"])
         home_roll_epa = get_rolling_starter_qb_epa(
-            db, home_id, before_week=week_int, season=season,
+            db,
+            home_id,
+            before_week=week_int,
+            season=season,
             fallback=home_m.qb_epa_per_play,
         )
         away_roll_epa = get_rolling_starter_qb_epa(
-            db, away_id, before_week=week_int, season=season,
+            db,
+            away_id,
+            before_week=week_int,
+            season=season,
             fallback=away_m.qb_epa_per_play,
         )
 
         feat_dict = build_feature_vector(
-            home_m, away_m, h2h, is_playoff, week,
+            home_m,
+            away_m,
+            h2h,
+            is_playoff,
+            week,
             home_starter_qb_epa=home_roll_epa,
             away_starter_qb_epa=away_roll_epa,
         )
@@ -221,6 +243,7 @@ def build_training_dataset_with_spread(db) -> Tuple[np.ndarray, np.ndarray]:
 
 
 # ── Training ─────────────────────────────────────────────────────────────────
+
 
 def train_model(db) -> dict:
     """
@@ -259,7 +282,10 @@ def train_model(db) -> dict:
     tscv = TimeSeriesSplit(n_splits=5)
     cv_scores = cross_val_score(
         GradientBoostingClassifier(**_GBM_PARAMS),
-        X_all, y_all, cv=tscv, scoring="accuracy",
+        X_all,
+        y_all,
+        cv=tscv,
+        scoring="accuracy",
     )
     fold_accs = [round(float(s), 4) for s in cv_scores]
     print(f"  CV fold accuracies: {fold_accs}")
@@ -283,11 +309,11 @@ def train_model(db) -> dict:
     print(f"  Feature list saved to {FEATURES_PATH}")
 
     return {
-        "cv_accuracy":        round(float(cv_scores.mean()), 4),
-        "cv_std":             round(float(cv_scores.std()), 4),
-        "fold_accuracies":    fold_accs,
+        "cv_accuracy": round(float(cv_scores.mean()), 4),
+        "cv_std": round(float(cv_scores.std()), 4),
+        "fold_accuracies": fold_accs,
         "n_training_samples": len(X_all),
-        "training_seasons":   "2013-2022 (CalibratedClassifierCV isotonic, cv=5)",
+        "training_seasons": "2013-2022 (CalibratedClassifierCV isotonic, cv=5)",
     }
 
 
@@ -331,14 +357,15 @@ def train_spread_model(db) -> dict:
     print(f"  Spread model saved to {SPREAD_MODEL_PATH}")
 
     return {
-        "cv_mae":             round(float(-cv_scores.mean()), 4),
-        "cv_std":             round(float(cv_scores.std()), 4),
-        "fold_maes":          fold_maes,
+        "cv_mae": round(float(-cv_scores.mean()), 4),
+        "cv_std": round(float(cv_scores.std()), 4),
+        "fold_maes": fold_maes,
         "n_training_samples": len(X),
     }
 
 
 # ── Load / predict ───────────────────────────────────────────────────────────
+
 
 def load_model() -> Tuple[Optional[object], Optional[list]]:
     """
@@ -352,6 +379,7 @@ def load_model() -> Tuple[Optional[object], Optional[list]]:
         if not MODEL_PATH.exists() or not FEATURES_PATH.exists():
             return None, None
         import joblib
+
         model = joblib.load(MODEL_PATH)
         feature_names = json.loads(FEATURES_PATH.read_text())
         # Version guard: the saved feature list must match the current builder
@@ -363,13 +391,18 @@ def load_model() -> Tuple[Optional[object], Optional[list]]:
                 "ML model feature list (%d) does not match current builder (%d) — "
                 "model is stale, falling back to weighted-sum. Retrain with "
                 "scripts/train_model.py.",
-                len(feature_names), len(FEATURE_NAMES),
+                len(feature_names),
+                len(FEATURE_NAMES),
             )
             return None, None
-        logger.info("ML model loaded from %s (%d features)", MODEL_PATH, len(feature_names))
+        logger.info(
+            "ML model loaded from %s (%d features)", MODEL_PATH, len(feature_names)
+        )
         return model, feature_names
     except Exception as exc:
-        logger.warning("Could not load ML model: %s — falling back to weighted-sum", exc)
+        logger.warning(
+            "Could not load ML model: %s — falling back to weighted-sum", exc
+        )
         return None, None
 
 
@@ -379,6 +412,7 @@ def load_spread_model() -> Optional[object]:
         if not SPREAD_MODEL_PATH.exists():
             return None
         import joblib
+
         model = joblib.load(SPREAD_MODEL_PATH)
         logger.info("Spread model loaded from %s", SPREAD_MODEL_PATH)
         return model

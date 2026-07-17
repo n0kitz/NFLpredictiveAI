@@ -47,25 +47,25 @@ class NFLPredictor:
         # Head-to-head queries (check first - these are more specific)
         # "Head to head Patriots vs Dolphins"
         h2h_patterns = [
-            r'head\s*(?:to|2)\s*head\s+(.+?)\s+(?:vs\.?|versus|and|&)\s+(.+)',
-            r'h2h\s+(.+?)\s+(?:vs\.?|versus|and|&)\s+(.+)',
+            r"head\s*(?:to|2)\s*head\s+(.+?)\s+(?:vs\.?|versus|and|&)\s+(.+)",
+            r"h2h\s+(.+?)\s+(?:vs\.?|versus|and|&)\s+(.+)",
         ]
 
         for pattern in h2h_patterns:
             match = re.search(pattern, query_lower)
             if match:
-                team1 = re.sub(r'^the\s+', '', match.group(1).strip())
-                team2 = re.sub(r'^the\s+', '', match.group(2).strip())
-                return 'head_to_head', {'team1': team1, 'team2': team2}
+                team1 = re.sub(r"^the\s+", "", match.group(1).strip())
+                team2 = re.sub(r"^the\s+", "", match.group(2).strip())
+                return "head_to_head", {"team1": team1, "team2": team2}
 
         # Prediction queries
         # "Predict Chiefs vs Eagles"
         # "Who wins: Cowboys at Giants?"
         # "Predict week 15 matchup 49ers vs Seahawks"
         predict_patterns = [
-            r'predict\s+(.+?)\s+(?:vs\.?|versus|at|@)\s+(.+)',
-            r'who wins[:\s]+(.+?)\s+(?:vs\.?|versus|at|@)\s+(.+)',
-            r'(.+?)\s+(?:vs\.?|versus|at|@)\s+(.+?)(?:\s+prediction)?$',
+            r"predict\s+(.+?)\s+(?:vs\.?|versus|at|@)\s+(.+)",
+            r"who wins[:\s]+(.+?)\s+(?:vs\.?|versus|at|@)\s+(.+)",
+            r"(.+?)\s+(?:vs\.?|versus|at|@)\s+(.+?)(?:\s+prediction)?$",
         ]
 
         for pattern in predict_patterns:
@@ -73,23 +73,23 @@ class NFLPredictor:
             if match:
                 team1, team2 = match.group(1).strip(), match.group(2).strip()
                 # Clean up team names
-                team1 = re.sub(r'^the\s+', '', team1)
-                team2 = re.sub(r'^the\s+', '', team2)
+                team1 = re.sub(r"^the\s+", "", team1)
+                team2 = re.sub(r"^the\s+", "", team2)
 
                 # Determine home/away based on "at" or "@"
-                if ' at ' in query_lower or ' @ ' in query_lower:
+                if " at " in query_lower or " @ " in query_lower:
                     # Team2 is home (team1 at team2)
-                    return 'predict', {'home': team2, 'away': team1}
+                    return "predict", {"home": team2, "away": team1}
                 else:
                     # Default: first team is away, second is home
-                    return 'predict', {'home': team2, 'away': team1}
+                    return "predict", {"home": team2, "away": team1}
 
         # Recent games queries
         # "Last 10 games for the Bills"
         recent_patterns = [
-            r'last\s+(\d+)\s+games?\s+(?:for\s+)?(?:the\s+)?(.+)',
-            r'recent\s+games?\s+(?:for\s+)?(?:the\s+)?(.+)',
-            r'(.+?)\s+last\s+(\d+)\s+games?',
+            r"last\s+(\d+)\s+games?\s+(?:for\s+)?(?:the\s+)?(.+)",
+            r"recent\s+games?\s+(?:for\s+)?(?:the\s+)?(.+)",
+            r"(.+?)\s+last\s+(\d+)\s+games?",
         ]
 
         for pattern in recent_patterns:
@@ -98,21 +98,21 @@ class NFLPredictor:
                 groups = match.groups()
                 if groups[0].isdigit():
                     count = int(groups[0])
-                    team = re.sub(r'^the\s+', '', groups[1].strip())
+                    team = re.sub(r"^the\s+", "", groups[1].strip())
                 elif len(groups) > 1 and groups[1].isdigit():
                     count = int(groups[1])
-                    team = re.sub(r'^the\s+', '', groups[0].strip())
+                    team = re.sub(r"^the\s+", "", groups[0].strip())
                 else:
                     count = 10
-                    team = re.sub(r'^the\s+', '', groups[0].strip())
-                return 'recent_games', {'team': team, 'count': count}
+                    team = re.sub(r"^the\s+", "", groups[0].strip())
+                return "recent_games", {"team": team, "count": count}
 
         # Team record queries
         # "Bills record in 2023"
         record_patterns = [
-            r'(.+?)\s+record\s+(?:in\s+)?(\d{4})',
-            r'(\d{4})\s+(.+?)\s+record',
-            r'(.+?)\s+stats?\s+(?:in\s+)?(\d{4})',
+            r"(.+?)\s+record\s+(?:in\s+)?(\d{4})",
+            r"(\d{4})\s+(.+?)\s+record",
+            r"(.+?)\s+stats?\s+(?:in\s+)?(\d{4})",
         ]
 
         for pattern in record_patterns:
@@ -121,44 +121,44 @@ class NFLPredictor:
                 groups = match.groups()
                 if groups[0].isdigit():
                     season = int(groups[0])
-                    team = re.sub(r'^the\s+', '', groups[1].strip())
+                    team = re.sub(r"^the\s+", "", groups[1].strip())
                 else:
-                    team = re.sub(r'^the\s+', '', groups[0].strip())
+                    team = re.sub(r"^the\s+", "", groups[0].strip())
                     season = int(groups[1])
-                return 'team_record', {'team': team, 'season': season}
+                return "team_record", {"team": team, "season": season}
 
         # Playoff history queries
         # "Show playoff history for the Lions"
         playoff_patterns = [
-            r'playoff\s+history\s+(?:for\s+)?(?:the\s+)?(.+)',
-            r'(.+?)\s+playoff\s+history',
-            r'playoffs?\s+(.+)',
+            r"playoff\s+history\s+(?:for\s+)?(?:the\s+)?(.+)",
+            r"(.+?)\s+playoff\s+history",
+            r"playoffs?\s+(.+)",
         ]
 
         for pattern in playoff_patterns:
             match = re.search(pattern, query_lower)
             if match:
-                team = re.sub(r'^the\s+', '', match.group(1).strip())
-                return 'playoff_history', {'team': team}
+                team = re.sub(r"^the\s+", "", match.group(1).strip())
+                return "playoff_history", {"team": team}
 
         # Team info/summary
         # "Tell me about the Chiefs"
         # "Chiefs"
         info_patterns = [
-            r'(?:tell\s+me\s+)?about\s+(?:the\s+)?(.+)',
-            r'info\s+(?:on\s+)?(?:the\s+)?(.+)',
-            r'^(?:the\s+)?([a-z\s]+)$',
+            r"(?:tell\s+me\s+)?about\s+(?:the\s+)?(.+)",
+            r"info\s+(?:on\s+)?(?:the\s+)?(.+)",
+            r"^(?:the\s+)?([a-z\s]+)$",
         ]
 
         for pattern in info_patterns:
             match = re.search(pattern, query_lower)
             if match:
-                team = re.sub(r'^the\s+', '', match.group(1).strip())
+                team = re.sub(r"^the\s+", "", match.group(1).strip())
                 # Make sure it's not a command
-                if team not in ['help', 'exit', 'quit', 'scrape', 'teams']:
-                    return 'team_info', {'team': team}
+                if team not in ["help", "exit", "quit", "scrape", "teams"]:
+                    return "team_info", {"team": team}
 
-        return 'unknown', {'query': query}
+        return "unknown", {"query": query}
 
     def execute_query(self, query: str) -> str:
         """
@@ -173,36 +173,32 @@ class NFLPredictor:
         command, params = self.parse_query(query)
 
         try:
-            if command == 'predict':
+            if command == "predict":
                 prediction = self.engine.predict(
-                    home_team=params['home'],
-                    away_team=params['away']
+                    home_team=params["home"], away_team=params["away"]
                 )
                 return prediction.format_output()
 
-            elif command == 'head_to_head':
+            elif command == "head_to_head":
                 return self.engine.get_head_to_head_summary(
-                    params['team1'],
-                    params['team2']
+                    params["team1"], params["team2"]
                 )
 
-            elif command == 'recent_games':
+            elif command == "recent_games":
                 return self.engine.get_recent_games(
-                    params['team'],
-                    params.get('count', 10)
+                    params["team"], params.get("count", 10)
                 )
 
-            elif command == 'team_record':
+            elif command == "team_record":
                 return self.engine.get_team_summary(
-                    params['team'],
-                    params.get('season')
+                    params["team"], params.get("season")
                 )
 
-            elif command == 'playoff_history':
-                return self.engine.get_playoff_history(params['team'])
+            elif command == "playoff_history":
+                return self.engine.get_playoff_history(params["team"])
 
-            elif command == 'team_info':
-                return self.engine.get_team_summary(params['team'])
+            elif command == "team_info":
+                return self.engine.get_team_summary(params["team"])
 
             else:
                 return (
@@ -239,19 +235,19 @@ class NFLPredictor:
                 if not query:
                     continue
 
-                if query.lower() in ('exit', 'quit', 'q'):
+                if query.lower() in ("exit", "quit", "q"):
                     print("Goodbye!")
                     break
 
-                if query.lower() == 'help':
+                if query.lower() == "help":
                     self.print_help()
                     continue
 
-                if query.lower() == 'teams':
+                if query.lower() == "teams":
                     self.list_teams()
                     continue
 
-                if query.lower() == 'factors':
+                if query.lower() == "factors":
                     self.show_factor_types()
                     continue
 
@@ -311,12 +307,12 @@ NOTES:
         current_div = None
 
         for team in teams:
-            if team['conference'] != current_conf:
-                current_conf = team['conference']
+            if team["conference"] != current_conf:
+                current_conf = team["conference"]
                 print(f"\n{current_conf}")
 
-            if team['division'] != current_div:
-                current_div = team['division']
+            if team["division"] != current_div:
+                current_div = team["division"]
                 print(f"  {current_div}:")
 
             print(f"    {team['abbreviation']:4} - {team['city']} {team['name']}")
@@ -336,7 +332,7 @@ NOTES:
 def main():
     """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
-        description='NFL Game Prediction System',
+        description="NFL Game Prediction System",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -347,97 +343,73 @@ Examples:
   %(prog)s "Bills record in 2023"
   %(prog)s --interactive
   %(prog)s --scrape --start 2020 --end 2024
-        """
+        """,
     )
 
     parser.add_argument(
-        'query',
-        nargs='?',
-        help='Query to execute (omit for interactive mode)'
+        "query", nargs="?", help="Query to execute (omit for interactive mode)"
     )
 
     parser.add_argument(
-        '-i', '--interactive',
-        action='store_true',
-        help='Run in interactive mode'
+        "-i", "--interactive", action="store_true", help="Run in interactive mode"
     )
 
-    parser.add_argument(
-        '--scrape',
-        action='store_true',
-        help='Run the data scraper'
-    )
+    parser.add_argument("--scrape", action="store_true", help="Run the data scraper")
 
     parser.add_argument(
-        '--start',
+        "--start",
         type=int,
         default=1990,
-        help='Start year for scraping (default: 1990)'
+        help="Start year for scraping (default: 1990)",
     )
 
     parser.add_argument(
-        '--end',
-        type=int,
-        default=2025,
-        help='End year for scraping (default: 2025)'
+        "--end", type=int, default=2025, help="End year for scraping (default: 2025)"
     )
 
     parser.add_argument(
-        '--from-file',
-        metavar='HTML_PATH',
-        help='Parse a locally saved PFR schedule HTML file instead of scraping. '
-             'Use --start to specify the season year.'
+        "--from-file",
+        metavar="HTML_PATH",
+        help="Parse a locally saved PFR schedule HTML file instead of scraping. "
+        "Use --start to specify the season year.",
     )
 
     parser.add_argument(
-        '--init-db',
-        action='store_true',
-        help='Initialize the database schema'
+        "--init-db", action="store_true", help="Initialize the database schema"
     )
 
     parser.add_argument(
-        '--verbose', '-v',
-        action='store_true',
-        help='Enable verbose logging'
+        "--verbose", "-v", action="store_true", help="Enable verbose logging"
     )
 
     # Factor management commands
     parser.add_argument(
-        '--add-factor',
+        "--add-factor",
         nargs=4,
-        metavar=('GAME_ID', 'TEAM_ID', 'FACTOR_TYPE', 'IMPACT'),
-        help='Add a game factor: game_id team_id factor_type impact_rating'
+        metavar=("GAME_ID", "TEAM_ID", "FACTOR_TYPE", "IMPACT"),
+        help="Add a game factor: game_id team_id factor_type impact_rating",
     )
 
     parser.add_argument(
-        '--factor-desc',
-        help='Description for the factor (use with --add-factor)'
+        "--factor-desc", help="Description for the factor (use with --add-factor)"
     )
 
     parser.add_argument(
-        '--list-factors',
-        type=int,
-        metavar='GAME_ID',
-        help='List factors for a game'
+        "--list-factors", type=int, metavar="GAME_ID", help="List factors for a game"
     )
 
     parser.add_argument(
-        '--remove-factor',
-        type=int,
-        metavar='FACTOR_ID',
-        help='Remove a factor by ID'
+        "--remove-factor", type=int, metavar="FACTOR_ID", help="Remove a factor by ID"
     )
 
     parser.add_argument(
-        '--import-factors',
-        metavar='CSV_PATH',
-        help='Import factors from CSV file'
+        "--import-factors", metavar="CSV_PATH", help="Import factors from CSV file"
     )
 
     parser.add_argument(
-        '--train-model',
-        action='store_true',
-        help='Train the ML prediction model on 2013-2022 data (takes 5-10 minutes)'
+        "--train-model",
+        action="store_true",
+        help="Train the ML prediction model on 2013-2022 data (takes 5-10 minutes)",
     )
 
     args = parser.parse_args()
@@ -445,8 +417,7 @@ Examples:
     # Configure logging
     log_level = logging.DEBUG if args.verbose else logging.INFO
     logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(levelname)s - %(message)s'
+        level=log_level, format="%(asctime)s - %(levelname)s - %(message)s"
     )
 
     db = get_database()
@@ -461,13 +432,14 @@ Examples:
     # Parse from local HTML file
     if args.from_file:
         from pathlib import Path
+
         html_path = Path(args.from_file)
         if not html_path.exists():
             print(f"Error: File not found: {html_path}")
             return
         season = args.start
         print(f"Parsing local HTML file for season {season}: {html_path}")
-        html = html_path.read_text(encoding='utf-8')
+        html = html_path.read_text(encoding="utf-8")
         scraper = PFRScraper(db)
         scraper.initialize_teams()
         games = scraper.parse_season_from_html(html, season)
@@ -482,6 +454,7 @@ Examples:
     # Train ML model if requested
     if args.train_model:
         from ..prediction.ml_model import train_model
+
         print("=" * 60)
         print("  NFL ML Model Training")
         print("  Training window: seasons 2013-2022")
@@ -491,7 +464,9 @@ Examples:
         print("\n  ── Training Complete ──")
         print(f"  Seasons:          {result['training_seasons']}")
         print(f"  Samples:          {result['n_training_samples']:,}")
-        print(f"  CV accuracy:      {result['cv_accuracy']:.4f} ± {result['cv_std']:.4f}")
+        print(
+            f"  CV accuracy:      {result['cv_accuracy']:.4f} ± {result['cv_std']:.4f}"
+        )
         print(f"  Fold accuracies:  {result['fold_accuracies']}")
         print("\n  Restart the API server to load the new model.")
         return
@@ -504,7 +479,7 @@ Examples:
         print(f"\nScraping complete!")
         print(f"  Seasons: {stats['seasons_completed']}/{stats['seasons_attempted']}")
         print(f"  Games inserted: {stats['games_inserted']}")
-        if stats['errors']:
+        if stats["errors"]:
             print(f"  Errors: {len(stats['errors'])}")
         return
 
@@ -519,7 +494,7 @@ Examples:
                 team_id=int(team_id),
                 factor_type=factor_type,
                 description=args.factor_desc,
-                impact_rating=int(impact)
+                impact_rating=int(impact),
             )
             print(f"Factor added with ID: {factor_id}")
         except Exception as e:
@@ -531,8 +506,10 @@ Examples:
         if factors:
             print(f"\nFactors for game {args.list_factors}:")
             for f in factors:
-                print(f"  [{f['factor_id']}] {f['team']}: {f['type']} "
-                      f"(impact: {f['impact']}) - {f['description']}")
+                print(
+                    f"  [{f['factor_id']}] {f['team']}: {f['type']} "
+                    f"(impact: {f['impact']}) - {f['description']}"
+                )
         else:
             print(f"No factors found for game {args.list_factors}")
         return
@@ -562,5 +539,5 @@ Examples:
         print(result)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

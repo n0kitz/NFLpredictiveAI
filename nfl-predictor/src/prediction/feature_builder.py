@@ -46,9 +46,9 @@ FEATURE_NAMES: list[str] = [
     "away_redzone_efficiency",
     "is_playoff",
     "week_of_season",
-    "home_dynamic_hfa",          # 32nd: team-specific home field advantage
-    "home_starter_qb_epa_l4",   # 33rd: rolling 4-game starter QB EPA (home)
-    "away_starter_qb_epa_l4",   # 34th: rolling 4-game starter QB EPA (away)
+    "home_dynamic_hfa",  # 32nd: team-specific home field advantage
+    "home_starter_qb_epa_l4",  # 33rd: rolling 4-game starter QB EPA (home)
+    "away_starter_qb_epa_l4",  # 34th: rolling 4-game starter QB EPA (away)
 ]
 
 assert len(FEATURE_NAMES) == 34, f"Expected 34 features, got {len(FEATURE_NAMES)}"
@@ -143,44 +143,56 @@ def build_feature_vector(
     week_int = _parse_week(week)
 
     # Rolling starter QB EPA — fall back to season aggregate when not supplied
-    home_qb_epa = home_starter_qb_epa if home_starter_qb_epa is not None else home_metrics.qb_epa_per_play
-    away_qb_epa = away_starter_qb_epa if away_starter_qb_epa is not None else away_metrics.qb_epa_per_play
+    home_qb_epa = (
+        home_starter_qb_epa
+        if home_starter_qb_epa is not None
+        else home_metrics.qb_epa_per_play
+    )
+    away_qb_epa = (
+        away_starter_qb_epa
+        if away_starter_qb_epa is not None
+        else away_metrics.qb_epa_per_play
+    )
 
     return {
-        "home_win_pct":              home_metrics.win_percentage,
-        "away_win_pct":              away_metrics.win_percentage,
-        "home_weighted_win_pct":     home_metrics.weighted_win_pct,
-        "away_weighted_win_pct":     away_metrics.weighted_win_pct,
-        "home_ppg":                  home_metrics.avg_points_scored,
-        "away_ppg":                  away_metrics.avg_points_scored,
-        "home_pag":                  home_metrics.avg_points_allowed,
-        "away_pag":                  away_metrics.avg_points_allowed,
-        "home_point_diff_per_game":  _safe_div(home_metrics.point_differential, home_games),
-        "away_point_diff_per_game":  _safe_div(away_metrics.point_differential, away_games),
-        "home_sos":                  home_metrics.strength_of_schedule,
-        "away_sos":                  away_metrics.strength_of_schedule,
-        "home_form_rating":          calculate_form_rating(home_metrics),
-        "away_form_rating":          calculate_form_rating(away_metrics),
-        "home_strength":             calculate_strength_rating(home_metrics),
-        "away_strength":             calculate_strength_rating(away_metrics),
-        "home_home_win_pct":         home_metrics.home_win_pct,
-        "away_away_win_pct":         away_metrics.away_win_pct,
-        "h2h_home_win_pct":          h2h_home_pct,
-        "home_rest_days":            float(home_metrics.rest_days),
-        "away_rest_days":            float(away_metrics.rest_days),
-        "home_turnover_margin":      home_metrics.turnover_margin,
-        "away_turnover_margin":      away_metrics.turnover_margin,
-        "home_third_down_pct":       home_metrics.third_down_pct,
-        "away_third_down_pct":       away_metrics.third_down_pct,
-        "home_yards_per_play":       home_metrics.yards_per_play,
-        "away_yards_per_play":       away_metrics.yards_per_play,
-        "home_redzone_efficiency":   home_metrics.redzone_efficiency,
-        "away_redzone_efficiency":   away_metrics.redzone_efficiency,
-        "is_playoff":                float(int(is_playoff)),
-        "week_of_season":            float(week_int),
-        "home_dynamic_hfa":          home_metrics.dynamic_hfa,
-        "home_starter_qb_epa_l4":   home_qb_epa,
-        "away_starter_qb_epa_l4":   away_qb_epa,
+        "home_win_pct": home_metrics.win_percentage,
+        "away_win_pct": away_metrics.win_percentage,
+        "home_weighted_win_pct": home_metrics.weighted_win_pct,
+        "away_weighted_win_pct": away_metrics.weighted_win_pct,
+        "home_ppg": home_metrics.avg_points_scored,
+        "away_ppg": away_metrics.avg_points_scored,
+        "home_pag": home_metrics.avg_points_allowed,
+        "away_pag": away_metrics.avg_points_allowed,
+        "home_point_diff_per_game": _safe_div(
+            home_metrics.point_differential, home_games
+        ),
+        "away_point_diff_per_game": _safe_div(
+            away_metrics.point_differential, away_games
+        ),
+        "home_sos": home_metrics.strength_of_schedule,
+        "away_sos": away_metrics.strength_of_schedule,
+        "home_form_rating": calculate_form_rating(home_metrics),
+        "away_form_rating": calculate_form_rating(away_metrics),
+        "home_strength": calculate_strength_rating(home_metrics),
+        "away_strength": calculate_strength_rating(away_metrics),
+        "home_home_win_pct": home_metrics.home_win_pct,
+        "away_away_win_pct": away_metrics.away_win_pct,
+        "h2h_home_win_pct": h2h_home_pct,
+        "home_rest_days": float(home_metrics.rest_days),
+        "away_rest_days": float(away_metrics.rest_days),
+        "home_turnover_margin": home_metrics.turnover_margin,
+        "away_turnover_margin": away_metrics.turnover_margin,
+        "home_third_down_pct": home_metrics.third_down_pct,
+        "away_third_down_pct": away_metrics.third_down_pct,
+        "home_yards_per_play": home_metrics.yards_per_play,
+        "away_yards_per_play": away_metrics.yards_per_play,
+        "home_redzone_efficiency": home_metrics.redzone_efficiency,
+        "away_redzone_efficiency": away_metrics.redzone_efficiency,
+        "is_playoff": float(int(is_playoff)),
+        "week_of_season": float(week_int),
+        "home_dynamic_hfa": home_metrics.dynamic_hfa,
+        "home_starter_qb_epa_l4": home_qb_epa,
+        "away_starter_qb_epa_l4": away_qb_epa,
     }
 
 
@@ -194,20 +206,22 @@ def feature_dict_to_array(feature_dict: Dict[str, float]) -> np.ndarray:
     Returns:
         np.ndarray of shape (34,), dtype float64.
     """
-    return np.array([feature_dict.get(name, 0.0) for name in FEATURE_NAMES], dtype=np.float64)
+    return np.array(
+        [feature_dict.get(name, 0.0) for name in FEATURE_NAMES], dtype=np.float64
+    )
 
 
 # ── Private helpers ──────────────────────────────────────────────────────────
 
 _PLAYOFF_WEEK_MAP: Dict[str, int] = {
-    "wild card":   19,
-    "wildcard":    19,
-    "divisional":  20,
-    "division":    20,
-    "conference":  21,
+    "wild card": 19,
+    "wildcard": 19,
+    "divisional": 20,
+    "division": 20,
+    "conference": 21,
     "championship": 21,
-    "super bowl":  22,
-    "superbowl":   22,
+    "super bowl": 22,
+    "superbowl": 22,
 }
 
 

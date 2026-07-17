@@ -28,7 +28,7 @@ from src.scraper.roster_scraper import RosterScraper
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    format="%(asctime)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,7 @@ def main():
             if games:
                 inserted, skipped = scraper.store_games(games)
                 db.calculate_team_season_stats(season)
-                db.update_scrape_status(season, 'full', 'completed')
+                db.update_scrape_status(season, "full", "completed")
                 seasons_scraped_ok += 1
                 logger.info(f"Season {season}: {inserted} inserted, {skipped} skipped")
             else:
@@ -146,18 +146,20 @@ def main():
                        LIMIT 1""",
                     (home_team_id, away_team_id, game_date, game_date),
                 )
-                db.upsert_game_odds({
-                    "game_id":           db_game["game_id"] if db_game else None,
-                    "external_game_id":  g["external_game_id"],
-                    "home_team_id":      home_team_id,
-                    "away_team_id":      away_team_id,
-                    "game_date":         game_date,
-                    "opening_spread":    g["spread"],
-                    "over_under":        g["over_under"],
-                    "home_implied_prob": g["home_implied_prob"],
-                    "away_implied_prob": g["away_implied_prob"],
-                    "fetched_at":        g["fetched_at"],
-                })
+                db.upsert_game_odds(
+                    {
+                        "game_id": db_game["game_id"] if db_game else None,
+                        "external_game_id": g["external_game_id"],
+                        "home_team_id": home_team_id,
+                        "away_team_id": away_team_id,
+                        "game_date": game_date,
+                        "opening_spread": g["spread"],
+                        "over_under": g["over_under"],
+                        "home_implied_prob": g["home_implied_prob"],
+                        "away_implied_prob": g["away_implied_prob"],
+                        "fetched_at": g["fetched_at"],
+                    }
+                )
                 stored += 1
             logger.info(f"Odds fetch complete: {stored} game(s) stored")
             if odds_scraper.last_requests_remaining is not None:
@@ -207,19 +209,21 @@ def main():
             wx = wx_scraper.fetch_game_weather(row["home_abbr"], str(row["date"]))
             if wx is None:
                 continue
-            db.upsert_game_weather({
-                "game_id":          row["game_id"],
-                "home_team_id":     row["home_team_id"],
-                "game_date":        str(row["date"]),
-                "is_dome":          wx.get("is_dome", False),
-                "temperature_c":    wx.get("temperature_c"),
-                "wind_speed_kmh":   wx.get("wind_speed_kmh"),
-                "precipitation_mm": wx.get("precipitation_mm"),
-                "weather_code":     wx.get("weather_code"),
-                "condition":        wx.get("condition", "Unknown"),
-                "is_adverse":       wx.get("is_adverse", False),
-                "fetched_at":       str(today),
-            })
+            db.upsert_game_weather(
+                {
+                    "game_id": row["game_id"],
+                    "home_team_id": row["home_team_id"],
+                    "game_date": str(row["date"]),
+                    "is_dome": wx.get("is_dome", False),
+                    "temperature_c": wx.get("temperature_c"),
+                    "wind_speed_kmh": wx.get("wind_speed_kmh"),
+                    "precipitation_mm": wx.get("precipitation_mm"),
+                    "weather_code": wx.get("weather_code"),
+                    "condition": wx.get("condition", "Unknown"),
+                    "is_adverse": wx.get("is_adverse", False),
+                    "fetched_at": str(today),
+                }
+            )
             wx_stored += 1
         logger.info(f"Conditions: stored weather for {wx_stored} upcoming game(s)")
     except Exception as e:
@@ -239,17 +243,21 @@ def main():
             team_id = team["team_id"]
             for p in players:
                 player_id = db.upsert_player(p)
-                db.upsert_roster_entry({
-                    "player_id": player_id,
-                    "team_id": team_id,
-                    "season": current_season,
-                    "depth_position": p.get("depth_position"),
-                    "is_starter": p.get("is_starter", False),
-                    "roster_status": p.get("status", "Active"),
-                })
+                db.upsert_roster_entry(
+                    {
+                        "player_id": player_id,
+                        "team_id": team_id,
+                        "season": current_season,
+                        "depth_position": p.get("depth_position"),
+                        "is_starter": p.get("is_starter", False),
+                        "roster_status": p.get("status", "Active"),
+                    }
+                )
                 players_upserted += 1
                 entries_upserted += 1
-        logger.info(f"Roster update: {players_upserted} players, {entries_upserted} entries")
+        logger.info(
+            f"Roster update: {players_upserted} players, {entries_upserted} entries"
+        )
     except Exception as e:
         logger.error(f"Roster fetch failed (non-fatal): {e}")
 
@@ -262,6 +270,7 @@ def main():
             import_player_weekly_stats,
         )
         from src.scraper.dst_importer import import_dst_weekly_stats
+
         spw = fetch_stats_player_week([current_season])
         rows = import_player_weekly_stats(db, [current_season], df=spw)
         k_rows = import_kicker_weekly_stats(db, [current_season], df=spw)
@@ -285,6 +294,7 @@ def main():
     # otherwise mask the fresh run.
     try:
         from src.prediction.fantasy_scorer import FantasyScorer
+
         scorer = FantasyScorer(db)
         current_week = db.get_current_week(current_season)
         db.execute(
@@ -292,8 +302,12 @@ def main():
             (current_season, current_week),
         )
         db.commit()
-        projections = scorer.generate_weekly_projections(season=current_season, week=current_week)
-        logger.info(f"Fantasy projections generated for week {current_week} ({len(projections)} players)")
+        projections = scorer.generate_weekly_projections(
+            season=current_season, week=current_week
+        )
+        logger.info(
+            f"Fantasy projections generated for week {current_week} ({len(projections)} players)"
+        )
     except Exception as e:
         logger.error(f"Fantasy projection generation failed (non-fatal): {e}")
 

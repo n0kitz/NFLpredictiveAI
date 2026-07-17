@@ -11,10 +11,17 @@ from slowapi.util import get_remote_address
 from ..deps import get_db, get_engine
 from ..helpers import row_to_game, build_injury_list, build_weather_response
 from ..schemas import (
-    PredictionRequest, PredictionResponse, AppliedFactor,
-    H2HResponse, ExplainPredictionResponse, ExplanationEntry,
-    PredictionHistoryItem, PredictionHistoryResponse,
-    VegasContext, ConditionsSummary, WeatherResponse,
+    PredictionRequest,
+    PredictionResponse,
+    AppliedFactor,
+    H2HResponse,
+    ExplainPredictionResponse,
+    ExplanationEntry,
+    PredictionHistoryItem,
+    PredictionHistoryResponse,
+    VegasContext,
+    ConditionsSummary,
+    WeatherResponse,
 )
 from ...database.models import GameFactor, FactorType
 from ...prediction.metrics import calculate_head_to_head
@@ -47,8 +54,8 @@ def predict_game(
     from ...prediction.factors import apply_game_factors as _apply_factors
 
     engine = get_engine()
-    use_ml = (model == "ml")
-    use_ensemble = (model == "ensemble")
+    use_ml = model == "ml"
+    use_ensemble = model == "ensemble"
     try:
         prediction = engine.predict(
             home_team=req.home_team,
@@ -69,10 +76,14 @@ def predict_game(
     if req.factors:
         inline_game_factors = []
         for f in req.factors:
-            team_id = prediction.home_team_id if f.team == "home" else prediction.away_team_id
+            team_id = (
+                prediction.home_team_id if f.team == "home" else prediction.away_team_id
+            )
             inline_game_factors.append(
                 GameFactor(
-                    factor_id=0, game_id=0, team_id=team_id,
+                    factor_id=0,
+                    game_id=0,
+                    team_id=team_id,
                     factor_type=FactorType(f.factor_type.value),
                     impact_rating=f.impact_rating,
                 )
@@ -102,7 +113,9 @@ def predict_game(
     vegas_context: Optional[VegasContext] = None
     try:
         today = str(_date.today())
-        odds_row = db.get_odds_for_teams(prediction.home_team_id, prediction.away_team_id, today)
+        odds_row = db.get_odds_for_teams(
+            prediction.home_team_id, prediction.away_team_id, today
+        )
         if odds_row:
             odds_d = dict(odds_row)
             vegas_context = VegasContext(
@@ -136,7 +149,9 @@ def predict_game(
         if upcoming:
             w_row = db.get_weather_for_game(upcoming["game_id"])
             if not w_row:
-                w_row = db.get_weather_for_teams(prediction.home_team_id, str(upcoming["date"]))
+                w_row = db.get_weather_for_teams(
+                    prediction.home_team_id, str(upcoming["date"])
+                )
             if w_row:
                 weather = build_weather_response(w_row)
 
@@ -162,7 +177,9 @@ def predict_game(
         key_factors=prediction.key_factors,
         factors_applied=factors_applied,
         predicted_spread=(
-            round(prediction.predicted_spread, 1) if prediction.predicted_spread is not None else None
+            round(prediction.predicted_spread, 1)
+            if prediction.predicted_spread is not None
+            else None
         ),
         vegas_context=vegas_context,
         conditions=conditions,
@@ -177,13 +194,17 @@ def predict_game_get(
     db=Depends(get_db),
 ):
     engine = get_engine()
-    use_ml = (model == "ml")
-    use_ensemble = (model == "ensemble")
+    use_ml = model == "ml"
+    use_ensemble = model == "ensemble"
     try:
         prediction = engine.predict(
-            home_team=home_team, away_team=away_team,
-            use_ml=use_ml, use_ensemble=use_ensemble,
-            current_season=None, is_playoff=False, week=0,
+            home_team=home_team,
+            away_team=away_team,
+            use_ml=use_ml,
+            use_ensemble=use_ensemble,
+            current_season=None,
+            is_playoff=False,
+            week=0,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -212,8 +233,11 @@ def explain_prediction_endpoint(req: PredictionRequest, db=Depends(get_db)):
     engine = get_engine()
     try:
         prediction = engine.predict(
-            home_team=req.home_team, away_team=req.away_team,
-            game_id=req.game_id, apply_factors=req.apply_factors, use_ml=False,
+            home_team=req.home_team,
+            away_team=req.away_team,
+            game_id=req.game_id,
+            apply_factors=req.apply_factors,
+            use_ml=False,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -221,10 +245,14 @@ def explain_prediction_endpoint(req: PredictionRequest, db=Depends(get_db)):
     if req.factors:
         inline_game_factors = []
         for f in req.factors:
-            team_id = prediction.home_team_id if f.team == "home" else prediction.away_team_id
+            team_id = (
+                prediction.home_team_id if f.team == "home" else prediction.away_team_id
+            )
             inline_game_factors.append(
                 GameFactor(
-                    factor_id=0, game_id=0, team_id=team_id,
+                    factor_id=0,
+                    game_id=0,
+                    team_id=team_id,
                     factor_type=FactorType(f.factor_type.value),
                     impact_rating=f.impact_rating,
                 )
@@ -236,7 +264,8 @@ def explain_prediction_endpoint(req: PredictionRequest, db=Depends(get_db)):
 
     try:
         explanation_data = engine.explain_prediction(
-            home_team=req.home_team, away_team=req.away_team,
+            home_team=req.home_team,
+            away_team=req.away_team,
         )
     except Exception as e:
         logger.warning("SHAP explanation failed: %s", e)
@@ -256,8 +285,10 @@ def explain_prediction_endpoint(req: PredictionRequest, db=Depends(get_db)):
         factors_applied=factors_applied,
         explanation=[
             ExplanationEntry(
-                feature=e["feature"], label=e["label"],
-                shap_value=e["shap_value"], direction=e["direction"],
+                feature=e["feature"],
+                label=e["label"],
+                shap_value=e["shap_value"],
+                direction=e["direction"],
                 feature_value=e["feature_value"],
             )
             for e in explanation_data
@@ -265,7 +296,9 @@ def explain_prediction_endpoint(req: PredictionRequest, db=Depends(get_db)):
     )
 
 
-@router.get("/api/h2h/{team1}/{team2}", response_model=H2HResponse, tags=["head-to-head"])
+@router.get(
+    "/api/h2h/{team1}/{team2}", response_model=H2HResponse, tags=["head-to-head"]
+)
 def head_to_head(
     team1: str = Path(..., max_length=10),
     team2: str = Path(..., max_length=10),
@@ -281,10 +314,14 @@ def head_to_head(
 
     h2h = calculate_head_to_head(db, t1["team_id"], t2["team_id"], limit)
     return H2HResponse(
-        team1_name=f"{t1['city']} {t1['name']}", team1_abbr=t1["abbreviation"],
-        team2_name=f"{t2['city']} {t2['name']}", team2_abbr=t2["abbreviation"],
-        team1_wins=h2h["team1_wins"], team2_wins=h2h["team2_wins"],
-        ties=h2h["ties"], total_games=h2h["total_games"],
+        team1_name=f"{t1['city']} {t1['name']}",
+        team1_abbr=t1["abbreviation"],
+        team2_name=f"{t2['city']} {t2['name']}",
+        team2_abbr=t2["abbreviation"],
+        team1_wins=h2h["team1_wins"],
+        team2_wins=h2h["team2_wins"],
+        ties=h2h["ties"],
+        total_games=h2h["total_games"],
         games=[row_to_game(g) for g in h2h["games"]],
     )
 
@@ -301,25 +338,33 @@ def prediction_history(
     predictions = []
     for r in rows:
         d = dict(r)
-        predictions.append(PredictionHistoryItem(
-            id=d["id"],
-            home_abbr=d["home_abbr"], away_abbr=d["away_abbr"],
-            home_team=d["home_team"], away_team=d["away_team"],
-            predicted_winner_abbr=d["predicted_winner_abbr"],
-            home_prob=round(d["home_prob"], 4), away_prob=round(d["away_prob"], 4),
-            confidence=d["confidence"],
-            predicted_at=str(d["predicted_at"]),
-            actual_winner_abbr=d.get("actual_winner_abbr"),
-            correct=bool(d["correct"]) if d["correct"] is not None else None,
-            game_id=d.get("game_id"),
-        ))
+        predictions.append(
+            PredictionHistoryItem(
+                id=d["id"],
+                home_abbr=d["home_abbr"],
+                away_abbr=d["away_abbr"],
+                home_team=d["home_team"],
+                away_team=d["away_team"],
+                predicted_winner_abbr=d["predicted_winner_abbr"],
+                home_prob=round(d["home_prob"], 4),
+                away_prob=round(d["away_prob"], 4),
+                confidence=d["confidence"],
+                predicted_at=str(d["predicted_at"]),
+                actual_winner_abbr=d.get("actual_winner_abbr"),
+                correct=bool(d["correct"]) if d["correct"] is not None else None,
+                game_id=d.get("game_id"),
+            )
+        )
 
     total = stats["total"] if stats else 0
     resolved = stats["resolved"] if stats else 0
     correct = stats["correct"] if stats else 0
 
     return PredictionHistoryResponse(
-        predictions=predictions, total=total, resolved=resolved, correct=correct,
+        predictions=predictions,
+        total=total,
+        resolved=resolved,
+        correct=correct,
         accuracy=round(correct / resolved, 4) if resolved > 0 else None,
     )
 

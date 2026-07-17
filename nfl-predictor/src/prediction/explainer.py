@@ -15,40 +15,40 @@ logger = logging.getLogger(__name__)
 # feature_builder) so it can never drift out of sync — adding/renaming a feature
 # there is reflected here automatically.
 _PRETTY_LABELS: Dict[str, str] = {
-    "home_win_pct":              "Home Win %",
-    "away_win_pct":              "Away Win %",
-    "home_weighted_win_pct":     "Home Weighted Win %",
-    "away_weighted_win_pct":     "Away Weighted Win %",
-    "home_ppg":                  "Home Points/Game",
-    "away_ppg":                  "Away Points/Game",
-    "home_pag":                  "Home Points Allowed/Game",
-    "away_pag":                  "Away Points Allowed/Game",
-    "home_point_diff_per_game":  "Home Point Differential",
-    "away_point_diff_per_game":  "Away Point Differential",
-    "home_sos":                  "Home Strength of Schedule",
-    "away_sos":                  "Away Strength of Schedule",
-    "home_form_rating":          "Home Recent Form",
-    "away_form_rating":          "Away Recent Form",
-    "home_strength":             "Home Team Strength",
-    "away_strength":             "Away Team Strength",
-    "home_home_win_pct":         "Home Win % at Home",
-    "away_away_win_pct":         "Away Win % on Road",
-    "h2h_home_win_pct":          "Head-to-Head Record",
-    "home_rest_days":            "Home Rest Days",
-    "away_rest_days":            "Away Rest Days",
-    "home_turnover_margin":      "Home Turnover Margin",
-    "away_turnover_margin":      "Away Turnover Margin",
-    "home_third_down_pct":       "Home 3rd Down Conv %",
-    "away_third_down_pct":       "Away 3rd Down Conv %",
-    "home_yards_per_play":       "Home Yards/Play",
-    "away_yards_per_play":       "Away Yards/Play",
-    "home_redzone_efficiency":   "Home Red Zone Efficiency",
-    "away_redzone_efficiency":   "Away Red Zone Efficiency",
-    "is_playoff":                "Playoff Game",
-    "week_of_season":            "Week of Season",
-    "home_dynamic_hfa":          "Home Field Advantage",
-    "home_starter_qb_epa_l4":    "Home Starter QB EPA (L4)",
-    "away_starter_qb_epa_l4":    "Away Starter QB EPA (L4)",
+    "home_win_pct": "Home Win %",
+    "away_win_pct": "Away Win %",
+    "home_weighted_win_pct": "Home Weighted Win %",
+    "away_weighted_win_pct": "Away Weighted Win %",
+    "home_ppg": "Home Points/Game",
+    "away_ppg": "Away Points/Game",
+    "home_pag": "Home Points Allowed/Game",
+    "away_pag": "Away Points Allowed/Game",
+    "home_point_diff_per_game": "Home Point Differential",
+    "away_point_diff_per_game": "Away Point Differential",
+    "home_sos": "Home Strength of Schedule",
+    "away_sos": "Away Strength of Schedule",
+    "home_form_rating": "Home Recent Form",
+    "away_form_rating": "Away Recent Form",
+    "home_strength": "Home Team Strength",
+    "away_strength": "Away Team Strength",
+    "home_home_win_pct": "Home Win % at Home",
+    "away_away_win_pct": "Away Win % on Road",
+    "h2h_home_win_pct": "Head-to-Head Record",
+    "home_rest_days": "Home Rest Days",
+    "away_rest_days": "Away Rest Days",
+    "home_turnover_margin": "Home Turnover Margin",
+    "away_turnover_margin": "Away Turnover Margin",
+    "home_third_down_pct": "Home 3rd Down Conv %",
+    "away_third_down_pct": "Away 3rd Down Conv %",
+    "home_yards_per_play": "Home Yards/Play",
+    "away_yards_per_play": "Away Yards/Play",
+    "home_redzone_efficiency": "Home Red Zone Efficiency",
+    "away_redzone_efficiency": "Away Red Zone Efficiency",
+    "is_playoff": "Playoff Game",
+    "week_of_season": "Week of Season",
+    "home_dynamic_hfa": "Home Field Advantage",
+    "home_starter_qb_epa_l4": "Home Starter QB EPA (L4)",
+    "away_starter_qb_epa_l4": "Away Starter QB EPA (L4)",
 }
 
 FEATURE_LABELS: Dict[str, str] = {
@@ -71,6 +71,7 @@ def _unwrap_tree_model(model: Any) -> Any:
     """
     try:
         from sklearn.calibration import CalibratedClassifierCV
+
         if isinstance(model, CalibratedClassifierCV):
             return model.calibrated_classifiers_[0].estimator
     except Exception:
@@ -100,6 +101,7 @@ def get_explainer(model: Optional[Any]) -> Optional[Any]:
 
     try:
         import shap  # lazy import — shap is optional
+
         tree_model = _unwrap_tree_model(model)
         _explainer_cache = shap.TreeExplainer(tree_model)
         _explainer_model_id = model_id
@@ -143,8 +145,11 @@ def generate_shap_explanation(
             return []
 
         feat_dict = build_feature_vector(
-            home_metrics, away_metrics, h2h,
-            is_playoff=is_playoff, week=week,
+            home_metrics,
+            away_metrics,
+            h2h,
+            is_playoff=is_playoff,
+            week=week,
         )
         feat_array = feature_dict_to_array(feat_dict)
 
@@ -168,7 +173,8 @@ def generate_shap_explanation(
         if len(sv) != len(feature_names):
             logger.warning(
                 "SHAP values length %d != feature count %d — skipping",
-                len(sv), len(feature_names),
+                len(sv),
+                len(feature_names),
             )
             return []
 
@@ -182,13 +188,15 @@ def generate_shap_explanation(
             else:
                 direction = "neutral"
 
-            entries.append({
-                "feature":       fname,
-                "label":         FEATURE_LABELS.get(fname, fname),
-                "shap_value":    round(sv_float, 6),
-                "direction":     direction,
-                "feature_value": round(float(feat_dict.get(fname, 0.0)), 4),
-            })
+            entries.append(
+                {
+                    "feature": fname,
+                    "label": FEATURE_LABELS.get(fname, fname),
+                    "shap_value": round(sv_float, 6),
+                    "direction": direction,
+                    "feature_value": round(float(feat_dict.get(fname, 0.0)), 4),
+                }
+            )
 
         # Top 8 by |shap_value|
         entries.sort(key=lambda e: abs(e["shap_value"]), reverse=True)

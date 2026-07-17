@@ -16,14 +16,38 @@ logger = logging.getLogger(__name__)
 
 # ESPN team ID → internal abbreviation mapping (all 32 current teams)
 ESPN_TEAM_IDS: Dict[str, int] = {
-    "ARI": 22,  "ATL": 1,  "BAL": 33, "BUF": 2,
-    "CAR": 29,  "CHI": 3,  "CIN": 4,  "CLE": 5,
-    "DAL": 6,   "DEN": 7,  "DET": 8,  "GB":  9,
-    "HOU": 34,  "IND": 11, "JAX": 30, "KC":  12,
-    "LAC": 24,  "LAR": 14, "LV":  13, "MIA": 15,
-    "MIN": 16,  "NE":  17, "NO":  18, "NYG": 19,
-    "NYJ": 20,  "PHI": 21, "PIT": 23, "SEA": 26,
-    "SF":  25,  "TB":  27, "TEN": 10, "WAS": 28,
+    "ARI": 22,
+    "ATL": 1,
+    "BAL": 33,
+    "BUF": 2,
+    "CAR": 29,
+    "CHI": 3,
+    "CIN": 4,
+    "CLE": 5,
+    "DAL": 6,
+    "DEN": 7,
+    "DET": 8,
+    "GB": 9,
+    "HOU": 34,
+    "IND": 11,
+    "JAX": 30,
+    "KC": 12,
+    "LAC": 24,
+    "LAR": 14,
+    "LV": 13,
+    "MIA": 15,
+    "MIN": 16,
+    "NE": 17,
+    "NO": 18,
+    "NYG": 19,
+    "NYJ": 20,
+    "PHI": 21,
+    "PIT": 23,
+    "SEA": 26,
+    "SF": 25,
+    "TB": 27,
+    "TEN": 10,
+    "WAS": 28,
 }
 
 ESPN_ROSTER_URL = (
@@ -119,8 +143,12 @@ class RosterScraper:
             data = resp.json()
             return self._parse_athlete_stats(data)
         except Exception as exc:
-            logger.debug("Could not fetch stats for espn_id=%s season=%s: %s",
-                         espn_id, season, exc)
+            logger.debug(
+                "Could not fetch stats for espn_id=%s season=%s: %s",
+                espn_id,
+                season,
+                exc,
+            )
             return None
 
     # ── Private helpers ──────────────────────────────────────────────────────
@@ -162,26 +190,32 @@ class RosterScraper:
 
         # Status
         status_obj = athlete.get("status") or {}
-        status = status_obj.get("name", "Active") if isinstance(status_obj, dict) else "Active"
+        status = (
+            status_obj.get("name", "Active")
+            if isinstance(status_obj, dict)
+            else "Active"
+        )
 
         # Headshot
         headshot_obj = athlete.get("headshot") or {}
-        headshot_url = headshot_obj.get("href") if isinstance(headshot_obj, dict) else None
+        headshot_url = (
+            headshot_obj.get("href") if isinstance(headshot_obj, dict) else None
+        )
 
         return {
-            "espn_id":         espn_id,
-            "full_name":       full_name,
-            "first_name":      first_name,
-            "last_name":       last_name,
-            "position":        position,
-            "jersey_number":   str(jersey) if jersey is not None else None,
-            "date_of_birth":   dob,
-            "height_cm":       _inches_to_cm(height_in),
-            "weight_kg":       _lbs_to_kg(weight_lb),
-            "college":         college,
+            "espn_id": espn_id,
+            "full_name": full_name,
+            "first_name": first_name,
+            "last_name": last_name,
+            "position": position,
+            "jersey_number": str(jersey) if jersey is not None else None,
+            "date_of_birth": dob,
+            "height_cm": _inches_to_cm(height_in),
+            "weight_kg": _lbs_to_kg(weight_lb),
+            "college": college,
             "experience_years": int(exp_years) if exp_years else 0,
-            "status":          status,
-            "headshot_url":    headshot_url,
+            "status": status,
+            "headshot_url": headshot_url,
         }
 
     def _parse_athlete_stats(self, data: Dict[str, Any]) -> Dict[str, Any]:

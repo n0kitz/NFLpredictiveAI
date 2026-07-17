@@ -4,8 +4,8 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
 from enum import Enum
 
-
 # ── Enums ──────────────────────────────────────────────
+
 
 class ConferenceEnum(str, Enum):
     AFC = "AFC"
@@ -37,6 +37,7 @@ class FactorTypeEnum(str, Enum):
 
 # ── Teams ──────────────────────────────────────────────
 
+
 class TeamResponse(BaseModel):
     team_id: int
     name: str
@@ -58,6 +59,7 @@ class TeamListResponse(BaseModel):
 
 
 # ── Games ──────────────────────────────────────────────
+
 
 class GameResponse(BaseModel):
     game_id: int
@@ -136,6 +138,7 @@ class GameRetrodictionResponse(BaseModel):
     Computed with cutoff_date = game date so only pre-game data is used
     (same configuration the backtester measures OOS accuracy with).
     """
+
     game_id: int
     season: int
     week: str
@@ -149,13 +152,14 @@ class GameRetrodictionResponse(BaseModel):
     predicted_winner_prob: float
     confidence: str
     predicted_spread: Optional[float] = None
-    actual_winner_abbr: Optional[str] = None   # None when the game was a tie
-    actual_margin: Optional[int] = None        # home_score - away_score
-    correct: Optional[bool] = None             # None when the game was a tie
+    actual_winner_abbr: Optional[str] = None  # None when the game was a tie
+    actual_margin: Optional[int] = None  # home_score - away_score
+    correct: Optional[bool] = None  # None when the game was a tie
     key_factors: List[str] = []
 
 
 # ── Predictions ────────────────────────────────────────
+
 
 class InlineFactor(BaseModel):
     factor_type: FactorTypeEnum
@@ -168,7 +172,9 @@ class PredictionRequest(BaseModel):
     away_team: str = Field(..., description="Away team name, abbreviation, or city")
     game_id: Optional[int] = Field(None, description="Game ID for factor lookup")
     apply_factors: bool = Field(True, description="Whether to apply game factors")
-    factors: Optional[List[InlineFactor]] = Field(None, description="Inline factors to apply")
+    factors: Optional[List[InlineFactor]] = Field(
+        None, description="Inline factors to apply"
+    )
     current_season: Optional[int] = None
     is_playoff: bool = False
     week: int = 0
@@ -199,6 +205,7 @@ class PredictionResponse(BaseModel):
 
 # ── Head-to-Head ───────────────────────────────────────
 
+
 class H2HRequest(BaseModel):
     team1: str = Field(..., description="First team name/abbreviation")
     team2: str = Field(..., description="Second team name/abbreviation")
@@ -218,6 +225,7 @@ class H2HResponse(BaseModel):
 
 
 # ── Team Stats ─────────────────────────────────────────
+
 
 class TeamSeasonStatsResponse(BaseModel):
     team_id: int
@@ -296,6 +304,7 @@ class TeamMetricsResponse(BaseModel):
 
 # ── Factors ────────────────────────────────────────────
 
+
 class FactorRequest(BaseModel):
     game_id: int
     team_id: int
@@ -321,6 +330,7 @@ class FactorListResponse(BaseModel):
 
 # ── Scraping ───────────────────────────────────────────
 
+
 class ScrapeRequest(BaseModel):
     start_year: int = Field(1990, ge=1960, le=2030)
     end_year: int = Field(2025, ge=1960, le=2030)
@@ -334,6 +344,7 @@ class ScrapeStatusResponse(BaseModel):
 
 # ── Accuracy / Backtesting ─────────────────────────────
 
+
 class AccuracyResponse(BaseModel):
     seasons: List[int]
     total_games: int
@@ -345,6 +356,7 @@ class AccuracyResponse(BaseModel):
 
 
 # ── Prediction History ────────────────────────────────
+
 
 class PredictionHistoryItem(BaseModel):
     id: int
@@ -372,6 +384,7 @@ class PredictionHistoryResponse(BaseModel):
 
 # ── Vegas Odds ─────────────────────────────────────────
 
+
 class GameOddsResponse(BaseModel):
     id: int
     game_id: Optional[int] = None
@@ -390,7 +403,9 @@ class GameOddsResponse(BaseModel):
 
 
 class VegasContext(BaseModel):
-    spread: Optional[float] = Field(None, description="Home-team spread (negative = home favoured)")
+    spread: Optional[float] = Field(
+        None, description="Home-team spread (negative = home favoured)"
+    )
     over_under: Optional[float] = None
     home_implied_prob: Optional[float] = None
     away_implied_prob: Optional[float] = None
@@ -399,8 +414,9 @@ class VegasContext(BaseModel):
 
 # ── Model info ─────────────────────────────────────────
 
+
 class ModelInfoResponse(BaseModel):
-    model_type: str                         # always "weighted_sum" (default)
+    model_type: str  # always "weighted_sum" (default)
     active_model: str = "weighted_sum"
     ml_model_loaded: bool
     ml_available: bool = False
@@ -417,6 +433,7 @@ class ModelInfoResponse(BaseModel):
 
 
 # ── Injuries / Weather / Conditions ────────────────────
+
 
 class InjuryEntry(BaseModel):
     player_name: str
@@ -450,6 +467,7 @@ class GameConditionsResponse(BaseModel):
 
 # ── SHAP Explanation ───────────────────────────────────
 
+
 class ExplanationEntry(BaseModel):
     feature: str
     label: str
@@ -463,6 +481,7 @@ class ExplainPredictionResponse(PredictionResponse):
 
 
 # ── Roster / Players ───────────────────────────────────
+
 
 class PlayerStatsEntry(BaseModel):
     games_played: int = 0
@@ -542,6 +561,7 @@ class PlayerSearchResult(BaseModel):
 
 # ── Fantasy ────────────────────────────────────────────
 
+
 class FantasyPlayerEntry(BaseModel):
     player_id: int
     full_name: str
@@ -564,6 +584,7 @@ class FantasyLeaderboardResponse(BaseModel):
 
 # ── Fantasy (extended) ─────────────────────────────────
 
+
 class FantasyContribution(BaseModel):
     feature: str
     label: str
@@ -585,11 +606,11 @@ class FantasyProjectionEntry(BaseModel):
     projected_points_std: float = 0.0
     matchup_score: float = 1.0
     opportunity_score: float = 0.0
-    confidence: str = 'medium'
+    confidence: str = "medium"
     injury_status: Optional[str] = None
     weather_impact: bool = False
     # Phase 1 ML extensions
-    model_source: str = 'heuristic'  # 'heuristic' | 'ml'
+    model_source: str = "heuristic"  # 'heuristic' | 'ml'
     model_version: Optional[str] = None
     floor_ppr: Optional[float] = None
     ceiling_ppr: Optional[float] = None
@@ -711,6 +732,7 @@ class ImportByNamesRequest(BaseModel):
 
 # ── Value Picks ────────────────────────────────────────
 
+
 class ValuePick(BaseModel):
     game_id: int
     game_date: str
@@ -719,8 +741,8 @@ class ValuePick(BaseModel):
     model_home_prob: float
     vegas_home_implied_prob: float
     edge: float
-    edge_side: str           # "home" or "away"
-    model_confidence: str    # "HIGH" / "MEDIUM" / "LOW"
+    edge_side: str  # "home" or "away"
+    model_confidence: str  # "HIGH" / "MEDIUM" / "LOW"
     vegas_spread: Optional[float] = None
     is_adverse_weather: bool = False
     weather_condition: Optional[str] = None
@@ -741,7 +763,7 @@ class ValuePickHistoryItem(BaseModel):
     home_prob: float
     vegas_home_implied_prob: float
     edge: float
-    edge_side: str          # "home" or "away"
+    edge_side: str  # "home" or "away"
     vegas_spread: Optional[float] = None
     confidence: str
     correct: Optional[bool] = None
@@ -757,6 +779,7 @@ class ValuePickHistoryResponse(BaseModel):
 
 
 # ── General ────────────────────────────────────────────
+
 
 class ErrorResponse(BaseModel):
     detail: str
@@ -774,7 +797,7 @@ class TeamScheduleEntry(BaseModel):
     away_score: Optional[int] = None
     team_score: Optional[int] = None
     opp_score: Optional[int] = None
-    result: Optional[str] = None    # "W", "L", "T", or None if upcoming
+    result: Optional[str] = None  # "W", "L", "T", or None if upcoming
     overtime: bool = False
     difficulty: Optional[str] = None  # "easy", "medium", "hard" for upcoming games
 
@@ -803,6 +826,7 @@ class HealthResponse(BaseModel):
 
 # ── Matchup Engine ─────────────────────────────────────
 
+
 class MatchupComponentScores(BaseModel):
     dvp: float
     ypp: float
@@ -819,9 +843,9 @@ class MatchupGradeResponse(BaseModel):
     opp_team_abbr: Optional[str] = None
     week: int
     season: int
-    grade: str                          # A / B / C / D / F
-    score: float                        # 0–100
-    rank_vs_league: int                 # 1 = hardest matchup, 32 = easiest
+    grade: str  # A / B / C / D / F
+    score: float  # 0–100
+    rank_vs_league: int  # 1 = hardest matchup, 32 = easiest
     explanation: str
     dvp_6wk: float
     avg_league_dvp: float
@@ -832,6 +856,7 @@ class MatchupGradeResponse(BaseModel):
 
 
 # ── Lineup Optimizer ───────────────────────────────────
+
 
 class OptimizerPlayerInput(BaseModel):
     player_id: int
@@ -850,7 +875,7 @@ class OptimizerPlayerInput(BaseModel):
 class OptimizeRequest(BaseModel):
     players: List[OptimizerPlayerInput] = Field(..., max_length=400)
     slots: Dict[str, int]
-    flex_positions: List[str] = ['RB', 'WR', 'TE']
+    flex_positions: List[str] = ["RB", "WR", "TE"]
     salary_cap: Optional[int] = None
     n_lineups: int = Field(20, ge=1, le=150)
     correlations: bool = True
@@ -859,7 +884,7 @@ class OptimizeRequest(BaseModel):
 
 class OptimizeDFSRequest(BaseModel):
     players: List[OptimizerPlayerInput] = Field(..., max_length=400)
-    site: str = 'dk'                             # 'dk' or 'fd'
+    site: str = "dk"  # 'dk' or 'fd'
     n_lineups: int = Field(20, ge=1, le=150)
     correlations: bool = True
     locked_player_ids: List[int] = Field(default_factory=list, max_length=50)

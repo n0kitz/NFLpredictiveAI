@@ -33,29 +33,30 @@ logger = logging.getLogger(__name__)
 
 # ── League-average baselines ─────────────────────────────────────────────────
 
-_AVG_TOTAL_POINTS_PER_GAME = 44.0   # ~22 per team
-_AVG_YPP                   = 5.5
-_AVG_QB_EPA                = 0.0    # EPA is zero-centred by construction
+_AVG_TOTAL_POINTS_PER_GAME = 44.0  # ~22 per team
+_AVG_YPP = 5.5
+_AVG_QB_EPA = 0.0  # EPA is zero-centred by construction
 
 # Avg PPR allowed to each position per *player* per game (2020-2024 benchmarks)
 _AVG_DVP: Dict[str, float] = {
-    'QB': 20.0,
-    'RB': 9.5,
-    'WR': 11.0,
-    'TE': 8.0,
-    'K':  8.0,
+    "QB": 20.0,
+    "RB": 9.5,
+    "WR": 11.0,
+    "TE": 8.0,
+    "K": 8.0,
 }
 
 # Grade thresholds (score → letter)
 _GRADE_THRESHOLDS = [
-    (85, 'A'),
-    (70, 'B'),
-    (50, 'C'),
-    (35, 'D'),
+    (85, "A"),
+    (70, "B"),
+    (50, "C"),
+    (35, "D"),
 ]
 
 
 # ── Core functions ────────────────────────────────────────────────────────────
+
 
 def opp_position_dvp(
     db,
@@ -81,7 +82,9 @@ def opp_position_dvp(
     return round(avg_ppr, 3)
 
 
-def _query_dvp(db, team_id: int, pos: str, season: int, before_week: int, lookback: int) -> Optional[float]:
+def _query_dvp(
+    db, team_id: int, pos: str, season: int, before_week: int, lookback: int
+) -> Optional[float]:
     rows = db.fetchall(
         """
         SELECT AVG(pws.fantasy_points_ppr) AS avg_ppr
@@ -98,9 +101,9 @@ def _query_dvp(db, team_id: int, pos: str, season: int, before_week: int, lookba
         """,
         (team_id, pos, season, before_week, lookback * 22),
     )
-    if not rows or rows[0]['avg_ppr'] is None:
+    if not rows or rows[0]["avg_ppr"] is None:
         return None
-    return float(rows[0]['avg_ppr'])
+    return float(rows[0]["avg_ppr"])
 
 
 def pace_adjusted_plays(db, team_id: int, season: int) -> float:
@@ -124,7 +127,7 @@ def pace_adjusted_plays(db, team_id: int, season: int) -> float:
         """,
         (team_id, team_id, season),
     )
-    if not rows or rows[0]['avg_total'] is None:
+    if not rows or rows[0]["avg_total"] is None:
         # Fall back to prior season
         rows = db.fetchall(
             """
@@ -138,10 +141,10 @@ def pace_adjusted_plays(db, team_id: int, season: int) -> float:
             """,
             (team_id, team_id, season - 1),
         )
-    if not rows or rows[0]['avg_total'] is None:
+    if not rows or rows[0]["avg_total"] is None:
         return 1.0
 
-    avg_total = float(rows[0]['avg_total'])
+    avg_total = float(rows[0]["avg_total"])
     pace = avg_total / _AVG_TOTAL_POINTS_PER_GAME
     return round(max(0.6, min(1.5, pace)), 3)
 
@@ -161,9 +164,9 @@ def pass_rate_over_expected(db, team_id: int, season: int) -> float:
         "SELECT qb_epa_per_play FROM team_advanced_stats WHERE team_id=? ORDER BY season DESC LIMIT 1",
         (team_id,),
     )
-    if not adv or adv['qb_epa_per_play'] is None:
+    if not adv or adv["qb_epa_per_play"] is None:
         return 0.0
-    proe = float(adv['qb_epa_per_play']) - _AVG_QB_EPA
+    proe = float(adv["qb_epa_per_play"]) - _AVG_QB_EPA
     return round(max(-0.5, min(0.5, proe)), 4)
 
 
@@ -209,10 +212,10 @@ def neutral_script_rates(db, team_id: int, season: int) -> Dict[str, float]:
             return 22.0
         pts = []
         for g in rows:
-            if g['home_team_id'] == team_id:
-                pts.append(float(g['home_score'] or 0))
+            if g["home_team_id"] == team_id:
+                pts.append(float(g["home_score"] or 0))
             else:
-                pts.append(float(g['away_score'] or 0))
+                pts.append(float(g["away_score"] or 0))
         return sum(pts) / len(pts) if pts else 22.0
 
     close_pts = _avg_points(close_rows)
@@ -226,12 +229,13 @@ def neutral_script_rates(db, team_id: int, season: int) -> Dict[str, float]:
     base_pass_rate = 0.57 + (proe * 0.15) + (neutrality - 1.0) * 0.05
     pass_rate = round(max(0.40, min(0.72, base_pass_rate)), 3)
     return {
-        'pass_rate': pass_rate,
-        'rush_rate': round(1.0 - pass_rate, 3),
+        "pass_rate": pass_rate,
+        "rush_rate": round(1.0 - pass_rate, 3),
     }
 
 
 # ── Composite grade ───────────────────────────────────────────────────────────
+
 
 def matchup_grade(
     db,
@@ -251,7 +255,7 @@ def matchup_grade(
 
     Higher score = better matchup for the player.
     """
-    pos = (position or '').upper()
+    pos = (position or "").upper()
 
     # ── 1. 6wk position DvP ─────────────────────────────────────────────────
     dvp_6wk = opp_position_dvp(db, opp_team_id, pos, season, week, lookback=6)
@@ -261,13 +265,14 @@ def matchup_grade(
     dvp_score = _sigmoid_score(dvp_ratio, centre=1.0, steepness=80.0)  # 0-100
 
     # ── 2. YPP allowed ───────────────────────────────────────────────────────
-    adv = (
-        db.fetchone("SELECT yards_per_play FROM team_advanced_stats WHERE team_id=? AND season=?",
-                    (opp_team_id, season))
-        or db.fetchone("SELECT yards_per_play FROM team_advanced_stats WHERE team_id=? ORDER BY season DESC LIMIT 1",
-                       (opp_team_id,))
+    adv = db.fetchone(
+        "SELECT yards_per_play FROM team_advanced_stats WHERE team_id=? AND season=?",
+        (opp_team_id, season),
+    ) or db.fetchone(
+        "SELECT yards_per_play FROM team_advanced_stats WHERE team_id=? ORDER BY season DESC LIMIT 1",
+        (opp_team_id,),
     )
-    opp_ypp = float(adv['yards_per_play'] or _AVG_YPP) if adv else _AVG_YPP
+    opp_ypp = float(adv["yards_per_play"] or _AVG_YPP) if adv else _AVG_YPP
     ypp_ratio = opp_ypp / _AVG_YPP
     ypp_score = _sigmoid_score(ypp_ratio, centre=1.0, steepness=80.0)
 
@@ -278,10 +283,10 @@ def matchup_grade(
     # ── 4. PROE / game-script ────────────────────────────────────────────────
     proe = pass_rate_over_expected(db, opp_team_id, season)
     # Positive PROE = pass-heavy games = good for QB/WR/TE, bad for RB
-    if pos in ('QB', 'WR', 'TE'):
+    if pos in ("QB", "WR", "TE"):
         proe_score = 50.0 + proe * 100.0
-    elif pos == 'RB':
-        proe_score = 50.0 - proe * 100.0   # run-heavy = better for RB
+    elif pos == "RB":
+        proe_score = 50.0 - proe * 100.0  # run-heavy = better for RB
     else:
         proe_score = 50.0
 
@@ -289,14 +294,11 @@ def matchup_grade(
 
     # ── Composite ────────────────────────────────────────────────────────────
     composite = (
-        dvp_score  * 0.45
-        + ypp_score  * 0.25
-        + pace_score * 0.20
-        + proe_score * 0.10
+        dvp_score * 0.45 + ypp_score * 0.25 + pace_score * 0.20 + proe_score * 0.10
     )
     score = round(max(0.0, min(100.0, composite)), 1)
 
-    grade = 'F'
+    grade = "F"
     for threshold, letter in _GRADE_THRESHOLDS:
         if score >= threshold:
             grade = letter
@@ -308,25 +310,26 @@ def matchup_grade(
     explanation = _build_explanation(pos, dvp_6wk, avg_dvp, opp_ypp, pace, proe, grade)
 
     return {
-        'grade':           grade,
-        'score':           score,
-        'rank_vs_league':  rank_vs_league,
-        'explanation':     explanation,
-        'dvp_6wk':         round(dvp_6wk, 2),
-        'avg_league_dvp':  round(avg_dvp, 2),
-        'opp_ypp':         round(opp_ypp, 2),
-        'pace':            round(pace, 3),
-        'proe':            round(proe, 4),
-        'component_scores': {
-            'dvp':   round(dvp_score, 1),
-            'ypp':   round(ypp_score, 1),
-            'pace':  round(pace_score, 1),
-            'proe':  round(proe_score, 1),
+        "grade": grade,
+        "score": score,
+        "rank_vs_league": rank_vs_league,
+        "explanation": explanation,
+        "dvp_6wk": round(dvp_6wk, 2),
+        "avg_league_dvp": round(avg_dvp, 2),
+        "opp_ypp": round(opp_ypp, 2),
+        "pace": round(pace, 3),
+        "proe": round(proe, 4),
+        "component_scores": {
+            "dvp": round(dvp_score, 1),
+            "ypp": round(ypp_score, 1),
+            "pace": round(pace_score, 1),
+            "proe": round(proe_score, 1),
         },
     }
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
+
 
 def _sigmoid_score(ratio: float, centre: float = 1.0, steepness: float = 80.0) -> float:
     """Map a ratio to [0, 100] via a linear interpolation clamped at extremes.
@@ -353,7 +356,7 @@ def _compute_league_rank(
     )
     scores = []
     for t in teams:
-        tid = t['team_id']
+        tid = t["team_id"]
         if tid == opp_team_id:
             scores.append(own_score)
             continue
@@ -372,15 +375,22 @@ def _compute_league_rank(
 
 
 def _build_explanation(
-    pos: str, dvp: float, avg_dvp: float, opp_ypp: float,
-    pace: float, proe: float, grade: str,
+    pos: str,
+    dvp: float,
+    avg_dvp: float,
+    opp_ypp: float,
+    pace: float,
+    proe: float,
+    grade: str,
 ) -> str:
     parts = []
     dvp_pct = round((dvp / avg_dvp - 1.0) * 100) if avg_dvp > 0 else 0
     if dvp_pct >= 10:
         parts.append(f"opponent allows {dvp_pct}% more PPR to {pos}s than league avg")
     elif dvp_pct <= -10:
-        parts.append(f"opponent allows {abs(dvp_pct)}% fewer PPR to {pos}s than league avg")
+        parts.append(
+            f"opponent allows {abs(dvp_pct)}% fewer PPR to {pos}s than league avg"
+        )
     else:
         parts.append(f"opponent is near league avg for {pos} PPR allowed")
 
@@ -394,9 +404,9 @@ def _build_explanation(
     elif pace <= 0.9:
         parts.append("slow-paced games (fewer plays)")
 
-    if pos in ('QB', 'WR', 'TE') and proe > 0.05:
+    if pos in ("QB", "WR", "TE") and proe > 0.05:
         parts.append("pass-heavy game script expected")
-    elif pos == 'RB' and proe < -0.05:
+    elif pos == "RB" and proe < -0.05:
         parts.append("run-heavy game script expected")
 
     return f"Grade {grade}: " + "; ".join(parts) + "."

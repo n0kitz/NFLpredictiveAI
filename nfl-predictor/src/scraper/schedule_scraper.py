@@ -26,15 +26,40 @@ _RATE_LIMIT = 1.5  # seconds between requests
 
 # ESPN uses full team names; build reverse lookup: espn_abbr → db_abbr
 _ESPN_ABBR_TO_DB: Dict[str, str] = {
-    "ARI": "ARI", "ATL": "ATL", "BAL": "BAL", "BUF": "BUF",
-    "CAR": "CAR", "CHI": "CHI", "CIN": "CIN", "CLE": "CLE",
-    "DAL": "DAL", "DEN": "DEN", "DET": "DET", "GB": "GB",
-    "HOU": "HOU", "IND": "IND", "JAX": "JAX", "KC": "KC",
-    "LV": "LV",  "LAC": "LAC", "LA": "LAR", "LAR": "LAR",
-    "MIA": "MIA", "MIN": "MIN", "NE": "NE",  "NO": "NO",
-    "NYG": "NYG", "NYJ": "NYJ", "PHI": "PHI", "PIT": "PIT",
-    "SF": "SF",  "SEA": "SEA", "TB": "TB",  "TEN": "TEN",
-    "WSH": "WAS", "WAS": "WAS",
+    "ARI": "ARI",
+    "ATL": "ATL",
+    "BAL": "BAL",
+    "BUF": "BUF",
+    "CAR": "CAR",
+    "CHI": "CHI",
+    "CIN": "CIN",
+    "CLE": "CLE",
+    "DAL": "DAL",
+    "DEN": "DEN",
+    "DET": "DET",
+    "GB": "GB",
+    "HOU": "HOU",
+    "IND": "IND",
+    "JAX": "JAX",
+    "KC": "KC",
+    "LV": "LV",
+    "LAC": "LAC",
+    "LA": "LAR",
+    "LAR": "LAR",
+    "MIA": "MIA",
+    "MIN": "MIN",
+    "NE": "NE",
+    "NO": "NO",
+    "NYG": "NYG",
+    "NYJ": "NYJ",
+    "PHI": "PHI",
+    "PIT": "PIT",
+    "SF": "SF",
+    "SEA": "SEA",
+    "TB": "TB",
+    "TEN": "TEN",
+    "WSH": "WAS",
+    "WAS": "WAS",
 }
 
 
@@ -49,9 +74,13 @@ class ScheduleScraper:
     def __init__(self, db=None) -> None:
         self.db = db
         self._session = requests.Session()
-        self._session.headers.update({"User-Agent": "Mozilla/5.0 (compatible; NFL-Predictor)"})
+        self._session.headers.update(
+            {"User-Agent": "Mozilla/5.0 (compatible; NFL-Predictor)"}
+        )
 
-    def fetch_week(self, season: int, week: int, season_type: int = 2) -> List[Dict[str, Any]]:
+    def fetch_week(
+        self, season: int, week: int, season_type: int = 2
+    ) -> List[Dict[str, Any]]:
         """
         Fetch games for a specific week from ESPN.
 
@@ -71,11 +100,19 @@ class ScheduleScraper:
         }
         try:
             resp = get_with_retry(
-                _ESPN_SCOREBOARD, params=params, timeout=_REQUEST_TIMEOUT, session=self._session
+                _ESPN_SCOREBOARD,
+                params=params,
+                timeout=_REQUEST_TIMEOUT,
+                session=self._session,
             )
             resp.raise_for_status()
         except requests.RequestException as exc:
-            logger.warning("ESPN scoreboard request failed (week=%d, season=%d): %s", week, season, exc)
+            logger.warning(
+                "ESPN scoreboard request failed (week=%d, season=%d): %s",
+                week,
+                season,
+                exc,
+            )
             return []
 
         data = resp.json()
@@ -93,18 +130,30 @@ class ScheduleScraper:
             games = self.fetch_week(season, week, season_type=2)
             all_games.extend(games)
             if games:
-                logger.info("ESPN schedule: season=%d week=%d → %d games", season, week, len(games))
+                logger.info(
+                    "ESPN schedule: season=%d week=%d → %d games",
+                    season,
+                    week,
+                    len(games),
+                )
             time.sleep(_RATE_LIMIT)
         # Also fetch playoffs (4 rounds max)
         for week in range(1, 5):
             games = self.fetch_week(season, week, season_type=3)
             all_games.extend(games)
             if games:
-                logger.info("ESPN schedule: season=%d playoff_week=%d → %d games", season, week, len(games))
+                logger.info(
+                    "ESPN schedule: season=%d playoff_week=%d → %d games",
+                    season,
+                    week,
+                    len(games),
+                )
             time.sleep(_RATE_LIMIT)
         return all_games
 
-    def _parse_event(self, event: dict, season: int, week: int, season_type: int) -> Optional[Dict[str, Any]]:
+    def _parse_event(
+        self, event: dict, season: int, week: int, season_type: int
+    ) -> Optional[Dict[str, Any]]:
         """Parse a single ESPN event into a DB-compatible dict."""
         try:
             competitions = event.get("competitions", [])
@@ -220,8 +269,13 @@ class ScheduleScraper:
                         SET home_score=?, away_score=?, winner_id=?, overtime=?
                         WHERE game_id=?
                         """,
-                        (g["home_score"], g["away_score"], winner_id,
-                         1 if g["overtime"] else 0, existing["game_id"]),
+                        (
+                            g["home_score"],
+                            g["away_score"],
+                            winner_id,
+                            1 if g["overtime"] else 0,
+                            existing["game_id"],
+                        ),
                     )
                     self.db.commit()
                     inserted += 1
@@ -238,9 +292,14 @@ class ScheduleScraper:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    g["date"], g["season"], g["week"], g["game_type"],
-                    home_id, away_id,
-                    g["home_score"], g["away_score"],
+                    g["date"],
+                    g["season"],
+                    g["week"],
+                    g["game_type"],
+                    home_id,
+                    away_id,
+                    g["home_score"],
+                    g["away_score"],
                     winner_id,
                     1 if g["overtime"] else 0,
                 ),

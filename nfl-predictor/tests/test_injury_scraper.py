@@ -55,7 +55,7 @@ class TestKeyPlayerFilter:
         scraper = InjuryScraper()
         injuries = [
             self._make_injury("QB", "Out"),
-            self._make_injury("K", "Out"),        # dropped: non-key position
+            self._make_injury("K", "Out"),  # dropped: non-key position
             self._make_injury("WR", "Questionable"),  # dropped: non-significant status
             self._make_injury("CB", "IR"),
         ]
@@ -71,7 +71,9 @@ class TestEspnMappingComplete:
         internal_abbrs = set(STADIUM_COORDS.keys())
         mapped_abbrs = set(ESPN_TEAM_MAP.values())
         missing = internal_abbrs - mapped_abbrs
-        assert missing == set(), f"Internal abbreviations not in ESPN_TEAM_MAP values: {missing}"
+        assert (
+            missing == set()
+        ), f"Internal abbreviations not in ESPN_TEAM_MAP values: {missing}"
 
     def test_known_remaps(self):
         """ESPN-specific remaps are present."""
@@ -83,7 +85,19 @@ class TestEspnMappingComplete:
         assert len(STADIUM_COORDS) == 32
 
     def test_dome_teams_flagged(self):
-        dome_teams = {"ARI", "ATL", "DAL", "DET", "HOU", "IND", "LAC", "LAR", "LV", "MIN", "NO"}
+        dome_teams = {
+            "ARI",
+            "ATL",
+            "DAL",
+            "DET",
+            "HOU",
+            "IND",
+            "LAC",
+            "LAR",
+            "LV",
+            "MIN",
+            "NO",
+        }
         for abbr in dome_teams:
             assert abbr in STADIUM_COORDS, f"{abbr} missing from STADIUM_COORDS"
             _, _, is_dome = STADIUM_COORDS[abbr]

@@ -49,10 +49,10 @@ def parse_team_input(input_str: str) -> str:
         Cleaned team string
     """
     # Normalize whitespace
-    cleaned = ' '.join(input_str.split())
+    cleaned = " ".join(input_str.split())
 
     # Remove common prefixes
-    cleaned = re.sub(r'^the\s+', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"^the\s+", "", cleaned, flags=re.IGNORECASE)
 
     return cleaned.strip()
 
@@ -140,22 +140,14 @@ def parse_game_matchup(matchup_str: str) -> Optional[Tuple[str, str, bool]]:
     matchup_str = matchup_str.strip()
 
     # Try "at" or "@" format first (more explicit about home/away)
-    at_match = re.search(
-        r'(.+?)\s+(?:at|@)\s+(.+)',
-        matchup_str,
-        re.IGNORECASE
-    )
+    at_match = re.search(r"(.+?)\s+(?:at|@)\s+(.+)", matchup_str, re.IGNORECASE)
     if at_match:
         away = parse_team_input(at_match.group(1))
         home = parse_team_input(at_match.group(2))
         return (away, home, True)
 
     # Try "vs" format
-    vs_match = re.search(
-        r'(.+?)\s+(?:vs\.?|versus)\s+(.+)',
-        matchup_str,
-        re.IGNORECASE
-    )
+    vs_match = re.search(r"(.+?)\s+(?:vs\.?|versus)\s+(.+)", matchup_str, re.IGNORECASE)
     if vs_match:
         # Convention: first team is away, second is home
         away = parse_team_input(vs_match.group(1))
@@ -189,7 +181,7 @@ def ordinal(n: int) -> str:
         Ordinal string
     """
     if 11 <= (n % 100) <= 13:
-        suffix = 'th'
+        suffix = "th"
     else:
-        suffix = ['th', 'st', 'nd', 'rd', 'th'][min(n % 10, 4)]
+        suffix = ["th", "st", "nd", "rd", "th"][min(n % 10, 4)]
     return f"{n}{suffix}"

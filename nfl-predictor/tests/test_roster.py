@@ -72,14 +72,16 @@ class TestRosterEntry:
         assert teams, "No teams in database"
         team_id = teams[0]["team_id"]
 
-        db.upsert_roster_entry({
-            "player_id": player_id,
-            "team_id": team_id,
-            "season": 2024,
-            "depth_position": None,
-            "is_starter": False,
-            "roster_status": "Active",
-        })
+        db.upsert_roster_entry(
+            {
+                "player_id": player_id,
+                "team_id": team_id,
+                "season": 2024,
+                "depth_position": None,
+                "is_starter": False,
+                "roster_status": "Active",
+            }
+        )
 
         roster = db.get_team_roster(team_id, season=2024)
         player_ids = [p["player_id"] for p in roster]
@@ -109,29 +111,31 @@ class TestPlayerStats:
         teams = db.fetchall("SELECT team_id FROM teams LIMIT 1", ())
         team_id = teams[0]["team_id"]
 
-        db.upsert_player_season_stats({
-            "player_id": player_id,
-            "team_id": team_id,
-            "season": 2024,
-            "games_played": 16,
-            "pass_attempts": 500,
-            "pass_completions": 330,
-            "pass_yards": 4200,
-            "pass_tds": 32,
-            "interceptions": 10,
-            "passer_rating": 101.5,
-            "rush_attempts": 50,
-            "rush_yards": 250,
-            "rush_tds": 3,
-            "yards_per_carry": 5.0,
-            "targets": 0,
-            "receptions": 0,
-            "rec_yards": 0,
-            "rec_tds": 0,
-            "yards_per_reception": 0.0,
-            "fantasy_points_ppr": 340.5,
-            "fantasy_points_standard": 340.5,
-        })
+        db.upsert_player_season_stats(
+            {
+                "player_id": player_id,
+                "team_id": team_id,
+                "season": 2024,
+                "games_played": 16,
+                "pass_attempts": 500,
+                "pass_completions": 330,
+                "pass_yards": 4200,
+                "pass_tds": 32,
+                "interceptions": 10,
+                "passer_rating": 101.5,
+                "rush_attempts": 50,
+                "rush_yards": 250,
+                "rush_tds": 3,
+                "yards_per_carry": 5.0,
+                "targets": 0,
+                "receptions": 0,
+                "rec_yards": 0,
+                "rec_tds": 0,
+                "yards_per_reception": 0.0,
+                "fantasy_points_ppr": 340.5,
+                "fantasy_points_standard": 340.5,
+            }
+        )
 
         stats = db.get_player_stats(player_id, season=2024)
         assert stats is not None
@@ -149,8 +153,10 @@ class TestStartersOrdering:
         # If any starters exist, they should appear first
         if len(roster) > 1:
             starter_indices = [i for i, p in enumerate(roster) if p.get("is_starter")]
-            backup_indices = [i for i, p in enumerate(roster) if not p.get("is_starter")]
+            backup_indices = [
+                i for i, p in enumerate(roster) if not p.get("is_starter")
+            ]
             if starter_indices and backup_indices:
-                assert max(starter_indices) < min(backup_indices), (
-                    "Starters should precede backups in get_team_starters()"
-                )
+                assert max(starter_indices) < min(
+                    backup_indices
+                ), "Starters should precede backups in get_team_starters()"

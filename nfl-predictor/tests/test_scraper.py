@@ -84,14 +84,16 @@ class TestTeamMappingResolution:
     def test_pfr_map_covers_all_current_teams(self):
         for team in CURRENT_TEAMS:
             if team.pfr_abbr:
-                assert team.pfr_abbr in PFR_TEAM_ABBR_MAP, (
-                    f"{team.abbreviation} pfr_abbr '{team.pfr_abbr}' not in PFR_TEAM_ABBR_MAP"
-                )
+                assert (
+                    team.pfr_abbr in PFR_TEAM_ABBR_MAP
+                ), f"{team.abbreviation} pfr_abbr '{team.pfr_abbr}' not in PFR_TEAM_ABBR_MAP"
 
     def test_pfr_map_returns_valid_abbr(self):
         for pfr, nfl in PFR_TEAM_ABBR_MAP.items():
             abbrs = [t.abbreviation for t in CURRENT_TEAMS]
-            assert nfl in abbrs, f"PFR map value '{nfl}' for key '{pfr}' not a valid team abbr"
+            assert (
+                nfl in abbrs
+            ), f"PFR map value '{nfl}' for key '{pfr}' not a valid team abbr"
 
     def test_mappings_find_all_32(self):
         mappings = TeamMappings()
@@ -102,4 +104,4 @@ class TestTeamMappingResolution:
     def test_historical_abbreviations(self):
         """Some historical PFR abbreviations should map to current teams."""
         assert PFR_TEAM_ABBR_MAP.get("sdg") == "LAC"  # San Diego → LA Chargers
-        assert PFR_TEAM_ABBR_MAP.get("rai") == "LV"   # Raiders → Las Vegas
+        assert PFR_TEAM_ABBR_MAP.get("rai") == "LV"  # Raiders → Las Vegas

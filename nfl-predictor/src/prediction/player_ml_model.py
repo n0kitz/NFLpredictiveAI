@@ -36,8 +36,11 @@ def meta_path(position: str) -> Path:
 
 # ── Training ─────────────────────────────────────────────────────────────────
 
+
 def train_position_model(
-    X: np.ndarray, y: np.ndarray, position: str,
+    X: np.ndarray,
+    y: np.ndarray,
+    position: str,
 ) -> Dict[str, Any]:
     """Train a GradientBoostingRegressor for one position and persist it.
 
@@ -66,7 +69,7 @@ def train_position_model(
     # so TimeSeriesSplit honours chronology — each fold trains only on the past.
     n_splits = min(5, max(2, X.shape[0] // 50))
     tscv = TimeSeriesSplit(n_splits=n_splits)
-    cv_scores = cross_val_score(reg, X, y, cv=tscv, scoring='neg_mean_absolute_error')
+    cv_scores = cross_val_score(reg, X, y, cv=tscv, scoring="neg_mean_absolute_error")
     mae = float(-cv_scores.mean())
     std = float(cv_scores.std())
 
@@ -76,28 +79,38 @@ def train_position_model(
     mpath = model_path(position)
     joblib.dump(reg, mpath)
     metapath = meta_path(position)
-    metapath.write_text(json.dumps({
-        'version':            MODEL_VERSION,
-        'position':           position,
-        'features':           FEATURE_NAMES,
-        'cv_mae':             round(mae, 4),
-        'cv_std':             round(std, 4),
-        'n_training_samples': int(X.shape[0]),
-    }, indent=2))
+    metapath.write_text(
+        json.dumps(
+            {
+                "version": MODEL_VERSION,
+                "position": position,
+                "features": FEATURE_NAMES,
+                "cv_mae": round(mae, 4),
+                "cv_std": round(std, 4),
+                "n_training_samples": int(X.shape[0]),
+            },
+            indent=2,
+        )
+    )
     logger.info(
         "Trained %s model: %d samples, CV MAE %.2f ± %.2f → %s",
-        position, X.shape[0], mae, std, mpath,
+        position,
+        X.shape[0],
+        mae,
+        std,
+        mpath,
     )
     return {
-        'position': position,
-        'cv_mae': round(mae, 4),
-        'cv_std': round(std, 4),
-        'n_training_samples': int(X.shape[0]),
-        'model_path': str(mpath),
+        "position": position,
+        "cv_mae": round(mae, 4),
+        "cv_std": round(std, 4),
+        "n_training_samples": int(X.shape[0]),
+        "model_path": str(mpath),
     }
 
 
 # ── Loading / inference ──────────────────────────────────────────────────────
+
 
 class PlayerModelCache:
     """Lazy loader for per-position models + SHAP explainers."""
@@ -119,6 +132,7 @@ class PlayerModelCache:
             return None
         try:
             import joblib
+
             model = joblib.load(mpath)
             self._models[pos] = model
             logger.info("Loaded player model for %s from %s", pos, mpath)
@@ -136,6 +150,7 @@ class PlayerModelCache:
             return None
         try:
             import shap
+
             exp = shap.TreeExplainer(model)
             self._explainers[pos] = exp
             return exp
@@ -152,7 +167,8 @@ def get_cache() -> PlayerModelCache:
 
 
 def predict_player_points(
-    feature_array: np.ndarray, position: str,
+    feature_array: np.ndarray,
+    position: str,
 ) -> Optional[float]:
     """Predict PPR fantasy points. Returns None if no model is loaded."""
     model = _cache.get_model(position)
@@ -167,7 +183,9 @@ def predict_player_points(
 
 
 def explain_player_prediction(
-    feature_array: np.ndarray, feature_dict: Dict[str, float], position: str,
+    feature_array: np.ndarray,
+    feature_dict: Dict[str, float],
+    position: str,
     top_k: int = 5,
 ) -> List[Dict[str, Any]]:
     """Return the top-k SHAP contributions for a player-week prediction.
@@ -187,19 +205,21 @@ def explain_player_prediction(
         for fname, sv in zip(FEATURE_NAMES, arr):
             svf = float(sv)
             if svf > 0.05:
-                direction = 'up'
+                direction = "up"
             elif svf < -0.05:
-                direction = 'down'
+                direction = "down"
             else:
-                direction = 'neutral'
-            entries.append({
-                'feature':       fname,
-                'label':         FEATURE_LABELS.get(fname, fname),
-                'shap_value':    round(svf, 4),
-                'direction':     direction,
-                'feature_value': round(float(feature_dict.get(fname, 0.0)), 3),
-            })
-        entries.sort(key=lambda e: abs(e['shap_value']), reverse=True)
+                direction = "neutral"
+            entries.append(
+                {
+                    "feature": fname,
+                    "label": FEATURE_LABELS.get(fname, fname),
+                    "shap_value": round(svf, 4),
+                    "direction": direction,
+                    "feature_value": round(float(feature_dict.get(fname, 0.0)), 3),
+                }
+            )
+        entries.sort(key=lambda e: abs(e["shap_value"]), reverse=True)
         return entries[:top_k]
     except Exception as exc:
         logger.warning("SHAP explanation failed for %s: %s", position, exc)
@@ -208,8 +228,8 @@ def explain_player_prediction(
 
 def model_info() -> Dict[str, Any]:
     """Return a summary of which models are available on disk (for diagnostics)."""
-    out: Dict[str, Any] = {'version': MODEL_VERSION, 'positions': {}}
-    for pos in ('QB', 'RB', 'WR', 'TE'):
+    out: Dict[str, Any] = {"version": MODEL_VERSION, "positions": {}}
+    for pos in ("QB", "RB", "WR", "TE"):
         mpath = model_path(pos)
         mp = meta_path(pos)
         exists = mpath.exists()
@@ -219,9 +239,9 @@ def model_info() -> Dict[str, Any]:
                 meta = json.loads(mp.read_text())
             except Exception:
                 meta = None
-        out['positions'][pos] = {
-            'loaded': exists,
-            'path': str(mpath) if exists else None,
-            'meta': meta,
+        out["positions"][pos] = {
+            "loaded": exists,
+            "path": str(mpath) if exists else None,
+            "meta": meta,
         }
     return out

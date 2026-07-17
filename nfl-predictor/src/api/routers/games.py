@@ -11,9 +11,14 @@ from pydantic import BaseModel, Field
 from ..deps import get_db, get_engine
 from ..helpers import row_to_game, build_injury_list, build_weather_response
 from ..schemas import (
-    GameListResponse, GameOddsResponse,
-    GameConditionsResponse, ConditionsSummary, WeatherResponse,
-    GameDetailResponse, GameBoxScorePlayer, GameFactorEntry,
+    GameListResponse,
+    GameOddsResponse,
+    GameConditionsResponse,
+    ConditionsSummary,
+    WeatherResponse,
+    GameDetailResponse,
+    GameBoxScorePlayer,
+    GameFactorEntry,
     GameRetrodictionResponse,
 )
 
@@ -23,7 +28,7 @@ router = APIRouter(tags=["games"])
 # Average NFL game total ~44 pts, std dev ~10 pts
 _AVG_TOTAL = 44.0
 _TOTAL_STD = 10.0
-_HOME_SHARE = 0.536   # home teams score ~53.6% of points historically
+_HOME_SHARE = 0.536  # home teams score ~53.6% of points historically
 
 
 class SimulateRequest(BaseModel):
@@ -149,7 +154,9 @@ def get_game_detail(
     )
 
 
-@router.get("/api/games/{game_id}/retrodiction", response_model=GameRetrodictionResponse)
+@router.get(
+    "/api/games/{game_id}/retrodiction", response_model=GameRetrodictionResponse
+)
 def get_game_retrodiction(
     game_id: int = Path(..., ge=1, le=9_223_372_036_854_775_807),
     db=Depends(get_db),
@@ -195,7 +202,9 @@ def get_game_retrodiction(
     actual_winner_abbr = None
     correct = None
     if winner_id is not None:
-        actual_winner_abbr = g["home_abbr"] if winner_id == g["home_team_id"] else g["away_abbr"]
+        actual_winner_abbr = (
+            g["home_abbr"] if winner_id == g["home_team_id"] else g["away_abbr"]
+        )
         correct = predicted_winner_id == winner_id
 
     return GameRetrodictionResponse(
@@ -258,7 +267,9 @@ def simulate_game(req: SimulateRequest, db=Depends(get_db)):
     away_abbr = away_team["abbreviation"] if away_team else req.away_team
 
     # Use predicted spread to calibrate scoring if available
-    predicted_spread = base_pred.predicted_spread  # home-relative (negative = home favored)
+    predicted_spread = (
+        base_pred.predicted_spread
+    )  # home-relative (negative = home favored)
 
     home_wins = 0
     home_scores: list[float] = []

@@ -65,18 +65,20 @@ def main() -> int:
         )
         game_id = db_game["game_id"] if db_game else None
 
-        db.upsert_game_odds({
-            "game_id":          game_id,
-            "external_game_id": g["external_game_id"],
-            "home_team_id":     home_team_id,
-            "away_team_id":     away_team_id,
-            "game_date":        game_date,
-            "opening_spread":   g["spread"],
-            "over_under":       g["over_under"],
-            "home_implied_prob": g["home_implied_prob"],
-            "away_implied_prob": g["away_implied_prob"],
-            "fetched_at":       g["fetched_at"],
-        })
+        db.upsert_game_odds(
+            {
+                "game_id": game_id,
+                "external_game_id": g["external_game_id"],
+                "home_team_id": home_team_id,
+                "away_team_id": away_team_id,
+                "game_date": game_date,
+                "opening_spread": g["spread"],
+                "over_under": g["over_under"],
+                "home_implied_prob": g["home_implied_prob"],
+                "away_implied_prob": g["away_implied_prob"],
+                "fetched_at": g["fetched_at"],
+            }
+        )
         matched += 1
 
     print(f"Stored odds for {matched} game(s). Unresolved: {unmatched}.")

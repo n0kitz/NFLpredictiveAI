@@ -7,7 +7,11 @@ from src.database.db import Database, DEFAULT_DB_PATH
 from src.prediction.engine import PredictionEngine
 from src.prediction.metrics import calculate_team_metrics
 from src.prediction.backtester import Backtester
-from src.prediction.feature_builder import FEATURE_NAMES, build_feature_vector, feature_dict_to_array
+from src.prediction.feature_builder import (
+    FEATURE_NAMES,
+    build_feature_vector,
+    feature_dict_to_array,
+)
 from src.prediction.explainer import generate_shap_explanation, get_explainer
 
 # Skip if database doesn't exist
@@ -165,12 +169,16 @@ class TestFeatureBuilder:
         """explainer.FEATURE_LABELS must stay in sync with FEATURE_NAMES (no drift)."""
         from src.prediction.explainer import FEATURE_LABELS
 
-        assert list(FEATURE_LABELS.keys()) == list(FEATURE_NAMES), (
-            "FEATURE_LABELS keys must equal FEATURE_NAMES exactly and in order"
-        )
+        assert list(FEATURE_LABELS.keys()) == list(
+            FEATURE_NAMES
+        ), "FEATURE_LABELS keys must equal FEATURE_NAMES exactly and in order"
         assert len(FEATURE_LABELS) == len(FEATURE_NAMES)
         # Stale pre-rename keys must not reappear.
-        for stale in ("vegas_home_implied_prob", "home_qb_epa_per_play", "away_qb_epa_per_play"):
+        for stale in (
+            "vegas_home_implied_prob",
+            "home_qb_epa_per_play",
+            "away_qb_epa_per_play",
+        ):
             assert stale not in FEATURE_LABELS, f"stale label key resurfaced: {stale}"
 
     def test_ml_model_fallback(self, db):
@@ -181,7 +189,9 @@ class TestFeatureBuilder:
         model, _ = load_model()
         if model is None:
             # File absent OR failed to load (e.g. numpy mismatch) — must fall back
-            assert not engine._use_ml, "Engine should use weighted-sum when model unavailable"
+            assert (
+                not engine._use_ml
+            ), "Engine should use weighted-sum when model unavailable"
         else:
             assert engine._use_ml
             assert engine._ml_model is not None
@@ -223,6 +233,7 @@ class TestExplainer:
     def test_explainer_returns_list(self, db):
         """With ML model loaded, generate_shap_explanation returns a list."""
         from src.prediction.ml_model import MODEL_PATH
+
         engine = PredictionEngine(db)
         if not MODEL_PATH.exists():
             pytest.skip("ML model not trained — run scripts/train_model.py")
@@ -231,8 +242,11 @@ class TestExplainer:
         am = self._make_metrics(db, "PHI")
         h2h = {"team1_wins": 3, "team2_wins": 2, "total_games": 5}
         result = generate_shap_explanation(
-            hm, am, h2h,
-            is_playoff=False, week=10,
+            hm,
+            am,
+            h2h,
+            is_playoff=False,
+            week=10,
             model=engine._ml_model,
             feature_names=engine._ml_features,
         )
@@ -242,6 +256,7 @@ class TestExplainer:
     def test_explanation_entry_schema(self, db):
         """Each explanation entry has all required keys."""
         from src.prediction.ml_model import MODEL_PATH
+
         engine = PredictionEngine(db)
         if not MODEL_PATH.exists():
             pytest.skip("ML model not trained — run scripts/train_model.py")
@@ -250,19 +265,31 @@ class TestExplainer:
         am = self._make_metrics(db, "MIA")
         h2h = {"team1_wins": 2, "team2_wins": 3, "total_games": 5}
         result = generate_shap_explanation(
-            hm, am, h2h,
-            is_playoff=False, week=8,
+            hm,
+            am,
+            h2h,
+            is_playoff=False,
+            week=8,
             model=engine._ml_model,
             feature_names=engine._ml_features,
         )
         if result:
-            required_keys = {"feature", "label", "shap_value", "direction", "feature_value"}
+            required_keys = {
+                "feature",
+                "label",
+                "shap_value",
+                "direction",
+                "feature_value",
+            }
             for entry in result:
-                assert required_keys == set(entry.keys()), f"Missing keys in entry: {entry}"
+                assert required_keys == set(
+                    entry.keys()
+                ), f"Missing keys in entry: {entry}"
 
     def test_direction_logic(self, db):
         """Direction is derived correctly from shap_value thresholds."""
         from src.prediction.ml_model import MODEL_PATH
+
         engine = PredictionEngine(db)
         if not MODEL_PATH.exists():
             pytest.skip("ML model not trained — run scripts/train_model.py")
@@ -271,8 +298,11 @@ class TestExplainer:
         am = self._make_metrics(db, "SF")
         h2h = {"team1_wins": 4, "team2_wins": 1, "total_games": 5}
         result = generate_shap_explanation(
-            hm, am, h2h,
-            is_playoff=False, week=14,
+            hm,
+            am,
+            h2h,
+            is_playoff=False,
+            week=14,
             model=engine._ml_model,
             feature_names=engine._ml_features,
         )

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 @dataclass
 class TeamInfo:
     """Team information."""
+
     name: str
     city: str
     abbreviation: str
@@ -25,43 +26,44 @@ CURRENT_TEAMS: List[TeamInfo] = [
     TeamInfo("Dolphins", "Miami", "MIA", "AFC", "East", "MIA", 1966, None, "mia"),
     TeamInfo("Patriots", "New England", "NE", "AFC", "East", "NE", 1971, None, "nwe"),
     TeamInfo("Jets", "New York", "NYJ", "AFC", "East", "NYJ", 1963, None, "nyj"),
-
     # AFC North
     TeamInfo("Ravens", "Baltimore", "BAL", "AFC", "North", "BAL", 1996, None, "rav"),
     TeamInfo("Bengals", "Cincinnati", "CIN", "AFC", "North", "CIN", 1968, None, "cin"),
     TeamInfo("Browns", "Cleveland", "CLE", "AFC", "North", "CLE", 1999, None, "cle"),
     TeamInfo("Steelers", "Pittsburgh", "PIT", "AFC", "North", "PIT", 1933, None, "pit"),
-
     # AFC South
     TeamInfo("Texans", "Houston", "HOU", "AFC", "South", "HOU", 2002, None, "htx"),
     TeamInfo("Colts", "Indianapolis", "IND", "AFC", "South", "IND", 1984, None, "clt"),
-    TeamInfo("Jaguars", "Jacksonville", "JAX", "AFC", "South", "JAX", 1995, None, "jax"),
+    TeamInfo(
+        "Jaguars", "Jacksonville", "JAX", "AFC", "South", "JAX", 1995, None, "jax"
+    ),
     TeamInfo("Titans", "Tennessee", "TEN", "AFC", "South", "TEN", 1999, None, "oti"),
-
     # AFC West
     TeamInfo("Broncos", "Denver", "DEN", "AFC", "West", "DEN", 1960, None, "den"),
     TeamInfo("Chiefs", "Kansas City", "KC", "AFC", "West", "KC", 1963, None, "kan"),
-    TeamInfo("Raiders", "Las Vegas", "LV", "AFC", "West", "OAK_LA_LV", 2020, None, "rai"),
-    TeamInfo("Chargers", "Los Angeles", "LAC", "AFC", "West", "SD_LA", 2017, None, "sdg"),
-
+    TeamInfo(
+        "Raiders", "Las Vegas", "LV", "AFC", "West", "OAK_LA_LV", 2020, None, "rai"
+    ),
+    TeamInfo(
+        "Chargers", "Los Angeles", "LAC", "AFC", "West", "SD_LA", 2017, None, "sdg"
+    ),
     # NFC East
     TeamInfo("Cowboys", "Dallas", "DAL", "NFC", "East", "DAL", 1960, None, "dal"),
     TeamInfo("Giants", "New York", "NYG", "NFC", "East", "NYG", 1925, None, "nyg"),
     TeamInfo("Eagles", "Philadelphia", "PHI", "NFC", "East", "PHI", 1933, None, "phi"),
-    TeamInfo("Commanders", "Washington", "WAS", "NFC", "East", "WAS", 2022, None, "was"),
-
+    TeamInfo(
+        "Commanders", "Washington", "WAS", "NFC", "East", "WAS", 2022, None, "was"
+    ),
     # NFC North
     TeamInfo("Bears", "Chicago", "CHI", "NFC", "North", "CHI", 1922, None, "chi"),
     TeamInfo("Lions", "Detroit", "DET", "NFC", "North", "DET", 1934, None, "det"),
     TeamInfo("Packers", "Green Bay", "GB", "NFC", "North", "GB", 1921, None, "gnb"),
     TeamInfo("Vikings", "Minnesota", "MIN", "NFC", "North", "MIN", 1961, None, "min"),
-
     # NFC South
     TeamInfo("Falcons", "Atlanta", "ATL", "NFC", "South", "ATL", 1966, None, "atl"),
     TeamInfo("Panthers", "Carolina", "CAR", "NFC", "South", "CAR", 1995, None, "car"),
     TeamInfo("Saints", "New Orleans", "NO", "NFC", "South", "NO", 1967, None, "nor"),
     TeamInfo("Buccaneers", "Tampa Bay", "TB", "NFC", "South", "TB", 1976, None, "tam"),
-
     # NFC West
     TeamInfo("Cardinals", "Arizona", "ARI", "NFC", "West", "ARI", 1994, None, "crd"),
     TeamInfo("Rams", "Los Angeles", "LAR", "NFC", "West", "STL_LA", 2016, None, "ram"),
@@ -72,37 +74,43 @@ CURRENT_TEAMS: List[TeamInfo] = [
 # Historical team names/locations (for teams that have moved or changed names)
 HISTORICAL_TEAMS: List[TeamInfo] = [
     # Raiders history
-    TeamInfo("Raiders", "Oakland", "OAK", "AFC", "West", "OAK_LA_LV", 1995, 2019, "rai"),
-    TeamInfo("Raiders", "Los Angeles", "RAI", "AFC", "West", "OAK_LA_LV", 1982, 1994, "rai"),
-    TeamInfo("Raiders", "Oakland", "OAK", "AFC", "West", "OAK_LA_LV", 1960, 1981, "rai"),
-
+    TeamInfo(
+        "Raiders", "Oakland", "OAK", "AFC", "West", "OAK_LA_LV", 1995, 2019, "rai"
+    ),
+    TeamInfo(
+        "Raiders", "Los Angeles", "RAI", "AFC", "West", "OAK_LA_LV", 1982, 1994, "rai"
+    ),
+    TeamInfo(
+        "Raiders", "Oakland", "OAK", "AFC", "West", "OAK_LA_LV", 1960, 1981, "rai"
+    ),
     # Chargers history
     TeamInfo("Chargers", "San Diego", "SD", "AFC", "West", "SD_LA", 1961, 2016, "sdg"),
-
     # Rams history
     TeamInfo("Rams", "St. Louis", "STL", "NFC", "West", "STL_LA", 1995, 2015, "ram"),
     TeamInfo("Rams", "Los Angeles", "RAM", "NFC", "West", "STL_LA", 1946, 1994, "ram"),
-
     # Colts history
     TeamInfo("Colts", "Baltimore", "BAL_OLD", "AFC", "East", "IND", 1953, 1983, "clt"),
-
     # Cardinals history
     TeamInfo("Cardinals", "Phoenix", "PHX", "NFC", "East", "ARI", 1988, 1993, "crd"),
     TeamInfo("Cardinals", "St. Louis", "SLC", "NFC", "East", "ARI", 1960, 1987, "crd"),
-
     # Titans/Oilers history
-    TeamInfo("Oilers", "Tennessee", "TEN_OIL", "AFC", "Central", "TEN", 1997, 1998, "oti"),
-    TeamInfo("Oilers", "Houston", "HOU_OIL", "AFC", "Central", "TEN", 1960, 1996, "oti"),
-
+    TeamInfo(
+        "Oilers", "Tennessee", "TEN_OIL", "AFC", "Central", "TEN", 1997, 1998, "oti"
+    ),
+    TeamInfo(
+        "Oilers", "Houston", "HOU_OIL", "AFC", "Central", "TEN", 1960, 1996, "oti"
+    ),
     # Washington name changes
-    TeamInfo("Football Team", "Washington", "WFT", "NFC", "East", "WAS", 2020, 2021, "was"),
+    TeamInfo(
+        "Football Team", "Washington", "WFT", "NFC", "East", "WAS", 2020, 2021, "was"
+    ),
     TeamInfo("Redskins", "Washington", "WSH", "NFC", "East", "WAS", 1937, 2019, "was"),
-
     # Patriots history
     TeamInfo("Patriots", "Boston", "BOS", "AFC", "East", "NE", 1960, 1970, "nwe"),
-
     # Original Browns (now Ravens)
-    TeamInfo("Browns", "Cleveland", "CLE_OLD", "AFC", "Central", "BAL", 1946, 1995, "cle"),
+    TeamInfo(
+        "Browns", "Cleveland", "CLE_OLD", "AFC", "Central", "BAL", 1946, 1995, "cle"
+    ),
 ]
 
 
@@ -183,14 +191,17 @@ class TeamMappings:
             "tb": self.name_to_team.get("tb"),
             "bucs": self.name_to_team.get("tb"),
             "lv": self.name_to_team.get("lv"),
-            "lar": self.name_to_team.get("lar") or self.name_to_team.get("los angeles rams"),
-            "lac": self.name_to_team.get("lac") or self.name_to_team.get("los angeles chargers"),
-
+            "lar": self.name_to_team.get("lar")
+            or self.name_to_team.get("los angeles rams"),
+            "lac": self.name_to_team.get("lac")
+            or self.name_to_team.get("los angeles chargers"),
             # City variations
             "new york jets": self.name_to_team.get("nyj"),
             "new york giants": self.name_to_team.get("nyg"),
-            "la rams": self.name_to_team.get("lar") or self.name_to_team.get("los angeles rams"),
-            "la chargers": self.name_to_team.get("lac") or self.name_to_team.get("los angeles chargers"),
+            "la rams": self.name_to_team.get("lar")
+            or self.name_to_team.get("los angeles rams"),
+            "la chargers": self.name_to_team.get("lac")
+            or self.name_to_team.get("los angeles chargers"),
             "indy": self.name_to_team.get("ind"),
             "wash": self.name_to_team.get("was"),
             "arizona": self.name_to_team.get("ari"),
@@ -201,7 +212,9 @@ class TeamMappings:
             if team and key not in self.name_to_team:
                 self.name_to_team[key] = team
 
-    def get_team_by_pfr_abbr(self, pfr_abbr: str, year: Optional[int] = None) -> Optional[TeamInfo]:
+    def get_team_by_pfr_abbr(
+        self, pfr_abbr: str, year: Optional[int] = None
+    ) -> Optional[TeamInfo]:
         """
         Get team info by Pro Football Reference abbreviation.
 
@@ -262,7 +275,9 @@ class TeamMappings:
         """Get all current NFL teams."""
         return CURRENT_TEAMS.copy()
 
-    def normalize_team_name(self, name: str, year: Optional[int] = None) -> Optional[str]:
+    def normalize_team_name(
+        self, name: str, year: Optional[int] = None
+    ) -> Optional[str]:
         """
         Normalize a team name to current abbreviation.
 
@@ -282,68 +297,62 @@ class TeamMappings:
 
 # PFR uses specific abbreviations that may differ from common ones
 PFR_TEAM_ABBR_MAP = {
-    'crd': 'ARI',  # Cardinals
-    'atl': 'ATL',
-    'rav': 'BAL',  # Ravens
-    'buf': 'BUF',
-    'car': 'CAR',
-    'chi': 'CHI',
-    'cin': 'CIN',
-    'cle': 'CLE',
-    'dal': 'DAL',
-    'den': 'DEN',
-    'det': 'DET',
-    'gnb': 'GB',   # Packers
-    'htx': 'HOU',  # Texans
-    'clt': 'IND',  # Colts
-    'jax': 'JAX',
-    'kan': 'KC',   # Chiefs
-    'rai': 'LV',   # Raiders (current)
-    'sdg': 'LAC',  # Chargers (current)
-    'ram': 'LAR',  # Rams (current)
-    'mia': 'MIA',
-    'min': 'MIN',
-    'nwe': 'NE',   # Patriots
-    'nor': 'NO',   # Saints
-    'nyg': 'NYG',
-    'nyj': 'NYJ',
-    'phi': 'PHI',
-    'pit': 'PIT',
-    'sfo': 'SF',   # 49ers
-    'sea': 'SEA',
-    'tam': 'TB',   # Buccaneers
-    'oti': 'TEN',  # Titans
-    'was': 'WAS',
+    "crd": "ARI",  # Cardinals
+    "atl": "ATL",
+    "rav": "BAL",  # Ravens
+    "buf": "BUF",
+    "car": "CAR",
+    "chi": "CHI",
+    "cin": "CIN",
+    "cle": "CLE",
+    "dal": "DAL",
+    "den": "DEN",
+    "det": "DET",
+    "gnb": "GB",  # Packers
+    "htx": "HOU",  # Texans
+    "clt": "IND",  # Colts
+    "jax": "JAX",
+    "kan": "KC",  # Chiefs
+    "rai": "LV",  # Raiders (current)
+    "sdg": "LAC",  # Chargers (current)
+    "ram": "LAR",  # Rams (current)
+    "mia": "MIA",
+    "min": "MIN",
+    "nwe": "NE",  # Patriots
+    "nor": "NO",  # Saints
+    "nyg": "NYG",
+    "nyj": "NYJ",
+    "phi": "PHI",
+    "pit": "PIT",
+    "sfo": "SF",  # 49ers
+    "sea": "SEA",
+    "tam": "TB",  # Buccaneers
+    "oti": "TEN",  # Titans
+    "was": "WAS",
 }
 
 # Historical PFR abbreviation mappings based on year
 PFR_HISTORICAL_ABBR = {
     # Raiders
-    ('rai', 1995, 2019): 'OAK',
-    ('rai', 1982, 1994): 'RAI',  # LA Raiders
-    ('rai', 1960, 1981): 'OAK',
-
+    ("rai", 1995, 2019): "OAK",
+    ("rai", 1982, 1994): "RAI",  # LA Raiders
+    ("rai", 1960, 1981): "OAK",
     # Chargers
-    ('sdg', 1961, 2016): 'SD',
-
+    ("sdg", 1961, 2016): "SD",
     # Rams
-    ('ram', 1995, 2015): 'STL',
-    ('ram', 1946, 1994): 'RAM',  # LA Rams
-
+    ("ram", 1995, 2015): "STL",
+    ("ram", 1946, 1994): "RAM",  # LA Rams
     # Cardinals
-    ('crd', 1988, 1993): 'PHX',
-    ('crd', 1960, 1987): 'SLC',
-
+    ("crd", 1988, 1993): "PHX",
+    ("crd", 1960, 1987): "SLC",
     # Titans/Oilers
-    ('oti', 1997, 1998): 'TEN_OIL',
-    ('oti', 1960, 1996): 'HOU_OIL',
-
+    ("oti", 1997, 1998): "TEN_OIL",
+    ("oti", 1960, 1996): "HOU_OIL",
     # Washington
-    ('was', 2020, 2021): 'WFT',
-    ('was', 1937, 2019): 'WSH',
-
+    ("was", 2020, 2021): "WFT",
+    ("was", 1937, 2019): "WSH",
     # Colts
-    ('clt', 1953, 1983): 'BAL_OLD',
+    ("clt", 1953, 1983): "BAL_OLD",
 }
 
 

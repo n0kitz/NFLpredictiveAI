@@ -16,15 +16,16 @@ from src.scraper.player_weekly_importer import (
 )
 from src.scraper.dst_importer import import_dst_weekly_stats
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument('--start', type=int, default=2018)
-    parser.add_argument('--end', type=int, default=2025)
-    parser.add_argument('--skip-offense', action='store_true',
-                        help='Only import kickers + DST')
+    parser.add_argument("--start", type=int, default=2018)
+    parser.add_argument("--end", type=int, default=2025)
+    parser.add_argument(
+        "--skip-offense", action="store_true", help="Only import kickers + DST"
+    )
     args = parser.parse_args()
 
     years = list(range(args.start, args.end + 1))
@@ -42,5 +43,5 @@ def main() -> None:
     db.close()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

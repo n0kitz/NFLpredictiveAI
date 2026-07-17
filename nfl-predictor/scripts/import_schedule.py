@@ -33,7 +33,12 @@ def get_current_season() -> int:
 def main():
     parser = argparse.ArgumentParser(description="Import NFL schedule from ESPN")
     parser.add_argument("--season", type=int, default=get_current_season())
-    parser.add_argument("--week", type=int, default=None, help="Single week (1-18); omit for full season")
+    parser.add_argument(
+        "--week",
+        type=int,
+        default=None,
+        help="Single week (1-18); omit for full season",
+    )
     args = parser.parse_args()
 
     db = Database()

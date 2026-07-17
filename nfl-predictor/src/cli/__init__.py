@@ -2,4 +2,4 @@
 
 from .main import main, NFLPredictor
 
-__all__ = ['main', 'NFLPredictor']
+__all__ = ["main", "NFLPredictor"]

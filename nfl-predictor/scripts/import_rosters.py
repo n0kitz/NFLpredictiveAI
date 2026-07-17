@@ -22,8 +22,8 @@ sys.path.insert(0, str(ROOT))
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s  %(levelname)-8s  %(message)s',
-    datefmt='%H:%M:%S',
+    format="%(asctime)s  %(levelname)-8s  %(message)s",
+    datefmt="%H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -31,32 +31,34 @@ from src.database.db import Database
 from src.scraper.roster_scraper import RosterScraper
 from src.scraper.nfl_data_importer import import_player_season_stats
 
-CURRENT_SEASON = datetime.now().year if datetime.now().month >= 9 else datetime.now().year - 1
+CURRENT_SEASON = (
+    datetime.now().year if datetime.now().month >= 9 else datetime.now().year - 1
+)
 # Last three completed seasons (nfl_data_py only has data for finished seasons)
 STAT_SEASONS = list(range(CURRENT_SEASON - 2, CURRENT_SEASON + 1))
 
 # ── Name normalisation helpers ────────────────────────────────────────────────
 
-_SUFFIXES = {'jr', 'sr', 'ii', 'iii', 'iv', 'v'}
+_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 
 
 def normalize_name(name: str) -> str:
     """Lowercase, strip non-alpha chars, remove trailing Jr/II/etc., collapse spaces."""
-    cleaned = re.sub(r'[^a-z\s]', '', name.lower())
+    cleaned = re.sub(r"[^a-z\s]", "", name.lower())
     tokens = cleaned.split()
     while tokens and tokens[-1] in _SUFFIXES:
         tokens.pop()
-    return ' '.join(tokens)
+    return " ".join(tokens)
 
 
 def extract_last_name(name: str) -> str:
     """Return last name (lowercase) from 'First Last', 'F.Last', 'First Last Jr.' etc."""
     # Strip punctuation and split
-    tokens = re.sub(r'[^a-z\s]', '', name.lower()).split()
+    tokens = re.sub(r"[^a-z\s]", "", name.lower()).split()
     while tokens and tokens[-1] in _SUFFIXES:
         tokens.pop()
     if not tokens:
-        return ''
+        return ""
     last = tokens[-1]
     # Handle "flast" left after stripping a dot abbreviation like "T.Kelce" → "tkelce"
     # In that case tokens would be ['tkelce'] — keep it as-is (best we can do).
@@ -64,6 +66,7 @@ def extract_last_name(name: str) -> str:
 
 
 # ── In-memory DB lookup builder ───────────────────────────────────────────────
+
 
 def build_db_lookups(db: Database) -> Tuple[Dict, Dict, List[str]]:
     """
@@ -73,21 +76,19 @@ def build_db_lookups(db: Database) -> Tuple[Dict, Dict, List[str]]:
     by_last  : {(last_name, POSITION): [{'player_id', 'full_name'}, ...]}
     all_norms: flat list of all normalized names (for difflib)
     """
-    rows = db.fetchall(
-        "SELECT player_id, full_name, position FROM players", ()
-    )
+    rows = db.fetchall("SELECT player_id, full_name, position FROM players", ())
     by_norm: Dict[str, List[Dict]] = {}
     by_last: Dict[Tuple[str, str], List[Dict]] = {}
     all_norms: List[str] = []
 
     for r in rows:
-        pid   = r['player_id']
-        fname = r['full_name'] or ''
-        pos   = (r['position'] or '').upper()
-        norm  = normalize_name(fname)
-        last  = extract_last_name(fname)
+        pid = r["player_id"]
+        fname = r["full_name"] or ""
+        pos = (r["position"] or "").upper()
+        norm = normalize_name(fname)
+        last = extract_last_name(fname)
 
-        entry = {'player_id': pid, 'full_name': fname, 'position': pos}
+        entry = {"player_id": pid, "full_name": fname, "position": pos}
 
         by_norm.setdefault(norm, []).append(entry)
         if last:
@@ -99,6 +100,7 @@ def build_db_lookups(db: Database) -> Tuple[Dict, Dict, List[str]]:
 
 
 # ── 3-tier player matcher ─────────────────────────────────────────────────────
+
 
 def match_player(
     full_name: str,
@@ -115,46 +117,47 @@ def match_player(
     if not full_name:
         return None, None
 
-    pos = position.upper() if position else ''
+    pos = position.upper() if position else ""
     norm = normalize_name(full_name)
 
     # ── Strategy 1: exact normalized name ─────────────────────────────────────
     candidates = by_norm.get(norm, [])
     if candidates:
         if len(candidates) == 1:
-            return candidates[0]['player_id'], 'exact'
+            return candidates[0]["player_id"], "exact"
         # Disambiguate by position
         if pos:
-            pos_match = [c for c in candidates if c['position'] == pos]
+            pos_match = [c for c in candidates if c["position"] == pos]
             if len(pos_match) == 1:
-                return pos_match[0]['player_id'], 'exact'
-        return candidates[0]['player_id'], 'exact'
+                return pos_match[0]["player_id"], "exact"
+        return candidates[0]["player_id"], "exact"
 
     # ── Strategy 2: last name + position ──────────────────────────────────────
     last = extract_last_name(full_name)
     if last and pos:
         hits = by_last.get((last, pos), [])
         if len(hits) == 1:
-            return hits[0]['player_id'], 'lastname'
+            return hits[0]["player_id"], "lastname"
 
     # ── Strategy 3: fuzzy match (difflib) ─────────────────────────────────────
     close = difflib.get_close_matches(norm, all_norms, n=3, cutoff=0.85)
     if len(close) == 1:
         candidates = by_norm.get(close[0], [])
         if candidates:
-            return candidates[0]['player_id'], 'fuzzy'
+            return candidates[0]["player_id"], "fuzzy"
     elif close:
         # Multiple close — try position to pick one
         all_candidates = [c for k in close for c in by_norm.get(k, [])]
         if pos:
-            pos_match = [c for c in all_candidates if c['position'] == pos]
+            pos_match = [c for c in all_candidates if c["position"] == pos]
             if len(pos_match) == 1:
-                return pos_match[0]['player_id'], 'fuzzy'
+                return pos_match[0]["player_id"], "fuzzy"
 
     return None, None
 
 
 # ── Passer rating (NFL formula) ───────────────────────────────────────────────
+
 
 def _passer_rating(comp: int, att: int, yds: int, tds: int, ints: int) -> float:
     if att == 0:
@@ -168,14 +171,23 @@ def _passer_rating(comp: int, att: int, yds: int, tds: int, ints: int) -> float:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     import argparse
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('--season', type=int, default=CURRENT_SEASON,
-                        help='Season to file the ESPN roster snapshot under '
-                             '(e.g. 2026 for offseason rosters ahead of the draft)')
-    parser.add_argument('--skip-stats', action='store_true',
-                        help='Only fetch rosters, skip nfl_data_py season stats')
+    parser.add_argument(
+        "--season",
+        type=int,
+        default=CURRENT_SEASON,
+        help="Season to file the ESPN roster snapshot under "
+        "(e.g. 2026 for offseason rosters ahead of the draft)",
+    )
+    parser.add_argument(
+        "--skip-stats",
+        action="store_true",
+        help="Only fetch rosters, skip nfl_data_py season stats",
+    )
     args = parser.parse_args()
     roster_season = args.season
 
@@ -188,7 +200,9 @@ def main() -> None:
     print("=" * 60)
 
     # ── Step 1: ESPN rosters ──────────────────────────────────────────────────
-    print(f"\n[1/2] Fetching rosters from ESPN for all 32 teams (season {roster_season})…")
+    print(
+        f"\n[1/2] Fetching rosters from ESPN for all 32 teams (season {roster_season})…"
+    )
     scraper = RosterScraper(request_delay=1.0)
     all_rosters = scraper.fetch_all_rosters()
 
@@ -202,24 +216,26 @@ def main() -> None:
             logger.warning("Team not found in DB: %s", team_abbr)
             continue
 
-        team_id = team['team_id']
+        team_id = team["team_id"]
 
         for player in players:
-            if not player.get('espn_id') or not player.get('full_name'):
+            if not player.get("espn_id") or not player.get("full_name"):
                 continue
             try:
                 player_id = db.upsert_player(player)
-                db.upsert_roster_entry({
-                    'player_id':     player_id,
-                    'team_id':       team_id,
-                    'season':        roster_season,
-                    'roster_status': player.get('status', 'Active'),
-                    'fetched_at':    fetched_at,
-                })
+                db.upsert_roster_entry(
+                    {
+                        "player_id": player_id,
+                        "team_id": team_id,
+                        "season": roster_season,
+                        "roster_status": player.get("status", "Active"),
+                        "fetched_at": fetched_at,
+                    }
+                )
                 players_upserted += 1
                 roster_entries_upserted += 1
             except Exception as exc:
-                logger.debug("Failed to upsert %s: %s", player.get('full_name'), exc)
+                logger.debug("Failed to upsert %s: %s", player.get("full_name"), exc)
 
     db.commit()
     print(f"  Players upserted:        {players_upserted}")
@@ -231,7 +247,9 @@ def main() -> None:
         print("\nRoster import complete (stats skipped).")
         return
 
-    print(f"\n[2/2] Importing player season stats from nfl_data_py (seasons {STAT_SEASONS})…")
+    print(
+        f"\n[2/2] Importing player season stats from nfl_data_py (seasons {STAT_SEASONS})…"
+    )
     try:
         player_rows = import_player_season_stats(STAT_SEASONS)
     except ImportError as exc:
@@ -244,8 +262,10 @@ def main() -> None:
     print("\n--- DIAGNOSTIC ---")
     print("First 10 nfl_data_py rows:")
     for r in player_rows[:10]:
-        print(f"  full_name={r.get('full_name', '')!r:30s}  "
-              f"team={r.get('team_abbr', '')!r:6s}  season={r.get('season', '')}")
+        print(
+            f"  full_name={r.get('full_name', '')!r:30s}  "
+            f"team={r.get('team_abbr', '')!r:6s}  season={r.get('season', '')}"
+        )
 
     db_sample = db.fetchall("SELECT full_name FROM players LIMIT 10", ())
     print("First 10 DB player names:")
@@ -255,21 +275,23 @@ def main() -> None:
 
     # ── Build in-memory lookups from the players table ────────────────────────
     by_norm, by_last, all_norms = build_db_lookups(db)
-    print(f"  DB lookup built: {len(by_norm)} unique normalized names, "
-          f"{len(by_last)} (lastname, pos) pairs")
+    print(
+        f"  DB lookup built: {len(by_norm)} unique normalized names, "
+        f"{len(by_last)} (lastname, pos) pairs"
+    )
 
     # ── Match and upsert ──────────────────────────────────────────────────────
-    stats_upserted   = 0
-    matched_exact    = 0
+    stats_upserted = 0
+    matched_exact = 0
     matched_lastname = 0
-    matched_fuzzy    = 0
+    matched_fuzzy = 0
     unmatched: List[str] = []
-    skipped_no_name  = 0
+    skipped_no_name = 0
 
     for row in player_rows:
-        full_name = row.get('full_name', '').strip()
-        season    = row.get('season', 0)
-        position  = row.get('position', '')
+        full_name = row.get("full_name", "").strip()
+        season = row.get("season", 0)
+        position = row.get("position", "")
 
         if not full_name or not season:
             skipped_no_name += 1
@@ -280,69 +302,75 @@ def main() -> None:
         )
 
         if player_id is None:
-            unmatched.append(f"{season}/{full_name}/{position}/{row.get('team_abbr','')}")
+            unmatched.append(
+                f"{season}/{full_name}/{position}/{row.get('team_abbr','')}"
+            )
             continue
 
         # Resolve team for the stat entry; fall back to any team that has a
         # roster entry for this player if the nfl_data_py team isn't in DB.
-        team_abbr = row.get('team_abbr', '')
-        team      = db.find_team(team_abbr) if team_abbr else None
+        team_abbr = row.get("team_abbr", "")
+        team = db.find_team(team_abbr) if team_abbr else None
         if not team:
             # Try to look up via roster_entries
             re_row = db.fetchone(
                 "SELECT team_id FROM roster_entries WHERE player_id=? LIMIT 1",
                 (player_id,),
             )
-            team_id = re_row['team_id'] if re_row else None
+            team_id = re_row["team_id"] if re_row else None
         else:
-            team_id = team['team_id']
+            team_id = team["team_id"]
 
         if not team_id:
-            unmatched.append(
-                f"{season}/{full_name}/{position}/{team_abbr} [no team]"
-            )
+            unmatched.append(f"{season}/{full_name}/{position}/{team_abbr} [no team]")
             continue
 
-        pass_att  = row.get('attempts', 0)
-        pass_comp = row.get('completions', 0)
-        pass_yds  = row.get('passing_yards', 0)
-        pass_tds  = row.get('passing_tds', 0)
-        ints      = row.get('interceptions', 0)
-        rush_att  = row.get('carries', 0)
-        rush_yds  = row.get('rushing_yards', 0)
-        rec       = row.get('receptions', 0)
-        rec_yds   = row.get('receiving_yards', 0)
+        pass_att = row.get("attempts", 0)
+        pass_comp = row.get("completions", 0)
+        pass_yds = row.get("passing_yards", 0)
+        pass_tds = row.get("passing_tds", 0)
+        ints = row.get("interceptions", 0)
+        rush_att = row.get("carries", 0)
+        rush_yds = row.get("rushing_yards", 0)
+        rec = row.get("receptions", 0)
+        rec_yds = row.get("receiving_yards", 0)
 
         try:
-            db.upsert_player_season_stats({
-                'player_id':               player_id,
-                'team_id':                 team_id,
-                'season':                  season,
-                'games_played':            row.get('games', 0),
-                'pass_attempts':           pass_att,
-                'pass_completions':        pass_comp,
-                'pass_yards':              pass_yds,
-                'pass_tds':                pass_tds,
-                'interceptions':           ints,
-                'passer_rating':           _passer_rating(pass_comp, pass_att, pass_yds, pass_tds, ints),
-                'rush_attempts':           rush_att,
-                'rush_yards':              rush_yds,
-                'rush_tds':                row.get('rushing_tds', 0),
-                'yards_per_carry':         round(rush_yds / rush_att, 2) if rush_att else 0.0,
-                'targets':                 row.get('targets', 0),
-                'receptions':              rec,
-                'rec_yards':               rec_yds,
-                'rec_tds':                 row.get('receiving_tds', 0),
-                'yards_per_reception':     round(rec_yds / rec, 2) if rec else 0.0,
-                'fantasy_points_ppr':      row.get('fantasy_points_ppr', 0.0),
-                'fantasy_points_standard': row.get('fantasy_points_standard', 0.0),
-            })
+            db.upsert_player_season_stats(
+                {
+                    "player_id": player_id,
+                    "team_id": team_id,
+                    "season": season,
+                    "games_played": row.get("games", 0),
+                    "pass_attempts": pass_att,
+                    "pass_completions": pass_comp,
+                    "pass_yards": pass_yds,
+                    "pass_tds": pass_tds,
+                    "interceptions": ints,
+                    "passer_rating": _passer_rating(
+                        pass_comp, pass_att, pass_yds, pass_tds, ints
+                    ),
+                    "rush_attempts": rush_att,
+                    "rush_yards": rush_yds,
+                    "rush_tds": row.get("rushing_tds", 0),
+                    "yards_per_carry": (
+                        round(rush_yds / rush_att, 2) if rush_att else 0.0
+                    ),
+                    "targets": row.get("targets", 0),
+                    "receptions": rec,
+                    "rec_yards": rec_yds,
+                    "rec_tds": row.get("receiving_tds", 0),
+                    "yards_per_reception": round(rec_yds / rec, 2) if rec else 0.0,
+                    "fantasy_points_ppr": row.get("fantasy_points_ppr", 0.0),
+                    "fantasy_points_standard": row.get("fantasy_points_standard", 0.0),
+                }
+            )
             stats_upserted += 1
-            if strategy == 'exact':
+            if strategy == "exact":
                 matched_exact += 1
-            elif strategy == 'lastname':
+            elif strategy == "lastname":
                 matched_lastname += 1
-            elif strategy == 'fuzzy':
+            elif strategy == "fuzzy":
                 matched_fuzzy += 1
         except Exception as exc:
             logger.debug("Failed to upsert stats for %s: %s", full_name, exc)
@@ -351,9 +379,9 @@ def main() -> None:
 
     # ── Write unmatched log ───────────────────────────────────────────────────
     unmatched_path = ROOT / "data" / "unmatched_players.txt"
-    with open(unmatched_path, 'w') as fh:
+    with open(unmatched_path, "w") as fh:
         for line in sorted(unmatched):
-            fh.write(line + '\n')
+            fh.write(line + "\n")
 
     # ── Summary ───────────────────────────────────────────────────────────────
     print(f"  Matched via exact name:     {matched_exact}")

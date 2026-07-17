@@ -16,7 +16,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 DEFAULT_RETRIES = 3
-DEFAULT_BACKOFF = 1.0          # base seconds; doubled each attempt
+DEFAULT_BACKOFF = 1.0  # base seconds; doubled each attempt
 RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 
 
@@ -73,7 +73,11 @@ def get_with_retry(
                 wait = _retry_after(resp) or backoff * (2 ** (attempt - 1))
                 logger.warning(
                     "GET %s -> HTTP %s (attempt %d/%d); retrying in %.1fs",
-                    url, resp.status_code, attempt, retries, wait,
+                    url,
+                    resp.status_code,
+                    attempt,
+                    retries,
+                    wait,
                 )
                 time.sleep(wait + random.uniform(0.0, 0.3))
                 continue
@@ -85,7 +89,11 @@ def get_with_retry(
             wait = backoff * (2 ** (attempt - 1))
             logger.warning(
                 "GET %s failed (attempt %d/%d): %s; retrying in %.1fs",
-                url, attempt, retries, exc, wait,
+                url,
+                attempt,
+                retries,
+                exc,
+                wait,
             )
             time.sleep(wait + random.uniform(0.0, 0.3))
 

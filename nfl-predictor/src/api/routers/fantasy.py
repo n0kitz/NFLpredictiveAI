@@ -8,10 +8,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..deps import get_db
 from ..schemas import (
-    FantasyPlayerEntry, FantasyLeaderboardResponse,
-    FantasyProjectionEntry, StartSitResponse, StartSitPlayerEntry,
-    DraftRankingEntry, TradeAnalysisResponse, TradePlayerEntry,
-    FantasyRosterRequest, TradeAnalyzeRequest, ImportByNamesRequest,
+    FantasyPlayerEntry,
+    FantasyLeaderboardResponse,
+    FantasyProjectionEntry,
+    StartSitResponse,
+    StartSitPlayerEntry,
+    DraftRankingEntry,
+    TradeAnalysisResponse,
+    TradePlayerEntry,
+    FantasyRosterRequest,
+    TradeAnalyzeRequest,
+    ImportByNamesRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,6 +75,7 @@ def _proj_row_to_entry(
 @router.get("/api/fantasy/model-info")
 def get_fantasy_model_info():
     from ...prediction.player_ml_model import model_info
+
     return model_info()
 
 
@@ -82,8 +90,11 @@ def get_fantasy_top(
     rows = db.get_fantasy_leaders(position, season, scoring, limit)
     players = [
         FantasyPlayerEntry(
-            player_id=r["player_id"], full_name=r["full_name"],
-            position=r["position"], team_abbr=r["team_abbr"], headshot_url=r["headshot_url"],
+            player_id=r["player_id"],
+            full_name=r["full_name"],
+            position=r["position"],
+            team_abbr=r["team_abbr"],
+            headshot_url=r["headshot_url"],
             games_played=r["games_played"] or 0,
             fantasy_points_ppr=r["fantasy_points_ppr"] or 0.0,
             fantasy_points_standard=r["fantasy_points_standard"] or 0.0,
@@ -93,7 +104,10 @@ def get_fantasy_top(
     ]
     return FantasyLeaderboardResponse(
         position=position.upper() if position else "ALL",
-        season=season, scoring=scoring, players=players, count=len(players),
+        season=season,
+        scoring=scoring,
+        players=players,
+        count=len(players),
     )
 
 
@@ -106,6 +120,7 @@ def get_fantasy_projections(
     db=Depends(get_db),
 ):
     from ...prediction.fantasy_scorer import FantasyScorer
+
     scorer = FantasyScorer(db)
     rows = db.get_fantasy_projections(season, week, position, scoring)
     if not rows:
@@ -126,6 +141,7 @@ def get_start_sit(
     db=Depends(get_db),
 ):
     from ...prediction.fantasy_scorer import FantasyScorer
+
     scorer = FantasyScorer(db)
     result = scorer.start_sit_recommendation(player1_id, player2_id, week, season)
     if not result:
@@ -133,11 +149,14 @@ def get_start_sit(
 
     def _entry(d: dict) -> StartSitPlayerEntry:
         return StartSitPlayerEntry(
-            player_id=d["player_id"], full_name=d["full_name"],
-            position=d.get("position"), team_abbr=d.get("team_abbr"),
+            player_id=d["player_id"],
+            full_name=d["full_name"],
+            position=d.get("position"),
+            team_abbr=d.get("team_abbr"),
             headshot_url=d.get("headshot_url"),
             projected_points_ppr=d["projected_points_ppr"],
-            matchup_score=d["matchup_score"], reasoning=d["reasoning"],
+            matchup_score=d["matchup_score"],
+            reasoning=d["reasoning"],
         )
 
     return StartSitResponse(
@@ -157,17 +176,23 @@ def get_waiver_wire(
     db=Depends(get_db),
 ):
     from ...prediction.fantasy_scorer import FantasyScorer
+
     scorer = FantasyScorer(db)
     rows = db.get_fantasy_projections(season, week, position, scoring)
     if not rows:
         scorer.generate_weekly_projections(season, week)
         rows = db.get_fantasy_projections(season, week, position, scoring)
-    sorted_rows = sorted(rows, key=lambda r: float(r["opportunity_score"] or 0), reverse=True)
+    sorted_rows = sorted(
+        rows, key=lambda r: float(r["opportunity_score"] or 0), reverse=True
+    )
     visible_rows = sorted_rows[:limit]
     player_ids = [r["player_id"] for r in visible_rows]
     boom_bust = scorer.bulk_boom_bust(season - 1, player_ids=player_ids)
     bye_by_team = db.get_bye_weeks(season)
-    return [_proj_row_to_entry(r, week, season, boom_bust, bye_by_team) for r in visible_rows]
+    return [
+        _proj_row_to_entry(r, week, season, boom_bust, bye_by_team)
+        for r in visible_rows
+    ]
 
 
 @router.get("/api/fantasy/draft-rankings", response_model=List[DraftRankingEntry])
@@ -179,6 +204,7 @@ def get_draft_rankings(
     db=Depends(get_db),
 ):
     from ...prediction.fantasy_scorer import FantasyScorer
+
     scorer = FantasyScorer(db)
     # Rankings depend on league_size (VBD replacement levels, tiers), so they
     # are computed per request; the draft_rankings table only caches the most
@@ -197,10 +223,13 @@ def get_draft_rankings(
             position=r["position"],
             team_abbr=r["team_abbr"],
             headshot_url=r["headshot_url"],
-            overall_rank=r["overall_rank"], position_rank=r["position_rank"],
-            tier=r["tier"], adp=r["adp"],
+            overall_rank=r["overall_rank"],
+            position_rank=r["position_rank"],
+            tier=r["tier"],
+            adp=r["adp"],
             projected_season_points=r["projected_season_points"],
-            season=r["season"], scoring_format=r["scoring_format"],
+            season=r["season"],
+            scoring_format=r["scoring_format"],
             vbd=r["vbd"],
             boom_pct=r.get("boom_pct"),
             bust_pct=r.get("bust_pct"),
@@ -212,9 +241,13 @@ def get_draft_rankings(
 @router.post("/api/fantasy/roster")
 def set_fantasy_roster(req: FantasyRosterRequest, db=Depends(get_db)):
     if len(req.player_ids) != len(req.slots):
-        raise HTTPException(status_code=400, detail="player_ids and slots must have the same length")
+        raise HTTPException(
+            status_code=400, detail="player_ids and slots must have the same length"
+        )
     for pid, slot in zip(req.player_ids, req.slots):
-        db.upsert_fantasy_roster({"league_id": req.league_id, "player_id": pid, "slot": slot})
+        db.upsert_fantasy_roster(
+            {"league_id": req.league_id, "player_id": pid, "slot": slot}
+        )
     db.commit()
     roster = db.get_fantasy_roster(req.league_id)
     return {"league_id": req.league_id, "count": len(roster)}
@@ -223,21 +256,29 @@ def set_fantasy_roster(req: FantasyRosterRequest, db=Depends(get_db)):
 @router.post("/api/fantasy/trade-analyze", response_model=TradeAnalysisResponse)
 def analyze_trade(req: TradeAnalyzeRequest, db=Depends(get_db)):
     from ...prediction.fantasy_scorer import FantasyScorer
+
     scorer = FantasyScorer(db)
-    result = scorer.analyze_trade(req.give_player_ids, req.get_player_ids, req.season, req.week)
+    result = scorer.analyze_trade(
+        req.give_player_ids, req.get_player_ids, req.season, req.week
+    )
 
     def _entry(d: dict) -> TradePlayerEntry:
         return TradePlayerEntry(
-            player_id=d["player_id"], full_name=d["full_name"],
-            position=d.get("position"), team_abbr=d.get("team_abbr"),
-            headshot_url=d.get("headshot_url"), ros_projected=d["ros_projected"],
+            player_id=d["player_id"],
+            full_name=d["full_name"],
+            position=d.get("position"),
+            team_abbr=d.get("team_abbr"),
+            headshot_url=d.get("headshot_url"),
+            ros_projected=d["ros_projected"],
         )
 
     return TradeAnalysisResponse(
         give=[_entry(e) for e in result["give"]],
         get=[_entry(e) for e in result["get"]],
-        give_total=result["give_total"], get_total=result["get_total"],
-        verdict=result["verdict"], delta=result["delta"],
+        give_total=result["give_total"],
+        get_total=result["get_total"],
+        verdict=result["verdict"],
+        delta=result["delta"],
     )
 
 
@@ -311,8 +352,11 @@ def get_power_rankings(
             wins = sum(1 for g in recent if g["winner_id"] == tid)
             form = wins / max(len(recent), 1) if recent else 0.5
             pt_diff = sum(
-                (g["home_score"] or 0) - (g["away_score"] or 0) if g["home_team_id"] == tid
-                else (g["away_score"] or 0) - (g["home_score"] or 0)
+                (
+                    (g["home_score"] or 0) - (g["away_score"] or 0)
+                    if g["home_team_id"] == tid
+                    else (g["away_score"] or 0) - (g["home_score"] or 0)
+                )
                 for g in recent
             )
             pt_norm = max(-1.0, min(1.0, pt_diff / 60.0))
@@ -325,21 +369,40 @@ def get_power_rankings(
                 adv_score = min(1.0, max(0.0, (float(ypp) - 3.5) / 3.5))
 
             opp_str = 0.5
-            nxt_games = [g for g in upcoming_by_team.get(tid, []) if _wk(g) >= target_week]
+            nxt_games = [
+                g for g in upcoming_by_team.get(tid, []) if _wk(g) >= target_week
+            ]
             if nxt_games:
                 nxt = nxt_games[0]
-                opp_id = nxt["away_team_id"] if nxt["home_team_id"] == tid else nxt["home_team_id"]
+                opp_id = (
+                    nxt["away_team_id"]
+                    if nxt["home_team_id"] == tid
+                    else nxt["home_team_id"]
+                )
                 opp_r = completed_by_team.get(opp_id, [])[:4]
                 if opp_r:
-                    opp_str = sum(1 for g in opp_r if g["winner_id"] == opp_id) / len(opp_r)
+                    opp_str = sum(1 for g in opp_r if g["winner_id"] == opp_id) / len(
+                        opp_r
+                    )
 
-            composite = 0.40 * form + 0.20 * ((pt_norm + 1) / 2) + 0.20 * (1.0 - opp_str) + 0.20 * adv_score
-            scored.append({
-                "team_id": tid, "team_abbr": t["abbreviation"],
-                "team_name": f"{t['city']} {t['name']}",
-                "conference": t["conference"], "composite": composite,
-                "recent_wins": wins, "recent_games": len(recent), "pt_diff_4g": pt_diff,
-            })
+            composite = (
+                0.40 * form
+                + 0.20 * ((pt_norm + 1) / 2)
+                + 0.20 * (1.0 - opp_str)
+                + 0.20 * adv_score
+            )
+            scored.append(
+                {
+                    "team_id": tid,
+                    "team_abbr": t["abbreviation"],
+                    "team_name": f"{t['city']} {t['name']}",
+                    "conference": t["conference"],
+                    "composite": composite,
+                    "recent_wins": wins,
+                    "recent_games": len(recent),
+                    "pt_diff_4g": pt_diff,
+                }
+            )
 
         scored.sort(key=lambda x: x["composite"], reverse=True)
         return {s["team_id"]: {**s, "rank": i + 1} for i, s in enumerate(scored)}
@@ -351,7 +414,11 @@ def get_power_rankings(
     for tid, data in sorted(current.items(), key=lambda x: x[1]["rank"]):
         rank = data["rank"]
         rank_change = (prev[tid]["rank"] - rank) if (prev and tid in prev) else 0
-        trend = "rising" if rank_change > 3 else "falling" if rank_change < -3 else "neutral"
+        trend = (
+            "rising"
+            if rank_change > 3
+            else "falling" if rank_change < -3 else "neutral"
+        )
         if rank <= 5:
             implication = "Strong offense — start their skill players"
         elif rank >= 28:
@@ -363,14 +430,21 @@ def get_power_rankings(
         else:
             implication = "Mid-tier team — rely on matchup"
 
-        result.append({
-            "rank": rank, "rank_change": rank_change, "trend": trend,
-            "team_abbr": data["team_abbr"], "team_name": data["team_name"],
-            "conference": data["conference"],
-            "composite_score": round(data["composite"], 3),
-            "recent_wins": data["recent_wins"], "recent_games": data["recent_games"],
-            "pt_diff_4g": data["pt_diff_4g"], "implication": implication,
-        })
+        result.append(
+            {
+                "rank": rank,
+                "rank_change": rank_change,
+                "trend": trend,
+                "team_abbr": data["team_abbr"],
+                "team_name": data["team_name"],
+                "conference": data["conference"],
+                "composite_score": round(data["composite"], 3),
+                "recent_wins": data["recent_wins"],
+                "recent_games": data["recent_games"],
+                "pt_diff_4g": data["pt_diff_4g"],
+                "implication": implication,
+            }
+        )
 
     return {"week": week, "season": season, "rankings": result}
 
@@ -406,17 +480,24 @@ def import_roster_by_names(req: ImportByNamesRequest, db=Depends(get_db)):
             )
         if rows:
             r = rows[0]
-            matched.append({
-                "input_name": name, "player_id": r["player_id"],
-                "full_name": r["full_name"], "position": r["position"], "team_abbr": r["team_abbr"],
-            })
+            matched.append(
+                {
+                    "input_name": name,
+                    "player_id": r["player_id"],
+                    "full_name": r["full_name"],
+                    "position": r["position"],
+                    "team_abbr": r["team_abbr"],
+                }
+            )
         else:
             unmatched.append(name)
     return {"matched": matched, "unmatched": unmatched}
 
 
 @router.get("/api/fantasy/trade-values")
-def get_trade_values(week: int = Query(...), season: int = Query(2024), db=Depends(get_db)):
+def get_trade_values(
+    week: int = Query(...), season: int = Query(2024), db=Depends(get_db)
+):
     rows = db.fetchall(
         """
         SELECT fp.player_id, p.full_name, p.position, p.headshot_url,
@@ -437,12 +518,20 @@ def get_trade_values(week: int = Query(...), season: int = Query(2024), db=Depen
     result = []
     for i, r in enumerate(rows, start=1):
         avg_ms = float(r["avg_matchup_score"] or 1.0)
-        result.append({
-            "rank": i, "player_id": r["player_id"], "full_name": r["full_name"],
-            "position": r["position"], "team_abbr": r["team_abbr"], "headshot_url": r["headshot_url"],
-            "ros_projected": round(float(r["ros_projected"] or 0), 1),
-            "avg_matchup_score": round(avg_ms, 3),
-            "weeks_remaining": r["weeks_remaining"],
-            "schedule_difficulty": "easy" if avg_ms >= 1.1 else "hard" if avg_ms <= 0.9 else "neutral",
-        })
+        result.append(
+            {
+                "rank": i,
+                "player_id": r["player_id"],
+                "full_name": r["full_name"],
+                "position": r["position"],
+                "team_abbr": r["team_abbr"],
+                "headshot_url": r["headshot_url"],
+                "ros_projected": round(float(r["ros_projected"] or 0), 1),
+                "avg_matchup_score": round(avg_ms, 3),
+                "weeks_remaining": r["weeks_remaining"],
+                "schedule_difficulty": (
+                    "easy" if avg_ms >= 1.1 else "hard" if avg_ms <= 0.9 else "neutral"
+                ),
+            }
+        )
     return {"week": week, "season": season, "players": result, "count": len(result)}

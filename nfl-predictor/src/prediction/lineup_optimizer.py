@@ -25,40 +25,55 @@ logger = logging.getLogger(__name__)
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 DFS_SLOTS: Dict[str, Dict[str, Any]] = {
-    'dk': {
-        'salary_cap': 50_000,
-        'slots': {'QB': 1, 'RB': 2, 'WR': 3, 'TE': 1, 'FLEX': 1, 'DST': 1},
-        'flex_positions': {'RB', 'WR', 'TE'},
-        'max_from_team': 8,
+    "dk": {
+        "salary_cap": 50_000,
+        "slots": {"QB": 1, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1, "DST": 1},
+        "flex_positions": {"RB", "WR", "TE"},
+        "max_from_team": 8,
     },
-    'fd': {
-        'salary_cap': 60_000,
-        'slots': {'QB': 1, 'RB': 2, 'WR': 3, 'TE': 1, 'FLEX': 1, 'DST': 1},
-        'flex_positions': {'RB', 'WR', 'TE'},
-        'max_from_team': 8,
+    "fd": {
+        "salary_cap": 60_000,
+        "slots": {"QB": 1, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1, "DST": 1},
+        "flex_positions": {"RB", "WR", "TE"},
+        "max_from_team": 8,
     },
 }
 
 SEASON_LONG_SLOTS: Dict[str, int] = {
-    'QB': 1, 'RB': 2, 'WR': 2, 'TE': 1, 'FLEX': 1, 'K': 1, 'DST': 1,
+    "QB": 1,
+    "RB": 2,
+    "WR": 2,
+    "TE": 1,
+    "FLEX": 1,
+    "K": 1,
+    "DST": 1,
 }
-SEASON_LONG_FLEX: set = {'RB', 'WR', 'TE'}
+SEASON_LONG_FLEX: set = {"RB", "WR", "TE"}
 
 # Correlation adjustment weights
-_QB_STACK_BONUS    = 1.5   # extra projected pts when QB+WR from same team
-_BRING_BACK_BONUS  = 0.8   # extra pts for opponent WR when QB vs that team
-_RB_DEF_PENALTY    = 1.0   # subtract when RB and DEF from same team
+_QB_STACK_BONUS = 1.5  # extra projected pts when QB+WR from same team
+_BRING_BACK_BONUS = 0.8  # extra pts for opponent WR when QB vs that team
+_RB_DEF_PENALTY = 1.0  # subtract when RB and DEF from same team
 
 
 # ── Data types ────────────────────────────────────────────────────────────────
+
 
 class LineupPlayer:
     """A player candidate in the optimizer pool."""
 
     __slots__ = (
-        'player_id', 'full_name', 'position', 'team_id', 'team_abbr',
-        'projected_points', 'salary', 'is_locked', 'is_excluded',
-        'headshot_url', 'opponent_team_id',
+        "player_id",
+        "full_name",
+        "position",
+        "team_id",
+        "team_abbr",
+        "projected_points",
+        "salary",
+        "is_locked",
+        "is_excluded",
+        "headshot_url",
+        "opponent_team_id",
     )
 
     def __init__(
@@ -75,20 +90,21 @@ class LineupPlayer:
         headshot_url: Optional[str] = None,
         opponent_team_id: Optional[int] = None,
     ) -> None:
-        self.player_id       = player_id
-        self.full_name       = full_name
-        self.position        = position.upper()
-        self.team_id         = team_id
-        self.team_abbr       = team_abbr
+        self.player_id = player_id
+        self.full_name = full_name
+        self.position = position.upper()
+        self.team_id = team_id
+        self.team_abbr = team_abbr
         self.projected_points = float(projected_points)
-        self.salary          = int(salary)
-        self.is_locked       = is_locked
-        self.is_excluded     = is_excluded
-        self.headshot_url    = headshot_url
+        self.salary = int(salary)
+        self.is_locked = is_locked
+        self.is_excluded = is_excluded
+        self.headshot_url = headshot_url
         self.opponent_team_id = opponent_team_id
 
 
 # ── Core optimizer ────────────────────────────────────────────────────────────
+
 
 def optimize_lineup(
     players: List[LineupPlayer],
@@ -126,7 +142,7 @@ def optimize_lineup(
 
     active = [p for p in players if not p.is_excluded]
     if not active:
-        return {'lineups': [], 'exposure': {}, 'total_lineups': 0, 'slots': slots}
+        return {"lineups": [], "exposure": {}, "total_lineups": 0, "slots": slots}
 
     # Pre-compute correlation bonuses per player pair
     corr_bonus = _correlation_bonus_map(active) if correlations else {}
@@ -139,34 +155,45 @@ def optimize_lineup(
             break
 
         result = _solve_once(
-            active, slots, flex_positions, salary_cap,
-            corr_bonus, max_from_team, excluded_sets, pulp,
+            active,
+            slots,
+            flex_positions,
+            salary_cap,
+            corr_bonus,
+            max_from_team,
+            excluded_sets,
+            pulp,
         )
         if result is None:
             break  # no more feasible lineups
 
-        sel_ids = frozenset(p['player_id'] for p in result['players'])
+        sel_ids = frozenset(p["player_id"] for p in result["players"])
         excluded_sets.append(sel_ids)
-        result['rank'] = len(lineups) + 1
+        result["rank"] = len(lineups) + 1
         lineups.append(result)
 
     # Compute exposure %
     exposure: Dict[int, Dict[str, Any]] = {}
     total = len(lineups)
     for lu in lineups:
-        for p in lu['players']:
-            pid = p['player_id']
+        for p in lu["players"]:
+            pid = p["player_id"]
             if pid not in exposure:
-                exposure[pid] = {'count': 0, 'pct': 0.0, 'full_name': p['full_name'], 'position': p['position']}
-            exposure[pid]['count'] += 1
+                exposure[pid] = {
+                    "count": 0,
+                    "pct": 0.0,
+                    "full_name": p["full_name"],
+                    "position": p["position"],
+                }
+            exposure[pid]["count"] += 1
     for pid, data in exposure.items():
-        data['pct'] = round(data['count'] / total * 100, 1) if total else 0.0
+        data["pct"] = round(data["count"] / total * 100, 1) if total else 0.0
 
     return {
-        'lineups': lineups,
-        'exposure': exposure,
-        'total_lineups': total,
-        'slots': slots,
+        "lineups": lineups,
+        "exposure": exposure,
+        "total_lineups": total,
+        "slots": slots,
     }
 
 
@@ -190,7 +217,7 @@ def _solve_once(
     slot_names = list(slots.keys())
     x: Dict[str, Dict[int, Any]] = {}
     for slot in slot_names:
-        x[slot] = {i: pulp.LpVariable(f"x_{slot}_{i}", cat='Binary') for i in range(n)}
+        x[slot] = {i: pulp.LpVariable(f"x_{slot}_{i}", cat="Binary") for i in range(n)}
 
     # ── Objective: projected pts + correlation bonus ──────────────────────────
     obj_terms = []
@@ -204,7 +231,7 @@ def _solve_once(
     for (i, j), bonus in corr_bonus.items():
         if bonus == 0:
             continue
-        z = pulp.LpVariable(f"z_{i}_{j}", cat='Binary')
+        z = pulp.LpVariable(f"z_{i}_{j}", cat="Binary")
         pair_vars[(i, j)] = z
         obj_terms.append(bonus * z)
         # z ≤ sum_slot(x[slot][i]), z ≤ sum_slot(x[slot][j])
@@ -221,10 +248,10 @@ def _solve_once(
     for slot, count in slots.items():
         eligible = []
         for i, p in enumerate(players):
-            if slot == 'FLEX':
+            if slot == "FLEX":
                 ok = p.position in flex_positions
-            elif slot == 'DST':
-                ok = p.position in ('DST', 'DEF', 'D/ST')
+            elif slot == "DST":
+                ok = p.position in ("DST", "DEF", "D/ST")
             else:
                 ok = p.position == slot
             if ok:
@@ -236,18 +263,21 @@ def _solve_once(
 
     # ── Salary cap ───────────────────────────────────────────────────────────
     if salary_cap is not None:
-        prob += pulp.lpSum(
-            players[i].salary * x[slot][i]
-            for slot in slot_names for i in range(n)
-        ) <= salary_cap
+        prob += (
+            pulp.lpSum(
+                players[i].salary * x[slot][i] for slot in slot_names for i in range(n)
+            )
+            <= salary_cap
+        )
 
     # ── Max players per team ──────────────────────────────────────────────────
     team_ids = set(p.team_id for p in players)
     for tid in team_ids:
         team_players = [i for i, p in enumerate(players) if p.team_id == tid]
-        prob += pulp.lpSum(
-            x[slot][i] for slot in slot_names for i in team_players
-        ) <= max_from_team
+        prob += (
+            pulp.lpSum(x[slot][i] for slot in slot_names for i in team_players)
+            <= max_from_team
+        )
 
     # ── Locks ─────────────────────────────────────────────────────────────────
     for i, p in enumerate(players):
@@ -258,14 +288,15 @@ def _solve_once(
     for past_ids in excluded_sets:
         past_indices = [i for i, p in enumerate(players) if p.player_id in past_ids]
         if past_indices:
-            prob += pulp.lpSum(
-                x[slot][i] for slot in slot_names for i in past_indices
-            ) <= len(past_ids) - 1
+            prob += (
+                pulp.lpSum(x[slot][i] for slot in slot_names for i in past_indices)
+                <= len(past_ids) - 1
+            )
 
     # ── Solve ─────────────────────────────────────────────────────────────────
     prob.solve(pulp.PULP_CBC_CMD(msg=0))
 
-    if pulp.LpStatus[prob.status] != 'Optimal':
+    if pulp.LpStatus[prob.status] != "Optimal":
         return None
 
     # ── Extract solution ──────────────────────────────────────────────────────
@@ -276,40 +307,46 @@ def _solve_once(
     for slot in slot_names:
         for i, p in enumerate(players):
             if pulp.value(x[slot][i]) and pulp.value(x[slot][i]) > 0.5:
-                selected.append({
-                    'player_id':       p.player_id,
-                    'full_name':       p.full_name,
-                    'position':        p.position,
-                    'team_abbr':       p.team_abbr,
-                    'headshot_url':    p.headshot_url,
-                    'slot':            slot,
-                    'projected_points': round(p.projected_points, 2),
-                    'salary':          p.salary,
-                })
+                selected.append(
+                    {
+                        "player_id": p.player_id,
+                        "full_name": p.full_name,
+                        "position": p.position,
+                        "team_abbr": p.team_abbr,
+                        "headshot_url": p.headshot_url,
+                        "slot": slot,
+                        "projected_points": round(p.projected_points, 2),
+                        "salary": p.salary,
+                    }
+                )
                 total_salary += p.salary
                 total_pts += p.projected_points
 
     # Correlation bonus actually earned
     corr_earned = sum(
-        bonus for (i, j), bonus in corr_bonus.items()
-        if (i, j) in pair_vars and pulp.value(pair_vars[(i, j)]) and pulp.value(pair_vars[(i, j)]) > 0.5
+        bonus
+        for (i, j), bonus in corr_bonus.items()
+        if (i, j) in pair_vars
+        and pulp.value(pair_vars[(i, j)])
+        and pulp.value(pair_vars[(i, j)]) > 0.5
     )
 
     return {
-        'players':          selected,
-        'projected_points': round(total_pts, 2),
-        'total_salary':     total_salary,
-        'correlation_bonus': round(corr_earned, 2),
+        "players": selected,
+        "projected_points": round(total_pts, 2),
+        "total_salary": total_salary,
+        "correlation_bonus": round(corr_earned, 2),
     }
 
 
 # ── Correlation helpers ───────────────────────────────────────────────────────
 
+
 def _correlation_bonus_map(players: List[LineupPlayer]) -> Dict[Tuple[int, int], float]:
     """Build (i, j) → bonus dict for pairs worth stacking."""
     bonuses: Dict[Tuple[int, int], float] = {}
-    qbs = [(i, p) for i, p in enumerate(players) if p.position == 'QB']
-    wrs = [(i, p) for i, p in enumerate(players) if p.position in ('WR', 'TE')]
+    qbs = [(i, p) for i, p in enumerate(players) if p.position == "QB"]
+    wrs = [(i, p) for i, p in enumerate(players) if p.position in ("WR", "TE")]
 
     for qi, qb in qbs:
         for wi, wr in wrs:
@@ -323,8 +360,10 @@ def _correlation_bonus_map(players: List[LineupPlayer]) -> Dict[Tuple[int, int],
                 bonuses[key] = bonuses.get(key, 0.0) + _BRING_BACK_BONUS
 
     # RB + DEF anti-correlation (penalty): handled as negative bonus
-    rbs  = [(i, p) for i, p in enumerate(players) if p.position == 'RB']
-    defs = [(i, p) for i, p in enumerate(players) if p.position in ('DST', 'DEF', 'D/ST')]
+    rbs = [(i, p) for i, p in enumerate(players) if p.position == "RB"]
+    defs = [
+        (i, p) for i, p in enumerate(players) if p.position in ("DST", "DEF", "D/ST")
+    ]
     for ri, rb in rbs:
         for di, df in defs:
             if rb.team_id == df.team_id:
@@ -335,6 +374,7 @@ def _correlation_bonus_map(players: List[LineupPlayer]) -> Dict[Tuple[int, int],
 
 
 # ── Convenience builders ──────────────────────────────────────────────────────
+
 
 def players_from_projections(
     rows: List[Any],
@@ -347,25 +387,33 @@ def players_from_projections(
     team_abbr, projected_points_ppr, opponent_team_id, headshot_url.
     Salary defaults to 0 when not present.
     """
-    locked   = set(locked_ids   or [])
+    locked = set(locked_ids or [])
     excluded = set(excluded_ids or [])
     out = []
     for r in rows:
-        pid = r['player_id'] if hasattr(r, '__getitem__') else r.player_id
-        pos = (r['position'] or '').upper()
-        if pos not in ('QB', 'RB', 'WR', 'TE', 'K', 'DST', 'DEF', 'D/ST'):
+        pid = r["player_id"] if hasattr(r, "__getitem__") else r.player_id
+        pos = (r["position"] or "").upper()
+        if pos not in ("QB", "RB", "WR", "TE", "K", "DST", "DEF", "D/ST"):
             continue
-        out.append(LineupPlayer(
-            player_id=pid,
-            full_name=r['full_name'] or '',
-            position=pos,
-            team_id=r.get('team_id') or 0 if hasattr(r, 'get') else (r['team_id'] or 0),
-            team_abbr=r['team_abbr'] or '',
-            projected_points=float(r['projected_points_ppr'] or 0.0),
-            salary=int(r['salary'] if 'salary' in r.keys() else 0) if hasattr(r, 'keys') else 0,
-            is_locked=pid in locked,
-            is_excluded=pid in excluded,
-            headshot_url=r['headshot_url'],
-            opponent_team_id=r['opponent_team_id'],
-        ))
+        out.append(
+            LineupPlayer(
+                player_id=pid,
+                full_name=r["full_name"] or "",
+                position=pos,
+                team_id=(
+                    r.get("team_id") or 0 if hasattr(r, "get") else (r["team_id"] or 0)
+                ),
+                team_abbr=r["team_abbr"] or "",
+                projected_points=float(r["projected_points_ppr"] or 0.0),
+                salary=(
+                    int(r["salary"] if "salary" in r.keys() else 0)
+                    if hasattr(r, "keys")
+                    else 0
+                ),
+                is_locked=pid in locked,
+                is_excluded=pid in excluded,
+                headshot_url=r["headshot_url"],
+                opponent_team_id=r["opponent_team_id"],
+            )
+        )
     return out

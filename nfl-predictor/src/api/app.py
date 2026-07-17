@@ -55,19 +55,22 @@ async def observe_requests(request: Request, call_next):
         metrics.record_request(status, duration_ms)
         logger.info(
             "request",
-            extra={"extra_fields": {
-                "request_id": request_id,
-                "method": request.method,
-                "path": request.url.path,
-                "status": status,
-                "duration_ms": round(duration_ms, 2),
-            }},
+            extra={
+                "extra_fields": {
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status": status,
+                    "duration_ms": round(duration_ms, 2),
+                }
+            },
         )
 
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
     from fastapi.responses import JSONResponse
+
     logger.error("Unhandled exception: %s", exc, exc_info=True)
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 

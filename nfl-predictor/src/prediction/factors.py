@@ -25,7 +25,7 @@ FACTOR_WEIGHTS = {
     FactorType.NOT_EFFICIENT: -0.02,
     FactorType.HIGHLY_EFFICIENT: 0.02,
     FactorType.INJURY_IMPACT: -0.03,  # Usually negative for injured team
-    FactorType.WEATHER_IMPACT: 0.0,   # Can be positive or negative
+    FactorType.WEATHER_IMPACT: 0.0,  # Can be positive or negative
     FactorType.COACHING_ADVANTAGE: 0.02,
     FactorType.MOTIVATION_FACTOR: 0.015,
     FactorType.CUSTOM: 0.02,
@@ -35,6 +35,7 @@ FACTOR_WEIGHTS = {
 @dataclass
 class FactorAdjustment:
     """Represents an adjustment to be applied to a prediction."""
+
     team_id: int
     factor: GameFactor
     adjustment: float  # Adjustment to win probability (-1 to 1)
@@ -75,7 +76,7 @@ class FactorAdjuster:
         team_id: int,
         factor_type: str,
         description: Optional[str] = None,
-        impact_rating: int = 0
+        impact_rating: int = 0,
     ) -> int:
         """
         Add a factor to a game.
@@ -96,8 +97,7 @@ class FactorAdjuster:
         except ValueError:
             valid_types = [ft.value for ft in FactorType]
             raise ValueError(
-                f"Invalid factor type: {factor_type}. "
-                f"Valid types: {valid_types}"
+                f"Invalid factor type: {factor_type}. " f"Valid types: {valid_types}"
             )
 
         # Validate impact rating
@@ -109,7 +109,7 @@ class FactorAdjuster:
             team_id=team_id,
             factor_type=factor_type,
             factor_value=description,
-            impact_rating=impact_rating
+            impact_rating=impact_rating,
         )
 
     def remove_factor(self, factor_id: int) -> bool:
@@ -137,11 +137,11 @@ class FactorAdjuster:
         factors = self.get_factors_for_game(game_id)
         return [
             {
-                'factor_id': f.factor_id,
-                'team': f.team_abbr or f.team_name,
-                'type': f.factor_type.value,
-                'description': f.factor_value,
-                'impact': f.impact_rating
+                "factor_id": f.factor_id,
+                "team": f.team_abbr or f.team_name,
+                "type": f.factor_type.value,
+                "description": f.factor_value,
+                "impact": f.impact_rating,
             }
             for f in factors
         ]
@@ -163,16 +163,16 @@ class FactorAdjuster:
         errors = 0
 
         try:
-            with open(csv_path, 'r', newline='') as f:
+            with open(csv_path, "r", newline="") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     try:
                         self.add_factor(
-                            game_id=int(row['game_id']),
-                            team_id=int(row['team_id']),
-                            factor_type=row['factor_type'],
-                            description=row.get('description', ''),
-                            impact_rating=int(row.get('impact_rating', 0))
+                            game_id=int(row["game_id"]),
+                            team_id=int(row["team_id"]),
+                            factor_type=row["factor_type"],
+                            description=row.get("description", ""),
+                            impact_rating=int(row.get("impact_rating", 0)),
                         )
                         imported += 1
                     except Exception as e:
@@ -205,8 +205,7 @@ class FactorAdjuster:
 
 
 def apply_game_factors(
-    base_prediction: Prediction,
-    factors: List[GameFactor]
+    base_prediction: Prediction, factors: List[GameFactor]
 ) -> Prediction:
     """
     Apply game factors to adjust a base prediction.
@@ -240,8 +239,12 @@ def apply_game_factors(
 
     # Apply adjustments
     # The adjustment represents the change in win probability
-    new_home_prob = base_prediction.home_win_probability + home_adjustment - away_adjustment
-    new_away_prob = base_prediction.away_win_probability - home_adjustment + away_adjustment
+    new_home_prob = (
+        base_prediction.home_win_probability + home_adjustment - away_adjustment
+    )
+    new_away_prob = (
+        base_prediction.away_win_probability - home_adjustment + away_adjustment
+    )
 
     # Clamp to valid range and normalize
     new_home_prob = max(0.05, min(0.95, new_home_prob))
@@ -262,7 +265,7 @@ def apply_game_factors(
         away_win_probability=new_away_prob,
         confidence=base_prediction.confidence,
         key_factors=base_prediction.key_factors.copy(),
-        factors_applied=factors
+        factors_applied=factors,
     )
 
     return adjusted
@@ -276,19 +279,19 @@ def get_factor_type_descriptions() -> Dict[str, str]:
         Dictionary mapping factor type to description
     """
     return {
-        'better_defense': 'Team has defensive advantage (scheme, personnel matchup)',
-        'bad_defense': 'Team has defensive weakness',
-        'better_offense': 'Team has offensive advantage (scheme, personnel matchup)',
-        'bad_offense': 'Team has offensive weakness',
-        'better_qb': 'Team has quarterback advantage',
-        'qb_struggles': 'Quarterback is struggling or limited',
-        'turnover_prone': 'Team has been turning the ball over frequently',
-        'turnover_forcing': 'Team is good at forcing turnovers',
-        'not_efficient': 'Team is inefficient (red zone, 3rd down, etc.)',
-        'highly_efficient': 'Team is highly efficient in key situations',
-        'injury_impact': 'Key injuries affecting team performance',
-        'weather_impact': 'Weather conditions favor/hurt this team',
-        'coaching_advantage': 'Coaching staff has advantage in this matchup',
-        'motivation_factor': 'Extra motivation (revenge game, playoff implications, etc.)',
-        'custom': 'Custom factor - specify in description'
+        "better_defense": "Team has defensive advantage (scheme, personnel matchup)",
+        "bad_defense": "Team has defensive weakness",
+        "better_offense": "Team has offensive advantage (scheme, personnel matchup)",
+        "bad_offense": "Team has offensive weakness",
+        "better_qb": "Team has quarterback advantage",
+        "qb_struggles": "Quarterback is struggling or limited",
+        "turnover_prone": "Team has been turning the ball over frequently",
+        "turnover_forcing": "Team is good at forcing turnovers",
+        "not_efficient": "Team is inefficient (red zone, 3rd down, etc.)",
+        "highly_efficient": "Team is highly efficient in key situations",
+        "injury_impact": "Key injuries affecting team performance",
+        "weather_impact": "Weather conditions favor/hurt this team",
+        "coaching_advantage": "Coaching staff has advantage in this matchup",
+        "motivation_factor": "Extra motivation (revenge game, playoff implications, etc.)",
+        "custom": "Custom factor - specify in description",
     }

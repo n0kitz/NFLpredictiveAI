@@ -31,6 +31,7 @@ def cache_stats() -> Dict[str, Any]:
 @dataclass
 class TeamMetrics:
     """Comprehensive team metrics for prediction."""
+
     team_id: int
     team_name: str
     team_abbr: str
@@ -88,10 +89,10 @@ class TeamMetrics:
     # Advanced stats (populated from team_advanced_stats table; league-average defaults
     # are used so that missing data doesn't bias predictions toward 0)
     turnover_margin: float = 0.0
-    third_down_pct: float = 0.40   # NFL league avg ~40%
-    redzone_efficiency: float = 0.55   # NFL league avg ~55%
-    yards_per_play: float = 5.5    # NFL league avg ~5.5 yards/play
-    sack_rate_allowed: float = 0.065   # NFL league avg ~6.5%
+    third_down_pct: float = 0.40  # NFL league avg ~40%
+    redzone_efficiency: float = 0.55  # NFL league avg ~55%
+    yards_per_play: float = 5.5  # NFL league avg ~5.5 yards/play
+    sack_rate_allowed: float = 0.065  # NFL league avg ~6.5%
     qb_epa_per_play: float = 0.0
 
     # Data quality
@@ -99,7 +100,9 @@ class TeamMetrics:
     seasons_analyzed: int = 0
 
 
-def _get_league_avg_ppg(db: Database, current_season: int, seasons_to_analyze: int) -> float:
+def _get_league_avg_ppg(
+    db: Database, current_season: int, seasons_to_analyze: int
+) -> float:
     """Calculate league average points per game over the analysis window."""
     start_season = current_season - seasons_to_analyze + 1
     row = db.fetchone(
@@ -113,8 +116,8 @@ def _get_league_avg_ppg(db: Database, current_season: int, seasons_to_analyze: i
         """,
         (start_season, current_season),
     )
-    if row and row['avg_ppg'] is not None:
-        return row['avg_ppg']
+    if row and row["avg_ppg"] is not None:
+        return row["avg_ppg"]
     return 22.0  # fallback
 
 
@@ -134,7 +137,9 @@ def calculate_exponential_weight(games_ago: int, decay_rate: float = 0.1) -> flo
     return math.exp(-decay_rate * games_ago)
 
 
-def calculate_season_weight(seasons_ago: int, current_season_multiplier: float = 3.0) -> float:
+def calculate_season_weight(
+    seasons_ago: int, current_season_multiplier: float = 3.0
+) -> float:
     """
     Calculate weight for a season.
 
@@ -159,7 +164,7 @@ def calculate_team_metrics(
     recent_games_count: int = 5,
     seasons_to_analyze: int = 3,
     cutoff_date: Optional[str] = None,
-) -> 'TeamMetrics':
+) -> "TeamMetrics":
     # TTL cache — skip for historical cutoff queries (prediction engine uses cutoff_date)
     global _cache_hits, _cache_misses
     if cutoff_date is None:
@@ -170,7 +175,12 @@ def calculate_team_metrics(
             return cached[0]
         _cache_misses += 1
         result = _calculate_team_metrics_impl(
-            db, team_id, current_season, recent_games_count, seasons_to_analyze, cutoff_date
+            db,
+            team_id,
+            current_season,
+            recent_games_count,
+            seasons_to_analyze,
+            cutoff_date,
         )
         _metrics_cache[cache_key] = (result, time.time())
         return result
@@ -206,9 +216,7 @@ def _calculate_team_metrics_impl(
         raise ValueError(f"Team not found: {team_id}")
 
     metrics = TeamMetrics(
-        team_id=team_id,
-        team_name=team['name'],
-        team_abbr=team['abbreviation']
+        team_id=team_id, team_name=team["name"], team_abbr=team["abbreviation"]
     )
 
     # Determine current season
@@ -216,7 +224,7 @@ def _calculate_team_metrics_impl(
         latest = db.fetchone(
             "SELECT MAX(season) as season FROM games WHERE home_score IS NOT NULL"
         )
-        current_season = latest['season'] if latest else datetime.now().year
+        current_season = latest["season"] if latest else datetime.now().year
 
     # Get games from recent seasons
     all_games = []
@@ -224,9 +232,9 @@ def _calculate_team_metrics_impl(
         season = current_season - season_offset
         games = db.get_team_games(team_id, season)
         for game in games:
-            if game['home_score'] is not None:
+            if game["home_score"] is not None:
                 # In backtest mode, exclude games on or after the cutoff date
-                if cutoff_date and str(game['date'])[:10] >= cutoff_date[:10]:
+                if cutoff_date and str(game["date"])[:10] >= cutoff_date[:10]:
                     continue
                 all_games.append((game, season_offset))
 
@@ -234,7 +242,7 @@ def _calculate_team_metrics_impl(
         return metrics
 
     # Sort by date descending
-    all_games.sort(key=lambda x: x[0]['date'], reverse=True)
+    all_games.sort(key=lambda x: x[0]["date"], reverse=True)
 
     # Calculate metrics
     total_weight = 0.0
@@ -244,16 +252,16 @@ def _calculate_team_metrics_impl(
     for idx, (game, season_offset) in enumerate(all_games):
         metrics.games_analyzed += 1
 
-        is_home = game['home_team_id'] == team_id
-        team_score = game['home_score'] if is_home else game['away_score']
-        opp_score = game['away_score'] if is_home else game['home_score']
+        is_home = game["home_team_id"] == team_id
+        team_score = game["home_score"] if is_home else game["away_score"]
+        opp_score = game["away_score"] if is_home else game["home_score"]
 
         # Basic stats
         metrics.points_for += team_score
         metrics.points_against += opp_score
 
         # Win/loss tracking
-        if game['winner_id'] == team_id:
+        if game["winner_id"] == team_id:
             metrics.overall_wins += 1
             if is_home:
                 metrics.home_wins += 1
@@ -261,7 +269,7 @@ def _calculate_team_metrics_impl(
                 metrics.away_wins += 1
             if season_offset == 0:
                 metrics.current_season_wins += 1
-        elif game['winner_id'] is None:
+        elif game["winner_id"] is None:
             metrics.overall_ties += 1
             if season_offset == 0:
                 metrics.current_season_ties += 1
@@ -276,19 +284,21 @@ def _calculate_team_metrics_impl(
 
         # Recent form (last N games)
         if idx < recent_games_count:
-            if game['winner_id'] == team_id:
+            if game["winner_id"] == team_id:
                 metrics.recent_wins += 1
-            elif game['winner_id'] is not None:
+            elif game["winner_id"] is not None:
                 metrics.recent_losses += 1
-            metrics.recent_point_diff += (team_score - opp_score)
+            metrics.recent_point_diff += team_score - opp_score
 
         # Weighted calculations
-        game_weight = calculate_exponential_weight(idx) * calculate_season_weight(season_offset)
+        game_weight = calculate_exponential_weight(idx) * calculate_season_weight(
+            season_offset
+        )
         total_weight += game_weight
 
-        if game['winner_id'] == team_id:
+        if game["winner_id"] == team_id:
             weighted_wins += game_weight
-        elif game['winner_id'] is None:
+        elif game["winner_id"] is None:
             weighted_wins += 0.5 * game_weight
 
         weighted_point_diff += (team_score - opp_score) * game_weight
@@ -297,7 +307,9 @@ def _calculate_team_metrics_impl(
     total_games = metrics.overall_wins + metrics.overall_losses + metrics.overall_ties
 
     if total_games > 0:
-        metrics.win_percentage = (metrics.overall_wins + 0.5 * metrics.overall_ties) / total_games
+        metrics.win_percentage = (
+            metrics.overall_wins + 0.5 * metrics.overall_ties
+        ) / total_games
         metrics.avg_points_scored = metrics.points_for / total_games
         metrics.avg_points_allowed = metrics.points_against / total_games
 
@@ -313,12 +325,15 @@ def _calculate_team_metrics_impl(
         metrics.away_win_pct = metrics.away_wins / away_games
 
     # Current season
-    current_games = (metrics.current_season_wins + metrics.current_season_losses +
-                     metrics.current_season_ties)
+    current_games = (
+        metrics.current_season_wins
+        + metrics.current_season_losses
+        + metrics.current_season_ties
+    )
     if current_games > 0:
         metrics.current_season_win_pct = (
-            (metrics.current_season_wins + 0.5 * metrics.current_season_ties) / current_games
-        )
+            metrics.current_season_wins + 0.5 * metrics.current_season_ties
+        ) / current_games
 
     # Recent form
     recent_total = metrics.recent_wins + metrics.recent_losses
@@ -333,19 +348,29 @@ def _calculate_team_metrics_impl(
     # Offensive/defensive strength (relative to league average)
     league_avg_ppg = _get_league_avg_ppg(db, current_season, seasons_to_analyze)
     if total_games > 0:
-        metrics.offensive_strength = (metrics.avg_points_scored - league_avg_ppg) / league_avg_ppg
-        metrics.defensive_strength = (league_avg_ppg - metrics.avg_points_allowed) / league_avg_ppg
+        metrics.offensive_strength = (
+            metrics.avg_points_scored - league_avg_ppg
+        ) / league_avg_ppg
+        metrics.defensive_strength = (
+            league_avg_ppg - metrics.avg_points_allowed
+        ) / league_avg_ppg
 
     metrics.seasons_analyzed = seasons_to_analyze
 
     # Strength of schedule: average win% of opponents (cutoff-aware)
-    metrics.strength_of_schedule = _calculate_sos(db, team_id, current_season, seasons_to_analyze, cutoff_date)
+    metrics.strength_of_schedule = _calculate_sos(
+        db, team_id, current_season, seasons_to_analyze, cutoff_date
+    )
 
     # Dynamic home field advantage from historical data (cutoff-aware)
-    metrics.dynamic_hfa = _calculate_dynamic_hfa(db, team_id, current_season, seasons_to_analyze, cutoff_date)
+    metrics.dynamic_hfa = _calculate_dynamic_hfa(
+        db, team_id, current_season, seasons_to_analyze, cutoff_date
+    )
 
     # Rest days since last game (pass cutoff_date as reference in backtest mode)
-    metrics.rest_days = _calculate_rest_days(db, team_id, current_season, reference_date=cutoff_date)
+    metrics.rest_days = _calculate_rest_days(
+        db, team_id, current_season, reference_date=cutoff_date
+    )
 
     # Advanced stats from team_advanced_stats table.
     # Fall back to the prior season when the current season isn't imported yet
@@ -354,14 +379,14 @@ def _calculate_team_metrics_impl(
     if not adv and current_season > 2010:
         adv = db.get_advanced_stats(team_id, current_season - 1)
     if adv:
-        metrics.turnover_margin    = adv['turnover_margin']
-        metrics.third_down_pct     = adv['third_down_pct']
-        metrics.redzone_efficiency = adv['redzone_efficiency']
-        metrics.yards_per_play     = adv['yards_per_play']
-        metrics.sack_rate_allowed  = adv['sack_rate_allowed']
+        metrics.turnover_margin = adv["turnover_margin"]
+        metrics.third_down_pct = adv["third_down_pct"]
+        metrics.redzone_efficiency = adv["redzone_efficiency"]
+        metrics.yards_per_play = adv["yards_per_play"]
+        metrics.sack_rate_allowed = adv["sack_rate_allowed"]
         # qb_epa_per_play is optional (added in migration)
         try:
-            metrics.qb_epa_per_play = float(adv['qb_epa_per_play'] or 0.0)
+            metrics.qb_epa_per_play = float(adv["qb_epa_per_play"] or 0.0)
         except (IndexError, KeyError, TypeError):
             metrics.qb_epa_per_play = 0.0
 
@@ -409,8 +434,8 @@ def _calculate_sos(
         """,
         (team_id, team_id, team_id, start_season, current_season, cutoff, cutoff),
     )
-    if row and row['sos'] is not None:
-        return row['sos']
+    if row and row["sos"] is not None:
+        return row["sos"]
     return 0.5
 
 
@@ -428,8 +453,16 @@ def _calculate_dynamic_hfa(
     start_season = current_season - seasons + 1
     date_filter = "AND g.date < ?" if cutoff_date else ""
     params: list = [
-        team_id, team_id, team_id, team_id, team_id, team_id,
-        team_id, team_id, start_season, current_season,
+        team_id,
+        team_id,
+        team_id,
+        team_id,
+        team_id,
+        team_id,
+        team_id,
+        team_id,
+        start_season,
+        current_season,
     ]
     if cutoff_date:
         params.append(cutoff_date)
@@ -448,10 +481,10 @@ def _calculate_dynamic_hfa(
         """,
         tuple(params),
     )
-    if not row or not row['home_games'] or not row['away_games']:
+    if not row or not row["home_games"] or not row["away_games"]:
         return 0.032
-    home_win_pct = row['home_wins'] / row['home_games']
-    away_win_pct = row['away_wins'] / row['away_games']
+    home_win_pct = row["home_wins"] / row["home_games"]
+    away_win_pct = row["away_wins"] / row["away_games"]
     hfa = (home_win_pct - away_win_pct) / 2.0
     return max(0.0, min(0.10, hfa))
 
@@ -500,9 +533,9 @@ def _calculate_rest_days(
         )
         ref = date_cls.today()
 
-    if row and row['last_date']:
+    if row and row["last_date"]:
         try:
-            last = date_cls.fromisoformat(str(row['last_date']))
+            last = date_cls.fromisoformat(str(row["last_date"]))
             return (ref - last).days
         except (ValueError, TypeError):
             pass
@@ -510,10 +543,7 @@ def _calculate_rest_days(
 
 
 def calculate_head_to_head(
-    db: Database,
-    team1_id: int,
-    team2_id: int,
-    limit: Optional[int] = None
+    db: Database, team1_id: int, team2_id: int, limit: Optional[int] = None
 ) -> Dict[str, Any]:
     """
     Calculate head-to-head record between two teams.
@@ -530,38 +560,38 @@ def calculate_head_to_head(
     games = db.get_head_to_head(team1_id, team2_id, limit)
 
     result = {
-        'team1_wins': 0,
-        'team2_wins': 0,
-        'ties': 0,
-        'total_games': len(games),
-        'team1_home_wins': 0,
-        'team1_away_wins': 0,
-        'team2_home_wins': 0,
-        'team2_away_wins': 0,
-        'last_meeting': None,
-        'games': []
+        "team1_wins": 0,
+        "team2_wins": 0,
+        "ties": 0,
+        "total_games": len(games),
+        "team1_home_wins": 0,
+        "team1_away_wins": 0,
+        "team2_home_wins": 0,
+        "team2_away_wins": 0,
+        "last_meeting": None,
+        "games": [],
     }
 
     for game in games:
-        result['games'].append(game)
+        result["games"].append(game)
 
-        if result['last_meeting'] is None:
-            result['last_meeting'] = game
+        if result["last_meeting"] is None:
+            result["last_meeting"] = game
 
-        if game['winner_id'] == team1_id:
-            result['team1_wins'] += 1
-            if game['home_team_id'] == team1_id:
-                result['team1_home_wins'] += 1
+        if game["winner_id"] == team1_id:
+            result["team1_wins"] += 1
+            if game["home_team_id"] == team1_id:
+                result["team1_home_wins"] += 1
             else:
-                result['team1_away_wins'] += 1
-        elif game['winner_id'] == team2_id:
-            result['team2_wins'] += 1
-            if game['home_team_id'] == team2_id:
-                result['team2_home_wins'] += 1
+                result["team1_away_wins"] += 1
+        elif game["winner_id"] == team2_id:
+            result["team2_wins"] += 1
+            if game["home_team_id"] == team2_id:
+                result["team2_home_wins"] += 1
             else:
-                result['team2_away_wins'] += 1
+                result["team2_away_wins"] += 1
         else:
-            result['ties'] += 1
+            result["ties"] += 1
 
     return result
 

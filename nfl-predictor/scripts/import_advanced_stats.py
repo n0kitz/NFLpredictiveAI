@@ -21,8 +21,8 @@ sys.path.insert(0, str(ROOT))
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s  %(levelname)-8s  %(message)s',
-    datefmt='%H:%M:%S',
+    format="%(asctime)s  %(levelname)-8s  %(message)s",
+    datefmt="%H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ from src.scraper.nfl_data_importer import (
     import_weekly_qb_starts,
 )
 
-YEARS = list(range(2010, 2025))   # 2010 – 2024 inclusive
+YEARS = list(range(2010, 2025))  # 2010 – 2024 inclusive
 
 
 def main() -> None:
@@ -57,20 +57,20 @@ def main() -> None:
         print("No stats returned — check nfl_data_py connectivity.")
         sys.exit(1)
 
-    inserted   = 0
+    inserted = 0
     unresolved: list[str] = []
 
     for row in stats:
-        team = db.find_team(row['our_abbr'])
+        team = db.find_team(row["our_abbr"])
         if not team:
             # Second-chance: try the raw nflverse abbr
-            team = db.find_team(row['nfl_abbr'])
+            team = db.find_team(row["nfl_abbr"])
 
         if not team:
             unresolved.append(f"{row['season']}/{row['nfl_abbr']}")
             continue
 
-        db.upsert_advanced_stats(team['team_id'], row['season'], row)
+        db.upsert_advanced_stats(team["team_id"], row["season"], row)
         inserted += 1
 
     db.commit()
@@ -82,9 +82,9 @@ def main() -> None:
         qb_inserted = 0
         qb_unresolved: list[str] = []
         for row in qb_epa_rows:
-            team = db.find_team(row['our_abbr'])
+            team = db.find_team(row["our_abbr"])
             if not team:
-                team = db.find_team(row['nfl_abbr'])
+                team = db.find_team(row["nfl_abbr"])
             if not team:
                 qb_unresolved.append(f"{row['season']}/{row['nfl_abbr']}")
                 continue
@@ -96,7 +96,7 @@ def main() -> None:
                 ON CONFLICT(team_id, season) DO UPDATE SET
                     qb_epa_per_play = excluded.qb_epa_per_play
                 """,
-                (team['team_id'], row['season'], row['qb_epa_per_play']),
+                (team["team_id"], row["season"], row["qb_epa_per_play"]),
             )
             qb_inserted += 1
         db.commit()

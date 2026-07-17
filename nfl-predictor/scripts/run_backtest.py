@@ -25,24 +25,30 @@ from src.prediction.backtester import Backtester, BacktestReport, BacktestResult
 SEASONS = [2020, 2021, 2022, 2023, 2024]
 
 CALIBRATION_BUCKETS = [
-    ('50-55%', 0.50, 0.55),
-    ('55-60%', 0.55, 0.60),
-    ('60-65%', 0.60, 0.65),
-    ('65-70%', 0.65, 0.70),
-    ('70-75%', 0.70, 0.75),
-    ('75-80%', 0.75, 0.80),
-    ('80%+',   0.80, 1.01),
+    ("50-55%", 0.50, 0.55),
+    ("55-60%", 0.55, 0.60),
+    ("60-65%", 0.60, 0.65),
+    ("65-70%", 0.65, 0.70),
+    ("70-75%", 0.70, 0.75),
+    ("75-80%", 0.75, 0.80),
+    ("80%+", 0.80, 1.01),
 ]
 
 BUCKET_MIDPOINTS = {
-    '50-55%': 52.5, '55-60%': 57.5, '60-65%': 62.5,
-    '65-70%': 67.5, '70-75%': 72.5, '75-80%': 77.5, '80%+': 85.0,
+    "50-55%": 52.5,
+    "55-60%": 57.5,
+    "60-65%": 62.5,
+    "65-70%": 67.5,
+    "70-75%": 72.5,
+    "75-80%": 77.5,
+    "80%+": 85.0,
 }
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def pct(n: int, d: int) -> str:
     if d == 0:
@@ -51,39 +57,42 @@ def pct(n: int, d: int) -> str:
 
 
 def calibration_from_results(results: list[BacktestResult]) -> dict:
-    buckets = {label: {'total': 0, 'correct': 0} for label, _, _ in CALIBRATION_BUCKETS}
+    buckets = {label: {"total": 0, "correct": 0} for label, _, _ in CALIBRATION_BUCKETS}
     for r in results:
         winner_prob = max(r.home_prob, r.away_prob)
         for label, lo, hi in CALIBRATION_BUCKETS:
             if lo <= winner_prob < hi:
-                buckets[label]['total'] += 1
+                buckets[label]["total"] += 1
                 if r.correct:
-                    buckets[label]['correct'] += 1
+                    buckets[label]["correct"] += 1
                 break
     return buckets
 
 
 def home_away_breakdown(results: list[BacktestResult]) -> dict:
     """Count how often the model picks the home vs away team and whether it's right."""
-    home_predicted = {'total': 0, 'correct': 0}
-    away_predicted = {'total': 0, 'correct': 0}
+    home_predicted = {"total": 0, "correct": 0}
+    away_predicted = {"total": 0, "correct": 0}
     for r in results:
         if r.home_prob >= r.away_prob:
-            home_predicted['total'] += 1
+            home_predicted["total"] += 1
             if r.correct:
-                home_predicted['correct'] += 1
+                home_predicted["correct"] += 1
         else:
-            away_predicted['total'] += 1
+            away_predicted["total"] += 1
             if r.correct:
-                away_predicted['correct'] += 1
-    return {'home_predicted': home_predicted, 'away_predicted': away_predicted}
+                away_predicted["correct"] += 1
+    return {"home_predicted": home_predicted, "away_predicted": away_predicted}
 
 
 # ---------------------------------------------------------------------------
 # Focused per-season helper (used by compare mode)
 # ---------------------------------------------------------------------------
 
-def run_focused(backtester: Backtester, seasons: list[int], use_ml: bool = False) -> tuple:
+
+def run_focused(
+    backtester: Backtester, seasons: list[int], use_ml: bool = False
+) -> tuple:
     """
     Run all-games backtest for given seasons, plus per-season breakdown.
 
@@ -101,6 +110,7 @@ def run_focused(backtester: Backtester, seasons: list[int], use_ml: bool = False
 # Compare mode: WS vs ML side-by-side, appends section to backtest_report.md
 # ---------------------------------------------------------------------------
 
+
 def run_compare(backtester: Backtester, seasons: list[int]) -> None:
     md_path = ROOT.parent / "backtest_report.md"
 
@@ -115,9 +125,9 @@ def run_compare(backtester: Backtester, seasons: list[int]) -> None:
     ml_n = ml_overall.total_games
     ml_c = ml_overall.correct_predictions
 
-    delta_c   = ml_c - ws_c
+    delta_c = ml_c - ws_c
     delta_acc = (ml_c / ml_n - ws_c / ws_n) * 100 if ws_n and ml_n else 0.0
-    sign      = "+" if delta_acc >= 0 else ""
+    sign = "+" if delta_acc >= 0 else ""
 
     ml_calib = calibration_from_results(ml_overall.results)
 
@@ -184,13 +194,13 @@ def run_compare(backtester: Backtester, seasons: list[int]) -> None:
     ]
 
     for label, _, _ in CALIBRATION_BUCKETS:
-        b      = ml_calib[label]
-        total  = b['total']
-        correct = b['correct']
+        b = ml_calib[label]
+        total = b["total"]
+        correct = b["correct"]
         actual = correct / total * 100 if total else 0
-        ideal  = BUCKET_MIDPOINTS[label]
-        delta  = actual - ideal
-        ds     = "+" if delta >= 0 else ""
+        ideal = BUCKET_MIDPOINTS[label]
+        delta = actual - ideal
+        ds = "+" if delta >= 0 else ""
         lines.append(
             f"| {label} | {total} | {correct} | {actual:.1f}% | {ideal:.1f}% | {ds}{delta:.1f}pp |"
         )
@@ -217,6 +227,7 @@ def run_compare(backtester: Backtester, seasons: list[int]) -> None:
 # ---------------------------------------------------------------------------
 # Main backtest runner (full 2020-2024 comprehensive report)
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="NFL prediction model backtest runner")
@@ -265,28 +276,36 @@ def main():
 
         overall, per_season = run_focused(backtester, target_seasons, use_ml=args.ml)
 
-        print(f"\nOverall ({model_label}): "
-              f"{overall.correct_predictions}/{overall.total_games} = "
-              f"{pct(overall.correct_predictions, overall.total_games)}")
+        print(
+            f"\nOverall ({model_label}): "
+            f"{overall.correct_predictions}/{overall.total_games} = "
+            f"{pct(overall.correct_predictions, overall.total_games)}"
+        )
         print("\nPer-season:")
         for s in sorted(target_seasons):
             r = per_season.get(s)
             if r:
-                print(f"  {s}: {r.correct_predictions}/{r.total_games} = "
-                      f"{pct(r.correct_predictions, r.total_games)}")
+                print(
+                    f"  {s}: {r.correct_predictions}/{r.total_games} = "
+                    f"{pct(r.correct_predictions, r.total_games)}"
+                )
 
         if args.ml:
             calib = calibration_from_results(overall.results)
             print("\nML Calibration:")
-            print(f"  {'Bucket':<10} {'Games':>6} {'Correct':>8} {'Actual%':>9} {'Ideal%':>8} {'Delta':>8}")
+            print(
+                f"  {'Bucket':<10} {'Games':>6} {'Correct':>8} {'Actual%':>9} {'Ideal%':>8} {'Delta':>8}"
+            )
             for label, _, _ in CALIBRATION_BUCKETS:
                 b = calib[label]
-                t, c = b['total'], b['correct']
+                t, c = b["total"], b["correct"]
                 actual = c / t * 100 if t else 0
-                ideal  = BUCKET_MIDPOINTS[label]
-                delta  = actual - ideal
-                ds     = "+" if delta >= 0 else ""
-                print(f"  {label:<10} {t:>6} {c:>8} {actual:>8.1f}% {ideal:>7.1f}% {ds}{delta:>6.1f}pp")
+                ideal = BUCKET_MIDPOINTS[label]
+                delta = actual - ideal
+                ds = "+" if delta >= 0 else ""
+                print(
+                    f"  {label:<10} {t:>6} {c:>8} {actual:>8.1f}% {ideal:>7.1f}% {ds}{delta:>6.1f}pp"
+                )
         return
 
     # ── Full 2020-2024 comprehensive report (no args) ────────────────────────
@@ -302,7 +321,7 @@ def main():
     per_season_reg: dict[int, BacktestReport] = {}
     for season in SEASONS:
         print(f"  Season {season}...", end=" ", flush=True)
-        report = backtester.run(seasons=[season], game_type='regular')
+        report = backtester.run(seasons=[season], game_type="regular")
         per_season_reg[season] = report
         n = report.total_games
         c = report.correct_predictions
@@ -315,7 +334,7 @@ def main():
     per_season_po: dict[int, BacktestReport] = {}
     for season in SEASONS:
         print(f"  Season {season} playoffs...", end=" ", flush=True)
-        report = backtester.run(seasons=[season], game_type='playoff')
+        report = backtester.run(seasons=[season], game_type="playoff")
         per_season_po[season] = report
         n = report.total_games
         c = report.correct_predictions
@@ -325,31 +344,31 @@ def main():
     # 3. Overall combined report (all game types, all seasons at once)
     # -----------------------------------------------------------------------
     print("\n[3/4] Running combined all-seasons backtest...")
-    combined_reg   = backtester.run(seasons=SEASONS, game_type='regular')
-    combined_po    = backtester.run(seasons=SEASONS, game_type='playoff')
+    combined_reg = backtester.run(seasons=SEASONS, game_type="regular")
+    combined_po = backtester.run(seasons=SEASONS, game_type="playoff")
     # All game types: pass game_type=None to skip filtering
-    combined_all   = backtester.run(seasons=SEASONS, game_type=None)
+    combined_all = backtester.run(seasons=SEASONS, game_type=None)
 
-    all_results      = combined_all.results
-    reg_results      = combined_reg.results
-    playoff_results  = combined_po.results
+    all_results = combined_all.results
+    reg_results = combined_reg.results
+    playoff_results = combined_po.results
 
     # -----------------------------------------------------------------------
     # 4. Derived statistics
     # -----------------------------------------------------------------------
     print("\n[4/4] Computing derived statistics...")
 
-    calib_all   = calibration_from_results(all_results)
-    ha_all      = home_away_breakdown(all_results)
-    ha_reg      = home_away_breakdown(reg_results)
-    ha_po       = home_away_breakdown(playoff_results)
+    calib_all = calibration_from_results(all_results)
+    ha_all = home_away_breakdown(all_results)
+    ha_reg = home_away_breakdown(reg_results)
+    ha_po = home_away_breakdown(playoff_results)
 
     # -----------------------------------------------------------------------
     # Build report text
     # -----------------------------------------------------------------------
     lines = []
 
-    def h(text, char='='):
+    def h(text, char="="):
         lines.append(f"\n{char * len(text)}")
         lines.append(text)
         lines.append(char * len(text))
@@ -364,18 +383,18 @@ def main():
     # --- Overall Summary ---
     h("1. OVERALL ACCURACY (2020-2024)", "-")
 
-    reg_n, reg_c   = combined_reg.total_games, combined_reg.correct_predictions
-    po_n, po_c     = combined_po.total_games,  combined_po.correct_predictions
-    all_n, all_c   = combined_all.total_games, combined_all.correct_predictions
+    reg_n, reg_c = combined_reg.total_games, combined_reg.correct_predictions
+    po_n, po_c = combined_po.total_games, combined_po.correct_predictions
+    all_n, all_c = combined_all.total_games, combined_all.correct_predictions
 
-    row("Regular season games",   f"{reg_n}")
+    row("Regular season games", f"{reg_n}")
     row("Regular season correct", f"{reg_c}  ({pct(reg_c, reg_n)})")
-    row("",                        "")
-    row("Playoff games",           f"{po_n}")
-    row("Playoff correct",         f"{po_c}  ({pct(po_c, po_n)})")
-    row("",                        "")
-    row("ALL GAMES total",         f"{all_n}")
-    row("ALL GAMES correct",       f"{all_c}  ({pct(all_c, all_n)})")
+    row("", "")
+    row("Playoff games", f"{po_n}")
+    row("Playoff correct", f"{po_c}  ({pct(po_c, po_n)})")
+    row("", "")
+    row("ALL GAMES total", f"{all_n}")
+    row("ALL GAMES correct", f"{all_c}  ({pct(all_c, all_n)})")
 
     # --- Per-Season Breakdown ---
     h("2. PER-SEASON BREAKDOWN (Regular Season)", "-")
@@ -400,22 +419,26 @@ def main():
 
     # --- Regular vs Playoff ---
     h("4. REGULAR SEASON vs PLAYOFFS", "-")
-    row("Regular season accuracy",  pct(reg_c, reg_n))
-    row("Playoff accuracy",         pct(po_c, po_n))
+    row("Regular season accuracy", pct(reg_c, reg_n))
+    row("Playoff accuracy", pct(po_c, po_n))
     delta = (reg_c / reg_n - po_c / po_n) * 100 if reg_n and po_n else 0
-    sign  = "+" if delta >= 0 else ""
-    row("Delta (reg - playoff)",    f"{sign}{delta:.1f} pp")
+    sign = "+" if delta >= 0 else ""
+    row("Delta (reg - playoff)", f"{sign}{delta:.1f} pp")
 
     # --- Home vs Away Prediction ---
     h("5. HOME vs AWAY PREDICTION BREAKDOWN", "-")
 
     def ha_rows(label_prefix, ha):
-        hp = ha['home_predicted']
-        ap = ha['away_predicted']
-        row(f"{label_prefix} — predicted home wins",
-            f"{hp['total']:>5} predictions  →  {pct(hp['correct'], hp['total'])} accurate")
-        row(f"{label_prefix} — predicted away wins",
-            f"{ap['total']:>5} predictions  →  {pct(ap['correct'], ap['total'])} accurate")
+        hp = ha["home_predicted"]
+        ap = ha["away_predicted"]
+        row(
+            f"{label_prefix} — predicted home wins",
+            f"{hp['total']:>5} predictions  →  {pct(hp['correct'], hp['total'])} accurate",
+        )
+        row(
+            f"{label_prefix} — predicted away wins",
+            f"{ap['total']:>5} predictions  →  {pct(ap['correct'], ap['total'])} accurate",
+        )
 
     ha_rows("All games", ha_all)
     lines.append("")
@@ -428,26 +451,22 @@ def main():
     lines.append(f"  {'Level':<10} {'Games':>6} {'Correct':>8} {'Accuracy':>10}")
     lines.append(f"  {'-'*10} {'-'*6} {'-'*8} {'-'*10}")
     for level, total, correct in [
-        ('HIGH',   combined_all.high_conf_total,   combined_all.high_conf_correct),
-        ('MEDIUM', combined_all.medium_conf_total, combined_all.medium_conf_correct),
-        ('LOW',    combined_all.low_conf_total,    combined_all.low_conf_correct),
+        ("HIGH", combined_all.high_conf_total, combined_all.high_conf_correct),
+        ("MEDIUM", combined_all.medium_conf_total, combined_all.medium_conf_correct),
+        ("LOW", combined_all.low_conf_total, combined_all.low_conf_correct),
     ]:
-        lines.append(
-            f"  {level:<10} {total:>6} {correct:>8} {pct(correct, total):>10}"
-        )
+        lines.append(f"  {level:<10} {total:>6} {correct:>8} {pct(correct, total):>10}")
 
     # Repeat for regular season
     lines.append(f"\n  Regular season only:")
     lines.append(f"  {'Level':<10} {'Games':>6} {'Correct':>8} {'Accuracy':>10}")
     lines.append(f"  {'-'*10} {'-'*6} {'-'*8} {'-'*10}")
     for level, total, correct in [
-        ('HIGH',   combined_reg.high_conf_total,   combined_reg.high_conf_correct),
-        ('MEDIUM', combined_reg.medium_conf_total, combined_reg.medium_conf_correct),
-        ('LOW',    combined_reg.low_conf_total,    combined_reg.low_conf_correct),
+        ("HIGH", combined_reg.high_conf_total, combined_reg.high_conf_correct),
+        ("MEDIUM", combined_reg.medium_conf_total, combined_reg.medium_conf_correct),
+        ("LOW", combined_reg.low_conf_total, combined_reg.low_conf_correct),
     ]:
-        lines.append(
-            f"  {level:<10} {total:>6} {correct:>8} {pct(correct, total):>10}"
-        )
+        lines.append(f"  {level:<10} {total:>6} {correct:>8} {pct(correct, total):>10}")
 
     # --- Calibration ---
     h("7. PROBABILITY CALIBRATION (All Games 2020-2024)", "-")
@@ -455,18 +474,20 @@ def main():
         "  Ideal calibration: a bucket showing X% should win roughly X% of the time."
     )
     lines.append("")
-    lines.append(f"  {'Prob bucket':<12} {'Predictions':>12} {'Actual wins':>12} {'Actual %':>10}  {'Ideal mid':>10}  {'Delta':>8}")
+    lines.append(
+        f"  {'Prob bucket':<12} {'Predictions':>12} {'Actual wins':>12} {'Actual %':>10}  {'Ideal mid':>10}  {'Delta':>8}"
+    )
     lines.append(f"  {'-'*12} {'-'*12} {'-'*12} {'-'*10}  {'-'*10}  {'-'*8}")
 
     for label, _, _ in CALIBRATION_BUCKETS:
         b = calib_all[label]
-        total   = b['total']
-        correct = b['correct']
-        actual  = correct / total * 100 if total else 0
-        ideal   = BUCKET_MIDPOINTS[label]
-        delta   = actual - ideal
-        sign    = "+" if delta >= 0 else ""
-        bar     = "#" * int(round(actual / 5)) if total else ""
+        total = b["total"]
+        correct = b["correct"]
+        actual = correct / total * 100 if total else 0
+        ideal = BUCKET_MIDPOINTS[label]
+        delta = actual - ideal
+        sign = "+" if delta >= 0 else ""
+        bar = "#" * int(round(actual / 5)) if total else ""
         lines.append(
             f"  {label:<12} {total:>12} {correct:>12} {actual:>9.1f}%  {ideal:>9.1f}%  {sign}{delta:>6.1f}pp  {bar}"
         )

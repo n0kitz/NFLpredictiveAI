@@ -159,7 +159,7 @@ class Database:
             self._connection.close()
             self._connection = None
 
-    def __enter__(self) -> 'Database':
+    def __enter__(self) -> "Database":
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -180,7 +180,7 @@ class Database:
         """Initialize database schema from schema.sql file."""
         logger.info(f"Initializing database schema from {SCHEMA_PATH}")
 
-        with open(SCHEMA_PATH, 'r') as f:
+        with open(SCHEMA_PATH, "r") as f:
             schema_sql = f.read()
 
         with self.transaction():
@@ -212,10 +212,17 @@ class Database:
         self.connection.commit()
 
     # Team operations
-    def insert_team(self, name: str, city: str, conference: str, division: str,
-                    abbreviation: str, franchise_id: Optional[str] = None,
-                    active_from: Optional[int] = None,
-                    active_until: Optional[int] = None) -> int:
+    def insert_team(
+        self,
+        name: str,
+        city: str,
+        conference: str,
+        division: str,
+        abbreviation: str,
+        franchise_id: Optional[str] = None,
+        active_from: Optional[int] = None,
+        active_until: Optional[int] = None,
+    ) -> int:
         """
         Insert a new team into the database.
 
@@ -227,8 +234,19 @@ class Database:
                              franchise_id, active_from, active_until)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """
-        cursor = self.execute(query, (name, city, conference, division, abbreviation,
-                                       franchise_id, active_from, active_until))
+        cursor = self.execute(
+            query,
+            (
+                name,
+                city,
+                conference,
+                division,
+                abbreviation,
+                franchise_id,
+                active_from,
+                active_until,
+            ),
+        )
         self.commit()
         return cursor.lastrowid
 
@@ -279,14 +297,21 @@ class Database:
         )
 
     # Game operations
-    def insert_game(self, date: str, season: int, week: str, game_type: str,
-                    home_team_id: int, away_team_id: int,
-                    home_score: Optional[int] = None,
-                    away_score: Optional[int] = None,
-                    winner_id: Optional[int] = None,
-                    venue: Optional[str] = None,
-                    attendance: Optional[int] = None,
-                    overtime: bool = False) -> int:
+    def insert_game(
+        self,
+        date: str,
+        season: int,
+        week: str,
+        game_type: str,
+        home_team_id: int,
+        away_team_id: int,
+        home_score: Optional[int] = None,
+        away_score: Optional[int] = None,
+        winner_id: Optional[int] = None,
+        venue: Optional[str] = None,
+        attendance: Optional[int] = None,
+        overtime: bool = False,
+    ) -> int:
         """
         Insert a new game into the database.
 
@@ -299,14 +324,29 @@ class Database:
              home_score, away_score, winner_id, venue, attendance, overtime)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        cursor = self.execute(query, (date, season, week, game_type, home_team_id,
-                                       away_team_id, home_score, away_score,
-                                       winner_id, venue, attendance, overtime))
+        cursor = self.execute(
+            query,
+            (
+                date,
+                season,
+                week,
+                game_type,
+                home_team_id,
+                away_team_id,
+                home_score,
+                away_score,
+                winner_id,
+                venue,
+                attendance,
+                overtime,
+            ),
+        )
         self.commit()
         return cursor.lastrowid
 
-    def get_games_by_season(self, season: int,
-                            game_type: Optional[str] = None) -> List[sqlite3.Row]:
+    def get_games_by_season(
+        self, season: int, game_type: Optional[str] = None
+    ) -> List[sqlite3.Row]:
         """Get all games for a season, optionally filtered by game type."""
         if game_type:
             query = """
@@ -319,8 +359,9 @@ class Database:
             query = "SELECT * FROM game_details WHERE season = ? ORDER BY date"
             return self.fetchall(query, (season,))
 
-    def get_team_games(self, team_id: int, season: Optional[int] = None,
-                       limit: Optional[int] = None) -> List[sqlite3.Row]:
+    def get_team_games(
+        self, team_id: int, season: Optional[int] = None, limit: Optional[int] = None
+    ) -> List[sqlite3.Row]:
         """Get games for a specific team."""
         query = """
             SELECT g.*,
@@ -368,8 +409,9 @@ class Database:
             (game_id,),
         )
 
-    def get_game_box_score(self, season: int, week: int,
-                           home_team_id: int, away_team_id: int) -> List[sqlite3.Row]:
+    def get_game_box_score(
+        self, season: int, week: int, home_team_id: int, away_team_id: int
+    ) -> List[sqlite3.Row]:
         """Per-player stat lines for both teams in a game.
 
         Sourced from player_weekly_stats (populated 2018+ only), so older games
@@ -389,8 +431,9 @@ class Database:
             (season, week, home_team_id, away_team_id),
         )
 
-    def get_head_to_head(self, team1_id: int, team2_id: int,
-                         limit: Optional[int] = None) -> List[sqlite3.Row]:
+    def get_head_to_head(
+        self, team1_id: int, team2_id: int, limit: Optional[int] = None
+    ) -> List[sqlite3.Row]:
         """Get head-to-head games between two teams."""
         query = """
             SELECT g.*,
@@ -431,8 +474,9 @@ class Database:
         return self.fetchall(query, (team_id, team_id))
 
     # Team season stats operations
-    def upsert_team_season_stats(self, team_id: int, season: int,
-                                  stats: Dict[str, Any]) -> None:
+    def upsert_team_season_stats(
+        self, team_id: int, season: int, stats: Dict[str, Any]
+    ) -> None:
         """Insert or update team season statistics."""
         query = """
             INSERT INTO team_season_stats
@@ -458,27 +502,32 @@ class Database:
                 win_percentage = excluded.win_percentage,
                 last_updated = CURRENT_TIMESTAMP
         """
-        self.execute(query, (
-            team_id, season,
-            stats.get('games_played', 0),
-            stats.get('wins', 0),
-            stats.get('losses', 0),
-            stats.get('ties', 0),
-            stats.get('points_for', 0),
-            stats.get('points_against', 0),
-            stats.get('point_differential', 0),
-            stats.get('home_wins', 0),
-            stats.get('home_losses', 0),
-            stats.get('home_ties', 0),
-            stats.get('away_wins', 0),
-            stats.get('away_losses', 0),
-            stats.get('away_ties', 0),
-            stats.get('win_percentage', 0.0)
-        ))
+        self.execute(
+            query,
+            (
+                team_id,
+                season,
+                stats.get("games_played", 0),
+                stats.get("wins", 0),
+                stats.get("losses", 0),
+                stats.get("ties", 0),
+                stats.get("points_for", 0),
+                stats.get("points_against", 0),
+                stats.get("point_differential", 0),
+                stats.get("home_wins", 0),
+                stats.get("home_losses", 0),
+                stats.get("home_ties", 0),
+                stats.get("away_wins", 0),
+                stats.get("away_losses", 0),
+                stats.get("away_ties", 0),
+                stats.get("win_percentage", 0.0),
+            ),
+        )
         self.commit()
 
-    def get_team_season_stats(self, team_id: int,
-                               season: Optional[int] = None) -> List[sqlite3.Row]:
+    def get_team_season_stats(
+        self, team_id: int, season: Optional[int] = None
+    ) -> List[sqlite3.Row]:
         """Get team season statistics."""
         if season:
             query = """
@@ -495,16 +544,22 @@ class Database:
             return self.fetchall(query, (team_id,))
 
     # Game factors operations
-    def insert_game_factor(self, game_id: int, team_id: int, factor_type: str,
-                           factor_value: Optional[str] = None,
-                           impact_rating: int = 0) -> int:
+    def insert_game_factor(
+        self,
+        game_id: int,
+        team_id: int,
+        factor_type: str,
+        factor_value: Optional[str] = None,
+        impact_rating: int = 0,
+    ) -> int:
         """Insert a game factor."""
         query = """
             INSERT INTO game_factors (game_id, team_id, factor_type, factor_value, impact_rating)
             VALUES (?, ?, ?, ?, ?)
         """
-        cursor = self.execute(query, (game_id, team_id, factor_type,
-                                       factor_value, impact_rating))
+        cursor = self.execute(
+            query, (game_id, team_id, factor_type, factor_value, impact_rating)
+        )
         self.commit()
         return cursor.lastrowid
 
@@ -531,10 +586,11 @@ class Database:
         """Get scraping status for a season/week."""
         query = "SELECT status FROM scrape_progress WHERE season = ? AND week = ?"
         result = self.fetchone(query, (season, week))
-        return result['status'] if result else None
+        return result["status"] if result else None
 
-    def update_scrape_status(self, season: int, week: str, status: str,
-                              error_message: Optional[str] = None) -> None:
+    def update_scrape_status(
+        self, season: int, week: str, status: str, error_message: Optional[str] = None
+    ) -> None:
         """Update scraping status for a season/week."""
         query = """
             INSERT INTO scrape_progress (season, week, status, last_attempt, error_message)
@@ -561,74 +617,80 @@ class Database:
         teams = self.get_all_teams(active_only=False)
 
         for team in teams:
-            team_id = team['team_id']
+            team_id = team["team_id"]
             games = self.get_team_games(team_id, season)
 
             if not games:
                 continue
 
             stats = {
-                'games_played': 0,
-                'wins': 0,
-                'losses': 0,
-                'ties': 0,
-                'points_for': 0,
-                'points_against': 0,
-                'home_wins': 0,
-                'home_losses': 0,
-                'home_ties': 0,
-                'away_wins': 0,
-                'away_losses': 0,
-                'away_ties': 0,
+                "games_played": 0,
+                "wins": 0,
+                "losses": 0,
+                "ties": 0,
+                "points_for": 0,
+                "points_against": 0,
+                "home_wins": 0,
+                "home_losses": 0,
+                "home_ties": 0,
+                "away_wins": 0,
+                "away_losses": 0,
+                "away_ties": 0,
             }
 
             for game in games:
-                if game['home_score'] is None or game['away_score'] is None:
+                if game["home_score"] is None or game["away_score"] is None:
                     continue
 
-                stats['games_played'] += 1
-                is_home = game['home_team_id'] == team_id
+                stats["games_played"] += 1
+                is_home = game["home_team_id"] == team_id
 
                 if is_home:
-                    stats['points_for'] += game['home_score']
-                    stats['points_against'] += game['away_score']
+                    stats["points_for"] += game["home_score"]
+                    stats["points_against"] += game["away_score"]
                 else:
-                    stats['points_for'] += game['away_score']
-                    stats['points_against'] += game['home_score']
+                    stats["points_for"] += game["away_score"]
+                    stats["points_against"] += game["home_score"]
 
                 # Determine win/loss/tie
-                if game['winner_id'] == team_id:
-                    stats['wins'] += 1
+                if game["winner_id"] == team_id:
+                    stats["wins"] += 1
                     if is_home:
-                        stats['home_wins'] += 1
+                        stats["home_wins"] += 1
                     else:
-                        stats['away_wins'] += 1
-                elif game['winner_id'] is None:
-                    stats['ties'] += 1
+                        stats["away_wins"] += 1
+                elif game["winner_id"] is None:
+                    stats["ties"] += 1
                     if is_home:
-                        stats['home_ties'] += 1
+                        stats["home_ties"] += 1
                     else:
-                        stats['away_ties'] += 1
+                        stats["away_ties"] += 1
                 else:
-                    stats['losses'] += 1
+                    stats["losses"] += 1
                     if is_home:
-                        stats['home_losses'] += 1
+                        stats["home_losses"] += 1
                     else:
-                        stats['away_losses'] += 1
+                        stats["away_losses"] += 1
 
-            stats['point_differential'] = stats['points_for'] - stats['points_against']
+            stats["point_differential"] = stats["points_for"] - stats["points_against"]
 
-            if stats['games_played'] > 0:
-                stats['win_percentage'] = (
-                    stats['wins'] + 0.5 * stats['ties']
-                ) / stats['games_played']
+            if stats["games_played"] > 0:
+                stats["win_percentage"] = (stats["wins"] + 0.5 * stats["ties"]) / stats[
+                    "games_played"
+                ]
 
             self.upsert_team_season_stats(team_id, season, stats)
 
     # Prediction history operations
-    def insert_prediction(self, home_team_id: int, away_team_id: int,
-                          predicted_winner_id: int, home_prob: float,
-                          away_prob: float, confidence: str) -> int:
+    def insert_prediction(
+        self,
+        home_team_id: int,
+        away_team_id: int,
+        predicted_winner_id: int,
+        home_prob: float,
+        away_prob: float,
+        confidence: str,
+    ) -> int:
         """Save a prediction to history. Returns the row id."""
         cursor = self.execute(
             """
@@ -636,12 +698,21 @@ class Database:
                 (home_team_id, away_team_id, predicted_winner_id, home_prob, away_prob, confidence)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (home_team_id, away_team_id, predicted_winner_id, home_prob, away_prob, confidence),
+            (
+                home_team_id,
+                away_team_id,
+                predicted_winner_id,
+                home_prob,
+                away_prob,
+                confidence,
+            ),
         )
         self.commit()
         return cursor.lastrowid
 
-    def get_prediction_history(self, limit: int = 50, offset: int = 0) -> List[sqlite3.Row]:
+    def get_prediction_history(
+        self, limit: int = 50, offset: int = 0
+    ) -> List[sqlite3.Row]:
         """Get prediction history with team names, newest first."""
         return self.fetchall(
             """
@@ -663,17 +734,17 @@ class Database:
 
     def get_prediction_history_stats(self) -> Optional[sqlite3.Row]:
         """Get aggregate accuracy stats for resolved predictions."""
-        return self.fetchone(
-            """
+        return self.fetchone("""
             SELECT COUNT(*) AS total,
                    SUM(CASE WHEN correct = 1 THEN 1 ELSE 0 END) AS correct,
                    COUNT(CASE WHEN correct IS NOT NULL THEN 1 END) AS resolved
             FROM prediction_history
-            """
-        )
+            """)
 
     # Advanced stats operations
-    def upsert_advanced_stats(self, team_id: int, season: int, stats: Dict[str, Any]) -> None:
+    def upsert_advanced_stats(
+        self, team_id: int, season: int, stats: Dict[str, Any]
+    ) -> None:
         """Insert or replace advanced stats for a team-season."""
         self.execute(
             """
@@ -684,13 +755,14 @@ class Database:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                team_id, season,
-                stats.get('turnover_margin', 0.0),
-                stats.get('third_down_pct', 0.0),
-                stats.get('redzone_efficiency', 0.0),
-                stats.get('yards_per_play', 0.0),
-                stats.get('sack_rate_allowed', 0.0),
-                stats.get('qb_epa_per_play', 0.0),
+                team_id,
+                season,
+                stats.get("turnover_margin", 0.0),
+                stats.get("third_down_pct", 0.0),
+                stats.get("redzone_efficiency", 0.0),
+                stats.get("yards_per_play", 0.0),
+                stats.get("sack_rate_allowed", 0.0),
+                stats.get("qb_epa_per_play", 0.0),
             ),
         )
 
@@ -706,8 +778,7 @@ class Database:
         # Link already-resolved rows that predate game_id tracking (idempotent, ~0 rows after first run)
         self.backfill_prediction_game_ids()
         # Single JOIN query instead of N+1 per-prediction lookups
-        rows = self.fetchall(
-            """
+        rows = self.fetchall("""
             SELECT ph.id, ph.predicted_winner_id,
                    g.winner_id, g.game_id
             FROM prediction_history ph
@@ -724,14 +795,13 @@ class Database:
                  ORDER BY g2.date DESC LIMIT 1
              )
             WHERE ph.correct IS NULL
-            """
-        )
+            """)
         enriched = 0
         for row in rows:
-            correct = 1 if row['winner_id'] == row['predicted_winner_id'] else 0
+            correct = 1 if row["winner_id"] == row["predicted_winner_id"] else 0
             self.execute(
                 "UPDATE prediction_history SET actual_winner_id = ?, correct = ?, game_id = ? WHERE id = ?",
-                (row['winner_id'], correct, row['game_id'], row['id']),
+                (row["winner_id"], correct, row["game_id"], row["id"]),
             )
             enriched += 1
         if enriched:
@@ -748,8 +818,7 @@ class Database:
         """
         # SQLite can't reference the outer UPDATE table in a subquery's ORDER BY,
         # so match candidates via a plain join and pick the closest per prediction.
-        rows = self.fetchall(
-            """
+        rows = self.fetchall("""
             SELECT ph.id, g.game_id,
                    ABS(julianday(g.date) - julianday(ph.predicted_at)) AS dist
             FROM prediction_history ph
@@ -762,8 +831,7 @@ class Database:
               AND ph.game_id IS NULL
               AND ph.actual_winner_id IS NOT NULL
             ORDER BY ph.id, dist
-            """
-        )
+            """)
         best: Dict[int, int] = {}
         for r in rows:
             if r["id"] not in best:
@@ -777,8 +845,9 @@ class Database:
             self.commit()
         return len(best)
 
-
-    def get_value_picks_history(self, min_edge: float = 0.04, limit: int = 50) -> List[sqlite3.Row]:
+    def get_value_picks_history(
+        self, min_edge: float = 0.04, limit: int = 50
+    ) -> List[sqlite3.Row]:
         """
         Return resolved predictions that had a model-vs-Vegas edge >= min_edge.
 
@@ -820,16 +889,16 @@ class Database:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                data.get('game_id'),
-                data.get('external_game_id'),
-                data.get('home_team_id'),
-                data.get('away_team_id'),
-                data.get('game_date'),
-                data.get('opening_spread'),
-                data.get('over_under'),
-                data.get('home_implied_prob'),
-                data.get('away_implied_prob'),
-                data.get('fetched_at'),
+                data.get("game_id"),
+                data.get("external_game_id"),
+                data.get("home_team_id"),
+                data.get("away_team_id"),
+                data.get("game_date"),
+                data.get("opening_spread"),
+                data.get("over_under"),
+                data.get("home_implied_prob"),
+                data.get("away_implied_prob"),
+                data.get("fetched_at"),
             ),
         )
         self.commit()
@@ -841,8 +910,9 @@ class Database:
             (game_id,),
         )
 
-    def get_odds_for_teams(self, home_team_id: int, away_team_id: int,
-                           game_date: str) -> Optional[sqlite3.Row]:
+    def get_odds_for_teams(
+        self, home_team_id: int, away_team_id: int, game_date: str
+    ) -> Optional[sqlite3.Row]:
         """
         Get odds by home/away team IDs and date (±1 day window).
         Returns the closest match or None.
@@ -858,7 +928,6 @@ class Database:
             (home_team_id, away_team_id, game_date, game_date, game_date),
         )
 
-
     # Injury report operations
     def upsert_injuries(self, team_id: int, injuries: List[Dict[str, Any]]) -> None:
         """Insert or replace injury records for a team (keyed on team+player+date)."""
@@ -871,28 +940,32 @@ class Database:
                 """,
                 (
                     team_id,
-                    inj.get('player_name', ''),
-                    inj.get('position', ''),
-                    inj.get('injury_status', ''),
-                    inj.get('report_date', ''),
+                    inj.get("player_name", ""),
+                    inj.get("position", ""),
+                    inj.get("injury_status", ""),
+                    inj.get("report_date", ""),
                 ),
             )
         self.commit()
 
     def get_all_current_injuries(self) -> List[sqlite3.Row]:
         """Return all injury_reports from the most recent report_date across all teams."""
-        return self.fetchall(
-            """
+        return self.fetchall("""
             SELECT * FROM injury_reports
             WHERE report_date = (SELECT MAX(report_date) FROM injury_reports)
             ORDER BY team_id, player_name
-            """
-        )
+            """)
 
     # Scrape log operations (cron health tracking)
-    def write_scrape_log(self, success: bool, error_message: Optional[str] = None, seasons_scraped: Optional[str] = None) -> None:
+    def write_scrape_log(
+        self,
+        success: bool,
+        error_message: Optional[str] = None,
+        seasons_scraped: Optional[str] = None,
+    ) -> None:
         """Record a scrape run result (called from weekly_scrape.py)."""
         from datetime import datetime, timezone
+
         self.execute(
             "INSERT INTO scrape_log (run_at, success, error_message, seasons_scraped) VALUES (?, ?, ?, ?)",
             (
@@ -934,17 +1007,17 @@ class Database:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                data.get('game_id'),
-                data.get('home_team_id'),
-                data.get('game_date'),
-                1 if data.get('is_dome') else 0,
-                data.get('temperature_c'),
-                data.get('wind_speed_kmh'),
-                data.get('precipitation_mm'),
-                data.get('weather_code'),
-                data.get('condition'),
-                1 if data.get('is_adverse') else 0,
-                data.get('fetched_at'),
+                data.get("game_id"),
+                data.get("home_team_id"),
+                data.get("game_date"),
+                1 if data.get("is_dome") else 0,
+                data.get("temperature_c"),
+                data.get("wind_speed_kmh"),
+                data.get("precipitation_mm"),
+                data.get("weather_code"),
+                data.get("condition"),
+                1 if data.get("is_adverse") else 0,
+                data.get("fetched_at"),
             ),
         )
         self.commit()
@@ -956,22 +1029,23 @@ class Database:
             (game_id,),
         )
 
-    def get_weather_for_teams(self, home_team_id: int,
-                               game_date: str) -> Optional[sqlite3.Row]:
+    def get_weather_for_teams(
+        self, home_team_id: int, game_date: str
+    ) -> Optional[sqlite3.Row]:
         """Get weather record by home team ID and date (exact match). Returns None if absent."""
         return self.fetchone(
             "SELECT * FROM game_weather WHERE home_team_id = ? AND game_date = ?",
             (home_team_id, game_date),
         )
 
-
     # ── Roster / Player operations ────────────────────────────────────────────
 
     def upsert_player(self, player_data: Dict[str, Any]) -> int:
         """Insert or update a player record. Returns player_id."""
         from datetime import datetime as _dt, timezone
+
         now = _dt.now(timezone.utc).isoformat()
-        existing = self.get_player_by_espn_id(str(player_data.get('espn_id', '')))
+        existing = self.get_player_by_espn_id(str(player_data.get("espn_id", "")))
         if existing:
             self.execute(
                 """
@@ -983,23 +1057,23 @@ class Database:
                 WHERE espn_id=?
                 """,
                 (
-                    player_data.get('full_name', ''),
-                    player_data.get('first_name'),
-                    player_data.get('last_name'),
-                    player_data.get('position'),
-                    player_data.get('jersey_number'),
-                    player_data.get('date_of_birth'),
-                    player_data.get('height_cm'),
-                    player_data.get('weight_kg'),
-                    player_data.get('college'),
-                    player_data.get('experience_years', 0),
-                    player_data.get('status', 'Active'),
-                    player_data.get('headshot_url'),
+                    player_data.get("full_name", ""),
+                    player_data.get("first_name"),
+                    player_data.get("last_name"),
+                    player_data.get("position"),
+                    player_data.get("jersey_number"),
+                    player_data.get("date_of_birth"),
+                    player_data.get("height_cm"),
+                    player_data.get("weight_kg"),
+                    player_data.get("college"),
+                    player_data.get("experience_years", 0),
+                    player_data.get("status", "Active"),
+                    player_data.get("headshot_url"),
                     now,
-                    str(player_data.get('espn_id', '')),
+                    str(player_data.get("espn_id", "")),
                 ),
             )
-            return existing['player_id']
+            return existing["player_id"]
         else:
             cursor = self.execute(
                 """
@@ -1011,20 +1085,21 @@ class Database:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    str(player_data.get('espn_id', '')),
-                    player_data.get('full_name', ''),
-                    player_data.get('first_name'),
-                    player_data.get('last_name'),
-                    player_data.get('position'),
-                    player_data.get('jersey_number'),
-                    player_data.get('date_of_birth'),
-                    player_data.get('height_cm'),
-                    player_data.get('weight_kg'),
-                    player_data.get('college'),
-                    player_data.get('experience_years', 0),
-                    player_data.get('status', 'Active'),
-                    player_data.get('headshot_url'),
-                    now, now,
+                    str(player_data.get("espn_id", "")),
+                    player_data.get("full_name", ""),
+                    player_data.get("first_name"),
+                    player_data.get("last_name"),
+                    player_data.get("position"),
+                    player_data.get("jersey_number"),
+                    player_data.get("date_of_birth"),
+                    player_data.get("height_cm"),
+                    player_data.get("weight_kg"),
+                    player_data.get("college"),
+                    player_data.get("experience_years", 0),
+                    player_data.get("status", "Active"),
+                    player_data.get("headshot_url"),
+                    now,
+                    now,
                 ),
             )
             return cursor.lastrowid
@@ -1032,6 +1107,7 @@ class Database:
     def upsert_roster_entry(self, entry: Dict[str, Any]) -> None:
         """Insert or update a roster entry."""
         from datetime import datetime as _dt, timezone
+
         self.execute(
             """
             INSERT INTO roster_entries
@@ -1045,13 +1121,13 @@ class Database:
                 fetched_at=excluded.fetched_at
             """,
             (
-                entry['player_id'],
-                entry['team_id'],
-                entry['season'],
-                entry.get('depth_position'),
-                1 if entry.get('is_starter') else 0,
-                entry.get('roster_status', 'Active'),
-                entry.get('fetched_at', _dt.now(timezone.utc).isoformat()),
+                entry["player_id"],
+                entry["team_id"],
+                entry["season"],
+                entry.get("depth_position"),
+                1 if entry.get("is_starter") else 0,
+                entry.get("roster_status", "Active"),
+                entry.get("fetched_at", _dt.now(timezone.utc).isoformat()),
             ),
         )
 
@@ -1092,29 +1168,45 @@ class Database:
                 fantasy_points_standard=excluded.fantasy_points_standard
             """,
             (
-                stats['player_id'], stats['team_id'], stats['season'],
-                stats.get('games_played', 0),
-                stats.get('pass_attempts', 0), stats.get('pass_completions', 0),
-                stats.get('pass_yards', 0), stats.get('pass_tds', 0),
-                stats.get('interceptions', 0), stats.get('passer_rating', 0.0),
-                stats.get('rush_attempts', 0), stats.get('rush_yards', 0),
-                stats.get('rush_tds', 0), stats.get('yards_per_carry', 0.0),
-                stats.get('targets', 0), stats.get('receptions', 0),
-                stats.get('rec_yards', 0), stats.get('rec_tds', 0),
-                stats.get('yards_per_reception', 0.0),
-                stats.get('tackles', 0), stats.get('sacks', 0.0),
-                stats.get('interceptions_def', 0),
-                stats.get('fantasy_points_ppr', 0.0),
-                stats.get('fantasy_points_standard', 0.0),
+                stats["player_id"],
+                stats["team_id"],
+                stats["season"],
+                stats.get("games_played", 0),
+                stats.get("pass_attempts", 0),
+                stats.get("pass_completions", 0),
+                stats.get("pass_yards", 0),
+                stats.get("pass_tds", 0),
+                stats.get("interceptions", 0),
+                stats.get("passer_rating", 0.0),
+                stats.get("rush_attempts", 0),
+                stats.get("rush_yards", 0),
+                stats.get("rush_tds", 0),
+                stats.get("yards_per_carry", 0.0),
+                stats.get("targets", 0),
+                stats.get("receptions", 0),
+                stats.get("rec_yards", 0),
+                stats.get("rec_tds", 0),
+                stats.get("yards_per_reception", 0.0),
+                stats.get("tackles", 0),
+                stats.get("sacks", 0.0),
+                stats.get("interceptions_def", 0),
+                stats.get("fantasy_points_ppr", 0.0),
+                stats.get("fantasy_points_standard", 0.0),
             ),
         )
 
-    def get_team_roster(self, team_id: int, season: Optional[int] = None) -> List[sqlite3.Row]:
+    def get_team_roster(
+        self, team_id: int, season: Optional[int] = None
+    ) -> List[sqlite3.Row]:
         """Get full roster for a team, joined with player info and stats."""
         from datetime import date as _date
+
         if season is None:
-            row = self.fetchone("SELECT MAX(season) as s FROM roster_entries WHERE team_id=?", (team_id,))
-            season = row['s'] if row and row['s'] else _date.today().year
+            row = self.fetchone(
+                "SELECT MAX(season) as s FROM roster_entries WHERE team_id=?",
+                (team_id,),
+            )
+            season = row["s"] if row and row["s"] else _date.today().year
         return self.fetchall(
             """
             SELECT p.*, re.depth_position, re.is_starter, re.roster_status, re.season,
@@ -1144,7 +1236,9 @@ class Database:
             return None
         return self.fetchone("SELECT * FROM players WHERE espn_id=?", (espn_id,))
 
-    def get_player_stats(self, player_id: int, season: Optional[int] = None) -> Optional[sqlite3.Row]:
+    def get_player_stats(
+        self, player_id: int, season: Optional[int] = None
+    ) -> Optional[sqlite3.Row]:
         """Get player season stats. Returns most recent season if season=None."""
         if season:
             return self.fetchone(
@@ -1158,20 +1252,47 @@ class Database:
 
     # Position group ordering for starters
     _POSITION_ORDER = {
-        'QB': 0, 'RB': 1, 'FB': 2, 'WR': 3, 'TE': 4,
-        'LT': 5, 'LG': 6, 'C': 7, 'RG': 8, 'RT': 9, 'OL': 10,
-        'DE': 11, 'DT': 12, 'NT': 13, 'DL': 14,
-        'LB': 15, 'MLB': 16, 'OLB': 17, 'ILB': 18,
-        'CB': 19, 'S': 20, 'FS': 21, 'SS': 22, 'DB': 23,
-        'K': 24, 'P': 25, 'LS': 26,
+        "QB": 0,
+        "RB": 1,
+        "FB": 2,
+        "WR": 3,
+        "TE": 4,
+        "LT": 5,
+        "LG": 6,
+        "C": 7,
+        "RG": 8,
+        "RT": 9,
+        "OL": 10,
+        "DE": 11,
+        "DT": 12,
+        "NT": 13,
+        "DL": 14,
+        "LB": 15,
+        "MLB": 16,
+        "OLB": 17,
+        "ILB": 18,
+        "CB": 19,
+        "S": 20,
+        "FS": 21,
+        "SS": 22,
+        "DB": 23,
+        "K": 24,
+        "P": 25,
+        "LS": 26,
     }
 
-    def get_team_starters(self, team_id: int, season: Optional[int] = None) -> List[sqlite3.Row]:
+    def get_team_starters(
+        self, team_id: int, season: Optional[int] = None
+    ) -> List[sqlite3.Row]:
         """Get starters for a team, ordered by position group."""
         from datetime import date as _date
+
         if season is None:
-            row = self.fetchone("SELECT MAX(season) as s FROM roster_entries WHERE team_id=?", (team_id,))
-            season = row['s'] if row and row['s'] else _date.today().year
+            row = self.fetchone(
+                "SELECT MAX(season) as s FROM roster_entries WHERE team_id=?",
+                (team_id,),
+            )
+            season = row["s"] if row and row["s"] else _date.today().year
         rows = self.fetchall(
             """
             SELECT p.*, re.depth_position, re.is_starter, re.roster_status, re.season,
@@ -1189,7 +1310,9 @@ class Database:
             """,
             (team_id, season),
         )
-        return sorted(rows, key=lambda r: self._POSITION_ORDER.get(r['position'] or '', 99))
+        return sorted(
+            rows, key=lambda r: self._POSITION_ORDER.get(r["position"] or "", 99)
+        )
 
     def search_players(self, query: str) -> List[sqlite3.Row]:
         """Search players by full_name (LIKE). Returns up to 20 results."""
@@ -1212,13 +1335,13 @@ class Database:
         self,
         position: Optional[str],
         season: int,
-        scoring: str = 'ppr',
+        scoring: str = "ppr",
         limit: int = 50,
     ) -> List[sqlite3.Row]:
         """Get top fantasy players at a position (or all positions) for a season."""
         # Whitelist column names — never interpolate caller-supplied strings raw.
-        _PTS_COLS = {'ppr': 'fantasy_points_ppr', 'standard': 'fantasy_points_standard'}
-        pts_col = _PTS_COLS.get(scoring, 'fantasy_points_ppr')
+        _PTS_COLS = {"ppr": "fantasy_points_ppr", "standard": "fantasy_points_standard"}
+        pts_col = _PTS_COLS.get(scoring, "fantasy_points_ppr")
         base = f"""
             SELECT p.player_id, p.full_name, p.position, p.headshot_url,
                    t.abbreviation as team_abbr,
@@ -1233,15 +1356,20 @@ class Database:
         """
         if position:
             return self.fetchall(
-                base + "WHERE pss.season = ? AND p.position = ? ORDER BY pss." + pts_col + " DESC LIMIT ?",
+                base
+                + "WHERE pss.season = ? AND p.position = ? ORDER BY pss."
+                + pts_col
+                + " DESC LIMIT ?",
                 (season, position.upper(), limit),
             )
         else:
             return self.fetchall(
-                base + "WHERE pss.season = ? AND p.position IN ('QB','RB','WR','TE','K') ORDER BY pss." + pts_col + " DESC LIMIT ?",
+                base
+                + "WHERE pss.season = ? AND p.position IN ('QB','RB','WR','TE','K') ORDER BY pss."
+                + pts_col
+                + " DESC LIMIT ?",
                 (season, limit),
             )
-
 
     # ── Fantasy module operations ──────────────────────────────────────────────
 
@@ -1249,14 +1377,15 @@ class Database:
         """Return the most recently completed week number for a season (default: current)."""
         if season is None:
             from datetime import date as _date
+
             now = _date.today()
             season = now.year if now.month >= 9 else now.year - 1
         row = self.fetchone(
             "SELECT MAX(CAST(week AS INTEGER)) as max_week FROM games WHERE season=? AND home_score IS NOT NULL",
             (season,),
         )
-        if row and row['max_week']:
-            return int(row['max_week'])
+        if row and row["max_week"]:
+            return int(row["max_week"])
         return 1
 
     def upsert_fantasy_projection(self, data: Dict[str, Any]) -> None:
@@ -1272,18 +1401,20 @@ class Database:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                data['player_id'], data['season'], data['week'],
-                data.get('opponent_team_id'),
-                data.get('projected_points_ppr', 0.0),
-                data.get('projected_points_std', 0.0),
-                data.get('matchup_score', 1.0),
-                data.get('opportunity_score', 0.0),
-                data.get('confidence', 'medium'),
-                data.get('model_version'),
-                data.get('model_source', 'heuristic'),
-                data.get('floor_ppr'),
-                data.get('ceiling_ppr'),
-                data.get('contributions_json'),
+                data["player_id"],
+                data["season"],
+                data["week"],
+                data.get("opponent_team_id"),
+                data.get("projected_points_ppr", 0.0),
+                data.get("projected_points_std", 0.0),
+                data.get("matchup_score", 1.0),
+                data.get("opportunity_score", 0.0),
+                data.get("confidence", "medium"),
+                data.get("model_version"),
+                data.get("model_source", "heuristic"),
+                data.get("floor_ppr"),
+                data.get("ceiling_ppr"),
+                data.get("contributions_json"),
             ),
         )
 
@@ -1306,34 +1437,56 @@ class Database:
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                stats['player_id'], stats['season'], stats['week'],
-                stats.get('team_id'), stats.get('opponent_team_id'),
-                stats.get('position'), 1 if stats.get('is_home') else 0,
-                stats.get('snaps', 0), stats.get('snap_pct', 0.0),
-                stats.get('routes', 0), stats.get('route_pct', 0.0),
-                stats.get('targets', 0), stats.get('receptions', 0),
-                stats.get('rec_yards', 0), stats.get('rec_tds', 0),
-                stats.get('target_share', 0.0), stats.get('air_yards', 0),
-                stats.get('adot', 0.0),
-                stats.get('rush_attempts', 0), stats.get('rush_yards', 0),
-                stats.get('rush_tds', 0),
-                stats.get('pass_attempts', 0), stats.get('pass_completions', 0),
-                stats.get('pass_yards', 0), stats.get('pass_tds', 0),
-                stats.get('interceptions', 0),
-                stats.get('fantasy_points_ppr', 0.0),
-                stats.get('fantasy_points_standard', 0.0),
-                stats.get('fg_made_0_39', 0), stats.get('fg_made_40_49', 0),
-                stats.get('fg_made_50_plus', 0), stats.get('fg_missed', 0),
-                stats.get('xp_made', 0), stats.get('xp_missed', 0),
-                stats.get('dst_sacks', 0), stats.get('dst_interceptions', 0),
-                stats.get('dst_fumbles_recovered', 0), stats.get('dst_tds', 0),
-                stats.get('dst_safeties', 0), stats.get('dst_blocks', 0),
-                stats.get('dst_points_allowed', 0),
+                stats["player_id"],
+                stats["season"],
+                stats["week"],
+                stats.get("team_id"),
+                stats.get("opponent_team_id"),
+                stats.get("position"),
+                1 if stats.get("is_home") else 0,
+                stats.get("snaps", 0),
+                stats.get("snap_pct", 0.0),
+                stats.get("routes", 0),
+                stats.get("route_pct", 0.0),
+                stats.get("targets", 0),
+                stats.get("receptions", 0),
+                stats.get("rec_yards", 0),
+                stats.get("rec_tds", 0),
+                stats.get("target_share", 0.0),
+                stats.get("air_yards", 0),
+                stats.get("adot", 0.0),
+                stats.get("rush_attempts", 0),
+                stats.get("rush_yards", 0),
+                stats.get("rush_tds", 0),
+                stats.get("pass_attempts", 0),
+                stats.get("pass_completions", 0),
+                stats.get("pass_yards", 0),
+                stats.get("pass_tds", 0),
+                stats.get("interceptions", 0),
+                stats.get("fantasy_points_ppr", 0.0),
+                stats.get("fantasy_points_standard", 0.0),
+                stats.get("fg_made_0_39", 0),
+                stats.get("fg_made_40_49", 0),
+                stats.get("fg_made_50_plus", 0),
+                stats.get("fg_missed", 0),
+                stats.get("xp_made", 0),
+                stats.get("xp_missed", 0),
+                stats.get("dst_sacks", 0),
+                stats.get("dst_interceptions", 0),
+                stats.get("dst_fumbles_recovered", 0),
+                stats.get("dst_tds", 0),
+                stats.get("dst_safeties", 0),
+                stats.get("dst_blocks", 0),
+                stats.get("dst_points_allowed", 0),
             ),
         )
 
     def get_player_weekly_stats(
-        self, player_id: int, season: int, before_week: Optional[int] = None, limit: int = 20,
+        self,
+        player_id: int,
+        season: int,
+        before_week: Optional[int] = None,
+        limit: int = 20,
     ) -> List[sqlite3.Row]:
         """Most recent weekly rows for a player, newest first, optionally filtered < before_week."""
         if before_week is None:
@@ -1347,7 +1500,12 @@ class Database:
         )
 
     def get_opponent_position_allowed(
-        self, opponent_team_id: int, position: str, season: int, before_week: int, lookback: int = 4,
+        self,
+        opponent_team_id: int,
+        position: str,
+        season: int,
+        before_week: int,
+        lookback: int = 4,
     ) -> float:
         """Avg fantasy points (PPR) allowed by opponent to this position over the last N weeks."""
         rows = self.fetchall(
@@ -1361,19 +1519,21 @@ class Database:
             """,
             (opponent_team_id, season, before_week, position, lookback * 32),
         )
-        if not rows or rows[0]['avg_ppr'] is None:
+        if not rows or rows[0]["avg_ppr"] is None:
             return 0.0
-        return float(rows[0]['avg_ppr'])
+        return float(rows[0]["avg_ppr"])
 
     def get_fantasy_projections(
         self,
         season: int,
         week: int,
-        position: str = 'all',
-        scoring: str = 'ppr',
+        position: str = "all",
+        scoring: str = "ppr",
     ) -> List[sqlite3.Row]:
         """Get fantasy projections with player + team info, ordered by projected points desc."""
-        pts_col = 'fp.projected_points_ppr' if scoring == 'ppr' else 'fp.projected_points_std'
+        pts_col = (
+            "fp.projected_points_ppr" if scoring == "ppr" else "fp.projected_points_std"
+        )
         pos_filter = position.upper()
         # Pre-aggregate roster_entries to one team_id per (player, season) so the join
         # can't duplicate projection rows for traded players (UNIQUE is on
@@ -1391,7 +1551,7 @@ class Database:
                 )
             )
         """
-        if pos_filter == 'ALL':
+        if pos_filter == "ALL":
             return self.fetchall(
                 f"""
                 SELECT fp.*, p.full_name, p.position, p.headshot_url,
@@ -1429,11 +1589,15 @@ class Database:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                data['season'], data['scoring_format'], data['player_id'],
-                data.get('overall_rank'), data.get('position_rank'),
-                data.get('tier'), data.get('adp'),
-                data.get('projected_season_points', 0.0),
-                data.get('vbd'),
+                data["season"],
+                data["scoring_format"],
+                data["player_id"],
+                data.get("overall_rank"),
+                data.get("position_rank"),
+                data.get("tier"),
+                data.get("adp"),
+                data.get("projected_season_points", 0.0),
+                data.get("vbd"),
             ),
         )
 
@@ -1453,10 +1617,10 @@ class Database:
         )
         played: Dict[int, set] = {}
         for r in rows:
-            wk = r['week_int']
+            wk = r["week_int"]
             if wk is None:
                 continue
-            played.setdefault(r['team_id'], set()).add(int(wk))
+            played.setdefault(r["team_id"], set()).add(int(wk))
         max_week = max((w for weeks in played.values() for w in weeks), default=0)
         if max_week < 14:
             return {}
@@ -1471,12 +1635,12 @@ class Database:
     def get_draft_rankings(
         self,
         season: int,
-        scoring: str = 'ppr',
-        position: str = 'all',
+        scoring: str = "ppr",
+        position: str = "all",
     ) -> List[sqlite3.Row]:
         """Get draft rankings with player + team info, ordered by overall_rank."""
         pos_filter = position.upper()
-        if pos_filter == 'ALL':
+        if pos_filter == "ALL":
             return self.fetchall(
                 """
                 SELECT dr.*, p.full_name, p.position, p.headshot_url,
@@ -1507,6 +1671,7 @@ class Database:
     def upsert_fantasy_roster(self, data: Dict[str, Any]) -> None:
         """Insert or replace a fantasy roster entry."""
         from datetime import datetime as _dt, timezone
+
         self.execute(
             """
             INSERT OR REPLACE INTO fantasy_rosters
@@ -1514,8 +1679,11 @@ class Database:
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
-                data['league_id'], data['player_id'], data['slot'],
-                data.get('acquired_week'), data.get('acquired_type'),
+                data["league_id"],
+                data["player_id"],
+                data["slot"],
+                data.get("acquired_week"),
+                data.get("acquired_type"),
                 _dt.now(timezone.utc).isoformat(),
             ),
         )

@@ -77,13 +77,13 @@ class TestDatabase:
                 city="Test City",
                 conference="AFC",
                 division="East",
-                abbreviation="TST"
+                abbreviation="TST",
             )
 
             team = db.get_team_by_abbreviation("TST")
             assert team is not None
-            assert team['name'] == "Test Team"
-            assert team['team_id'] == team_id
+            assert team["name"] == "Test Team"
+            assert team["team_id"] == team_id
 
             db.close()
 
@@ -141,5 +141,5 @@ class TestModels:
         assert FactorType.INJURY_IMPACT.value == "injury_impact"
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

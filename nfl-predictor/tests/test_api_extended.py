@@ -16,6 +16,7 @@ client = TestClient(app)
 
 # ── Prediction history ─────────────────────────────────────────────────────────
 
+
 class TestPredictionHistory:
     def test_history_returns_valid_shape(self):
         r = client.get("/api/predictions/history")
@@ -46,9 +47,12 @@ class TestPredictionHistory:
 
 # ── Fantasy endpoints ──────────────────────────────────────────────────────────
 
+
 class TestFantasyEndpoints:
     def test_projections_returns_list(self):
-        r = client.get("/api/fantasy/projections?week=1&season=2024&position=QB&scoring=ppr")
+        r = client.get(
+            "/api/fantasy/projections?week=1&season=2024&position=QB&scoring=ppr"
+        )
         assert r.status_code == 200
         data = r.json()
         assert isinstance(data, list)
@@ -60,7 +64,9 @@ class TestFantasyEndpoints:
     def test_projections_expose_opponent_team_id(self):
         # 2025 has current rosters → projections are generated; the schema must
         # always carry opponent_team_id so the lineup optimizer can build stacks.
-        r = client.get("/api/fantasy/projections?week=1&season=2025&position=QB&scoring=ppr")
+        r = client.get(
+            "/api/fantasy/projections?week=1&season=2025&position=QB&scoring=ppr"
+        )
         assert r.status_code == 200
         data = r.json()
         assert isinstance(data, list)
@@ -83,27 +89,35 @@ class TestFantasyEndpoints:
         assert isinstance(r.json(), list)
 
     def test_draft_rankings_by_position(self):
-        r = client.get("/api/fantasy/draft-rankings?season=2024&scoring=ppr&position=QB")
+        r = client.get(
+            "/api/fantasy/draft-rankings?season=2024&scoring=ppr&position=QB"
+        )
         assert r.status_code == 200
         data = r.json()
         assert isinstance(data, list)
 
     def test_trade_analyze_empty_lists(self):
-        r = client.post("/api/fantasy/trade-analyze", json={
-            "give_player_ids": [],
-            "get_player_ids": [],
-            "week": 1,
-            "season": 2024,
-        })
+        r = client.post(
+            "/api/fantasy/trade-analyze",
+            json={
+                "give_player_ids": [],
+                "get_player_ids": [],
+                "week": 1,
+                "season": 2024,
+            },
+        )
         assert r.status_code in (200, 400, 422)
 
     def test_trade_analyze_oversized_list(self):
-        r = client.post("/api/fantasy/trade-analyze", json={
-            "give_player_ids": list(range(11)),  # exceeds max_length=10
-            "get_player_ids": [],
-            "week": 1,
-            "season": 2024,
-        })
+        r = client.post(
+            "/api/fantasy/trade-analyze",
+            json={
+                "give_player_ids": list(range(11)),  # exceeds max_length=10
+                "get_player_ids": [],
+                "week": 1,
+                "season": 2024,
+            },
+        )
         assert r.status_code == 422
 
     def test_power_rankings_returns_list(self):
@@ -121,24 +135,31 @@ class TestFantasyEndpoints:
         assert isinstance(data["players"], list)
 
     def test_import_by_names(self):
-        r = client.post("/api/fantasy/roster/import-by-names", json={
-            "names": ["Patrick Mahomes", "Justin Jefferson"],
-            "season": 2024,
-        })
+        r = client.post(
+            "/api/fantasy/roster/import-by-names",
+            json={
+                "names": ["Patrick Mahomes", "Justin Jefferson"],
+                "season": 2024,
+            },
+        )
         assert r.status_code == 200
         data = r.json()
         assert "matched" in data
         assert "unmatched" in data
 
     def test_import_by_names_oversized(self):
-        r = client.post("/api/fantasy/roster/import-by-names", json={
-            "names": [f"Player {i}" for i in range(51)],  # exceeds max_length=50
-            "season": 2024,
-        })
+        r = client.post(
+            "/api/fantasy/roster/import-by-names",
+            json={
+                "names": [f"Player {i}" for i in range(51)],  # exceeds max_length=50
+                "season": 2024,
+            },
+        )
         assert r.status_code == 422
 
 
 # ── Seasons / Playoff picture ──────────────────────────────────────────────────
+
 
 class TestSeasons:
     def test_playoff_picture_valid_season(self):
@@ -162,6 +183,7 @@ class TestSeasons:
 
 
 # ── Team upcoming / starters ───────────────────────────────────────────────────
+
 
 class TestTeamExtended:
     def test_team_upcoming(self):
@@ -188,9 +210,11 @@ class TestTeamExtended:
 
 # ── Player weekly stats endpoint (Fantasy Depth Pack) ─────────────────────────
 
+
 class TestPlayerWeeklyStats:
     def _any_player_id(self):
         from src.database.db import Database
+
         db = Database(DEFAULT_DB_PATH)
         try:
             row = db.fetchone("SELECT player_id FROM players LIMIT 1")
@@ -243,15 +267,27 @@ class TestPlayerWeeklyStats:
         assert r.status_code == 200
         for cell in r.json()["weeks"]:
             for k in (
-                "receptions", "rec_tds", "air_yards", "adot", "route_pct",
-                "rush_attempts", "rush_tds", "pass_attempts", "pass_completions",
-                "pass_tds", "interceptions", "result", "team_score", "opp_score",
+                "receptions",
+                "rec_tds",
+                "air_yards",
+                "adot",
+                "route_pct",
+                "rush_attempts",
+                "rush_tds",
+                "pass_attempts",
+                "pass_completions",
+                "pass_tds",
+                "interceptions",
+                "result",
+                "team_score",
+                "opp_score",
             ):
                 assert k in cell
 
     def test_played_week_has_game_result(self):
         """A player with 2023 weekly data should have weeks tagged with a W/L/T result."""
         from src.database.db import Database
+
         db = Database(DEFAULT_DB_PATH)
         try:
             row = db.fetchone(
@@ -274,9 +310,11 @@ class TestPlayerWeeklyStats:
 
 # ── Game detail endpoint ───────────────────────────────────────────────────────
 
+
 class TestGameDetail:
     def _played_regular_game(self, season=2023):
         from src.database.db import Database
+
         db = Database(DEFAULT_DB_PATH)
         try:
             row = db.fetchone(
@@ -299,8 +337,19 @@ class TestGameDetail:
         r = client.get(f"/api/games/{gid}")
         assert r.status_code == 200
         d = r.json()
-        for k in ("game_id", "home_abbr", "away_abbr", "venue", "attendance",
-                  "home_box", "away_box", "box_score_available", "factors", "odds", "weather"):
+        for k in (
+            "game_id",
+            "home_abbr",
+            "away_abbr",
+            "venue",
+            "attendance",
+            "home_box",
+            "away_box",
+            "box_score_available",
+            "factors",
+            "odds",
+            "weather",
+        ):
             assert k in d
         assert isinstance(d["home_box"], list)
         assert isinstance(d["away_box"], list)
@@ -308,12 +357,20 @@ class TestGameDetail:
         assert d["box_score_available"] is True
         assert len(d["home_box"]) + len(d["away_box"]) > 0
         p = (d["home_box"] + d["away_box"])[0]
-        for k in ("player_id", "full_name", "team_id", "fantasy_points_ppr",
-                  "pass_yards", "rush_yards", "rec_yards"):
+        for k in (
+            "player_id",
+            "full_name",
+            "team_id",
+            "fantasy_points_ppr",
+            "pass_yards",
+            "rush_yards",
+            "rec_yards",
+        ):
             assert k in p
 
     def test_playoff_game_has_empty_box(self):
         from src.database.db import Database
+
         db = Database(DEFAULT_DB_PATH)
         try:
             row = db.fetchone(
@@ -338,9 +395,11 @@ class TestGameDetail:
 
 # ── Game retrodiction endpoint ─────────────────────────────────────────────────
 
+
 class TestGameRetrodiction:
     def _played_game(self):
         from src.database.db import Database
+
         db = Database(DEFAULT_DB_PATH)
         try:
             row = db.fetchone(
@@ -379,6 +438,7 @@ class TestGameRetrodiction:
 
     def test_unplayed_game_rejected(self):
         from src.database.db import Database
+
         db = Database(DEFAULT_DB_PATH)
         try:
             row = db.fetchone(
@@ -399,14 +459,15 @@ class TestGameRetrodiction:
 
 # ── Prediction history ↔ game linking ─────────────────────────────────────────
 
+
 class TestPredictionGameLink:
     def _open_db(self):
         from src.database.db import Database
+
         return Database(DEFAULT_DB_PATH)
 
     def _latest_completed_pair_game(self, db):
-        return db.fetchone(
-            """
+        return db.fetchone("""
             SELECT g.game_id, g.home_team_id, g.away_team_id, g.winner_id
             FROM games g
             WHERE g.winner_id IS NOT NULL
@@ -418,8 +479,7 @@ class TestPredictionGameLink:
                   ORDER BY g2.date DESC LIMIT 1
               )
             ORDER BY g.date DESC LIMIT 1
-            """
-        )
+            """)
 
     def test_enrich_links_game_id(self):
         """A fresh prediction gets game_id + correct filled by enrichment."""
@@ -429,15 +489,19 @@ class TestPredictionGameLink:
             db.close()
             pytest.skip("No completed games in DB")
         pred_id = db.insert_prediction(
-            home_team_id=game["home_team_id"], away_team_id=game["away_team_id"],
-            predicted_winner_id=game["winner_id"], home_prob=0.6, away_prob=0.4,
+            home_team_id=game["home_team_id"],
+            away_team_id=game["away_team_id"],
+            predicted_winner_id=game["winner_id"],
+            home_prob=0.6,
+            away_prob=0.4,
             confidence="low",
         )
         try:
             r = client.post("/api/predictions/enrich")
             assert r.status_code == 200
             row = db.fetchone(
-                "SELECT game_id, correct FROM prediction_history WHERE id = ?", (pred_id,)
+                "SELECT game_id, correct FROM prediction_history WHERE id = ?",
+                (pred_id,),
             )
             assert row["correct"] == 1
             assert row["game_id"] == game["game_id"]
@@ -454,8 +518,11 @@ class TestPredictionGameLink:
             db.close()
             pytest.skip("No completed games in DB")
         pred_id = db.insert_prediction(
-            home_team_id=game["home_team_id"], away_team_id=game["away_team_id"],
-            predicted_winner_id=game["winner_id"], home_prob=0.55, away_prob=0.45,
+            home_team_id=game["home_team_id"],
+            away_team_id=game["away_team_id"],
+            predicted_winner_id=game["winner_id"],
+            home_prob=0.55,
+            away_prob=0.45,
             confidence="low",
         )
         try:
@@ -489,6 +556,7 @@ class TestPredictionGameLink:
 
 # ── Factors CRUD ──────────────────────────────────────────────────────────────
 
+
 class TestFactorsCRUD:
     def test_factors_list_invalid_game(self):
         r = client.get("/api/factors/999999")
@@ -497,13 +565,16 @@ class TestFactorsCRUD:
         assert "factors" in data
 
     def test_add_factor(self):
-        r = client.post("/api/factors", json={
-            "game_id": 1,
-            "team_id": 1,
-            "factor_type": "injury",
-            "description": "Test injury factor",
-            "impact_rating": -2.0,
-        })
+        r = client.post(
+            "/api/factors",
+            json={
+                "game_id": 1,
+                "team_id": 1,
+                "factor_type": "injury",
+                "description": "Test injury factor",
+                "impact_rating": -2.0,
+            },
+        )
         # May 200/400/422 depending on validation
         assert r.status_code in (200, 400, 422)
 
@@ -513,6 +584,7 @@ class TestFactorsCRUD:
 
 
 # ── System endpoints ───────────────────────────────────────────────────────────
+
 
 class TestSystemEndpoints:
     def test_scrape_status(self):
@@ -539,6 +611,7 @@ class TestSystemEndpoints:
 
 
 # ── Adversarial / security tests ───────────────────────────────────────────────
+
 
 class TestAdversarialInputs:
     def test_team_search_sql_injection(self):
@@ -574,31 +647,40 @@ class TestAdversarialInputs:
         assert r.status_code == 422
 
     def test_predict_same_teams(self):
-        r = client.post("/api/predict", json={
-            "home_team": "KC",
-            "away_team": "KC",
-            "current_season": 2025,
-            "is_playoff": False,
-            "week": 1,
-        })
+        r = client.post(
+            "/api/predict",
+            json={
+                "home_team": "KC",
+                "away_team": "KC",
+                "current_season": 2025,
+                "is_playoff": False,
+                "week": 1,
+            },
+        )
         # Should either succeed or fail gracefully, never 500
         assert r.status_code in (200, 400, 404, 422)
 
     def test_predict_nonexistent_team(self):
-        r = client.post("/api/predict", json={
-            "home_team": "XXXXXXXXX",
-            "away_team": "KC",
-            "current_season": 2025,
-            "is_playoff": False,
-            "week": 1,
-        })
+        r = client.post(
+            "/api/predict",
+            json={
+                "home_team": "XXXXXXXXX",
+                "away_team": "KC",
+                "current_season": 2025,
+                "is_playoff": False,
+                "week": 1,
+            },
+        )
         assert r.status_code == 404
 
     def test_import_names_empty_list(self):
-        r = client.post("/api/fantasy/roster/import-by-names", json={
-            "names": [],
-            "season": 2024,
-        })
+        r = client.post(
+            "/api/fantasy/roster/import-by-names",
+            json={
+                "names": [],
+                "season": 2024,
+            },
+        )
         assert r.status_code in (200, 422)
 
     def test_global_exception_handler_returns_json(self):

@@ -5,13 +5,13 @@ from .helpers import (
     format_percentage,
     parse_team_input,
     get_current_season,
-    get_week_name
+    get_week_name,
 )
 
 __all__ = [
-    'format_record',
-    'format_percentage',
-    'parse_team_input',
-    'get_current_season',
-    'get_week_name'
+    "format_record",
+    "format_percentage",
+    "parse_team_input",
+    "get_current_season",
+    "get_week_name",
 ]

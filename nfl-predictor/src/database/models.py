@@ -8,18 +8,21 @@ from enum import Enum
 
 class Conference(Enum):
     """NFL Conference."""
+
     AFC = "AFC"
     NFC = "NFC"
 
 
 class GameType(Enum):
     """Type of NFL game."""
+
     REGULAR = "regular"
     PLAYOFF = "playoff"
 
 
 class FactorType(Enum):
     """Types of game factors that can affect predictions."""
+
     BETTER_DEFENSE = "better_defense"
     BAD_DEFENSE = "bad_defense"
     BETTER_OFFENSE = "better_offense"
@@ -40,6 +43,7 @@ class FactorType(Enum):
 @dataclass
 class Team:
     """NFL Team data model."""
+
     team_id: int
     name: str
     city: str
@@ -51,18 +55,18 @@ class Team:
     active_until: Optional[int] = None
 
     @classmethod
-    def from_row(cls, row) -> 'Team':
+    def from_row(cls, row) -> "Team":
         """Create Team from database row."""
         return cls(
-            team_id=row['team_id'],
-            name=row['name'],
-            city=row['city'],
-            conference=Conference(row['conference']),
-            division=row['division'],
-            abbreviation=row['abbreviation'],
-            franchise_id=row['franchise_id'],
-            active_from=row['active_from'],
-            active_until=row['active_until']
+            team_id=row["team_id"],
+            name=row["name"],
+            city=row["city"],
+            conference=Conference(row["conference"]),
+            division=row["division"],
+            abbreviation=row["abbreviation"],
+            franchise_id=row["franchise_id"],
+            active_from=row["active_from"],
+            active_until=row["active_until"],
         )
 
     @property
@@ -79,6 +83,7 @@ class Team:
 @dataclass
 class Game:
     """NFL Game data model."""
+
     game_id: int
     date: date
     season: int
@@ -102,28 +107,32 @@ class Game:
     winner_abbr: Optional[str] = None
 
     @classmethod
-    def from_row(cls, row) -> 'Game':
+    def from_row(cls, row) -> "Game":
         """Create Game from database row."""
         return cls(
-            game_id=row['game_id'],
-            date=row['date'] if isinstance(row['date'], date) else date.fromisoformat(row['date']),
-            season=row['season'],
-            week=row['week'],
-            game_type=GameType(row['game_type']),
-            home_team_id=row['home_team_id'],
-            away_team_id=row['away_team_id'],
-            home_score=row['home_score'],
-            away_score=row['away_score'],
-            winner_id=row['winner_id'],
-            venue=row.get('venue'),
-            attendance=row.get('attendance'),
-            overtime=bool(row.get('overtime', False)),
-            home_team=row.get('home_team'),
-            home_abbr=row.get('home_abbr'),
-            away_team=row.get('away_team'),
-            away_abbr=row.get('away_abbr'),
-            winner=row.get('winner'),
-            winner_abbr=row.get('winner_abbr')
+            game_id=row["game_id"],
+            date=(
+                row["date"]
+                if isinstance(row["date"], date)
+                else date.fromisoformat(row["date"])
+            ),
+            season=row["season"],
+            week=row["week"],
+            game_type=GameType(row["game_type"]),
+            home_team_id=row["home_team_id"],
+            away_team_id=row["away_team_id"],
+            home_score=row["home_score"],
+            away_score=row["away_score"],
+            winner_id=row["winner_id"],
+            venue=row.get("venue"),
+            attendance=row.get("attendance"),
+            overtime=bool(row.get("overtime", False)),
+            home_team=row.get("home_team"),
+            home_abbr=row.get("home_abbr"),
+            away_team=row.get("away_team"),
+            away_abbr=row.get("away_abbr"),
+            winner=row.get("winner"),
+            winner_abbr=row.get("winner_abbr"),
         )
 
     @property
@@ -184,6 +193,7 @@ class Game:
 @dataclass
 class GameFactor:
     """Game factor that can affect predictions."""
+
     factor_id: int
     game_id: int
     team_id: int
@@ -194,17 +204,17 @@ class GameFactor:
     team_abbr: Optional[str] = None
 
     @classmethod
-    def from_row(cls, row) -> 'GameFactor':
+    def from_row(cls, row) -> "GameFactor":
         """Create GameFactor from database row."""
         return cls(
-            factor_id=row['factor_id'],
-            game_id=row['game_id'],
-            team_id=row['team_id'],
-            factor_type=FactorType(row['factor_type']),
-            factor_value=row.get('factor_value'),
-            impact_rating=row['impact_rating'],
-            team_name=row.get('team_name'),
-            team_abbr=row.get('team_abbr')
+            factor_id=row["factor_id"],
+            game_id=row["game_id"],
+            team_id=row["team_id"],
+            factor_type=FactorType(row["factor_type"]),
+            factor_value=row.get("factor_value"),
+            impact_rating=row["impact_rating"],
+            team_name=row.get("team_name"),
+            team_abbr=row.get("team_abbr"),
         )
 
     @property
@@ -221,6 +231,7 @@ class GameFactor:
 @dataclass
 class TeamSeasonStats:
     """Aggregated team statistics for a season."""
+
     team_id: int
     season: int
     games_played: int = 0
@@ -239,25 +250,25 @@ class TeamSeasonStats:
     win_percentage: float = 0.0
 
     @classmethod
-    def from_row(cls, row) -> 'TeamSeasonStats':
+    def from_row(cls, row) -> "TeamSeasonStats":
         """Create TeamSeasonStats from database row."""
         return cls(
-            team_id=row['team_id'],
-            season=row['season'],
-            games_played=row['games_played'],
-            wins=row['wins'],
-            losses=row['losses'],
-            ties=row['ties'],
-            points_for=row['points_for'],
-            points_against=row['points_against'],
-            point_differential=row['point_differential'],
-            home_wins=row['home_wins'],
-            home_losses=row['home_losses'],
-            home_ties=row.get('home_ties', 0),
-            away_wins=row['away_wins'],
-            away_losses=row['away_losses'],
-            away_ties=row.get('away_ties', 0),
-            win_percentage=row['win_percentage']
+            team_id=row["team_id"],
+            season=row["season"],
+            games_played=row["games_played"],
+            wins=row["wins"],
+            losses=row["losses"],
+            ties=row["ties"],
+            points_for=row["points_for"],
+            points_against=row["points_against"],
+            point_differential=row["point_differential"],
+            home_wins=row["home_wins"],
+            home_losses=row["home_losses"],
+            home_ties=row.get("home_ties", 0),
+            away_wins=row["away_wins"],
+            away_losses=row["away_losses"],
+            away_ties=row.get("away_ties", 0),
+            win_percentage=row["win_percentage"],
         )
 
     @property
@@ -315,6 +326,7 @@ class TeamSeasonStats:
 @dataclass
 class Prediction:
     """Prediction result for a game."""
+
     home_team: str
     away_team: str
     home_team_id: int
@@ -345,7 +357,7 @@ class Prediction:
             f"Prediction: {self.home_team} {self.home_win_probability:.0%} | "
             f"{self.away_team} {self.away_win_probability:.0%}",
             f"Confidence: {self.confidence.capitalize()}",
-            "Key Factors:"
+            "Key Factors:",
         ]
 
         for i, factor in enumerate(self.key_factors):
@@ -361,7 +373,9 @@ class Prediction:
                     f"({sign}{factor.impact_rating})"
                 )
         else:
-            lines.append("\n[No custom game factors applied - add factors for refined predictions]")
+            lines.append(
+                "\n[No custom game factors applied - add factors for refined predictions]"
+            )
 
         return "\n".join(lines)
 
@@ -384,6 +398,7 @@ def _row_get(row, key, default=None):
 @dataclass
 class Player:
     """Player bio (ESPN roster API)."""
+
     player_id: int
     full_name: str
     espn_id: Optional[str] = None
@@ -400,28 +415,29 @@ class Player:
     headshot_url: Optional[str] = None
 
     @classmethod
-    def from_row(cls, row) -> 'Player':
+    def from_row(cls, row) -> "Player":
         return cls(
-            player_id=row['player_id'],
-            full_name=row['full_name'],
-            espn_id=_row_get(row, 'espn_id'),
-            first_name=_row_get(row, 'first_name'),
-            last_name=_row_get(row, 'last_name'),
-            position=_row_get(row, 'position'),
-            jersey_number=_row_get(row, 'jersey_number'),
-            date_of_birth=_row_get(row, 'date_of_birth'),
-            height_cm=_row_get(row, 'height_cm'),
-            weight_kg=_row_get(row, 'weight_kg'),
-            college=_row_get(row, 'college'),
-            experience_years=_row_get(row, 'experience_years', 0) or 0,
-            status=_row_get(row, 'status', 'Active') or 'Active',
-            headshot_url=_row_get(row, 'headshot_url'),
+            player_id=row["player_id"],
+            full_name=row["full_name"],
+            espn_id=_row_get(row, "espn_id"),
+            first_name=_row_get(row, "first_name"),
+            last_name=_row_get(row, "last_name"),
+            position=_row_get(row, "position"),
+            jersey_number=_row_get(row, "jersey_number"),
+            date_of_birth=_row_get(row, "date_of_birth"),
+            height_cm=_row_get(row, "height_cm"),
+            weight_kg=_row_get(row, "weight_kg"),
+            college=_row_get(row, "college"),
+            experience_years=_row_get(row, "experience_years", 0) or 0,
+            status=_row_get(row, "status", "Active") or "Active",
+            headshot_url=_row_get(row, "headshot_url"),
         )
 
 
 @dataclass
 class RosterEntry:
     """Player ↔ team ↔ season link."""
+
     player_id: int
     team_id: int
     season: int
@@ -431,21 +447,22 @@ class RosterEntry:
     fetched_at: Optional[str] = None
 
     @classmethod
-    def from_row(cls, row) -> 'RosterEntry':
+    def from_row(cls, row) -> "RosterEntry":
         return cls(
-            player_id=row['player_id'],
-            team_id=row['team_id'],
-            season=row['season'],
-            depth_position=_row_get(row, 'depth_position'),
-            is_starter=bool(_row_get(row, 'is_starter', 0)),
-            roster_status=_row_get(row, 'roster_status'),
-            fetched_at=_row_get(row, 'fetched_at'),
+            player_id=row["player_id"],
+            team_id=row["team_id"],
+            season=row["season"],
+            depth_position=_row_get(row, "depth_position"),
+            is_starter=bool(_row_get(row, "is_starter", 0)),
+            roster_status=_row_get(row, "roster_status"),
+            fetched_at=_row_get(row, "fetched_at"),
         )
 
 
 @dataclass
 class InjuryReport:
     """ESPN injury report row."""
+
     team_id: int
     player_name: str
     position: str
@@ -453,19 +470,20 @@ class InjuryReport:
     report_date: str
 
     @classmethod
-    def from_row(cls, row) -> 'InjuryReport':
+    def from_row(cls, row) -> "InjuryReport":
         return cls(
-            team_id=row['team_id'],
-            player_name=row['player_name'],
-            position=row['position'],
-            injury_status=row['injury_status'],
-            report_date=row['report_date'],
+            team_id=row["team_id"],
+            player_name=row["player_name"],
+            position=row["position"],
+            injury_status=row["injury_status"],
+            report_date=row["report_date"],
         )
 
 
 @dataclass
 class GameWeather:
     """Open-Meteo weather snapshot for a game (display-only enrichment)."""
+
     home_team_id: int
     game_date: str
     is_dome: bool = False
@@ -478,24 +496,25 @@ class GameWeather:
     game_id: Optional[int] = None
 
     @classmethod
-    def from_row(cls, row) -> 'GameWeather':
+    def from_row(cls, row) -> "GameWeather":
         return cls(
-            home_team_id=row['home_team_id'],
-            game_date=row['game_date'],
-            is_dome=bool(_row_get(row, 'is_dome', 0)),
-            temperature_c=_row_get(row, 'temperature_c'),
-            wind_speed_kmh=_row_get(row, 'wind_speed_kmh'),
-            precipitation_mm=_row_get(row, 'precipitation_mm'),
-            weather_code=_row_get(row, 'weather_code'),
-            condition=_row_get(row, 'condition'),
-            is_adverse=bool(_row_get(row, 'is_adverse', 0)),
-            game_id=_row_get(row, 'game_id'),
+            home_team_id=row["home_team_id"],
+            game_date=row["game_date"],
+            is_dome=bool(_row_get(row, "is_dome", 0)),
+            temperature_c=_row_get(row, "temperature_c"),
+            wind_speed_kmh=_row_get(row, "wind_speed_kmh"),
+            precipitation_mm=_row_get(row, "precipitation_mm"),
+            weather_code=_row_get(row, "weather_code"),
+            condition=_row_get(row, "condition"),
+            is_adverse=bool(_row_get(row, "is_adverse", 0)),
+            game_id=_row_get(row, "game_id"),
         )
 
 
 @dataclass
 class GameOdds:
     """Vegas odds for a game (The Odds API; display-only enrichment)."""
+
     external_game_id: Optional[str] = None
     game_id: Optional[int] = None
     home_team_id: Optional[int] = None
@@ -508,16 +527,16 @@ class GameOdds:
     fetched_at: Optional[str] = None
 
     @classmethod
-    def from_row(cls, row) -> 'GameOdds':
+    def from_row(cls, row) -> "GameOdds":
         return cls(
-            external_game_id=_row_get(row, 'external_game_id'),
-            game_id=_row_get(row, 'game_id'),
-            home_team_id=_row_get(row, 'home_team_id'),
-            away_team_id=_row_get(row, 'away_team_id'),
-            game_date=_row_get(row, 'game_date'),
-            opening_spread=_row_get(row, 'opening_spread'),
-            over_under=_row_get(row, 'over_under'),
-            home_implied_prob=_row_get(row, 'home_implied_prob'),
-            away_implied_prob=_row_get(row, 'away_implied_prob'),
-            fetched_at=_row_get(row, 'fetched_at'),
+            external_game_id=_row_get(row, "external_game_id"),
+            game_id=_row_get(row, "game_id"),
+            home_team_id=_row_get(row, "home_team_id"),
+            away_team_id=_row_get(row, "away_team_id"),
+            game_date=_row_get(row, "game_date"),
+            opening_spread=_row_get(row, "opening_spread"),
+            over_under=_row_get(row, "over_under"),
+            home_implied_prob=_row_get(row, "home_implied_prob"),
+            away_implied_prob=_row_get(row, "away_implied_prob"),
+            fetched_at=_row_get(row, "fetched_at"),
         )

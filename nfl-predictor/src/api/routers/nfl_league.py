@@ -17,7 +17,9 @@ router = APIRouter(tags=["nfl-league"])
 @router.get("/api/nfl-league/{league_id}")
 def get_nfl_league(league_id: str):
     from ...scraper.nfl_fantasy_api import (
-        fetch_league, parse_league_settings, parse_league_rosters,
+        fetch_league,
+        parse_league_settings,
+        parse_league_rosters,
     )
 
     data = fetch_league(league_id)
@@ -25,13 +27,13 @@ def get_nfl_league(league_id: str):
         raise HTTPException(
             status_code=503,
             detail="NFL.com sync unavailable (cookie missing, expired, or the "
-                   "unofficial API changed). Use manual roster import instead.",
+            "unofficial API changed). Use manual roster import instead.",
         )
     settings = parse_league_settings(data)
     if settings is None:
         raise HTTPException(status_code=404, detail="League not found in response")
     return {
-        'settings': settings,
-        'teams': parse_league_rosters(data),
-        'experimental': True,
+        "settings": settings,
+        "teams": parse_league_rosters(data),
+        "experimental": True,
     }

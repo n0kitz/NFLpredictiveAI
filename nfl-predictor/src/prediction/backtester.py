@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class BacktestResult:
     """Result from backtesting a single game."""
+
     game_id: int
     season: int
     week: str
@@ -43,6 +44,7 @@ class BacktestResult:
 @dataclass
 class BacktestReport:
     """Aggregate backtesting report."""
+
     seasons: List[int]
     total_games: int = 0
     correct_predictions: int = 0
@@ -67,31 +69,41 @@ class BacktestReport:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to JSON-serializable dict."""
         return {
-            'seasons': self.seasons,
-            'total_games': self.total_games,
-            'correct_predictions': self.correct_predictions,
-            'accuracy': round(self.accuracy, 4),
-            'by_confidence': {
-                'high': {
-                    'total': self.high_conf_total,
-                    'correct': self.high_conf_correct,
-                    'accuracy': round(self.high_conf_correct / self.high_conf_total, 4) if self.high_conf_total else 0.0,
+            "seasons": self.seasons,
+            "total_games": self.total_games,
+            "correct_predictions": self.correct_predictions,
+            "accuracy": round(self.accuracy, 4),
+            "by_confidence": {
+                "high": {
+                    "total": self.high_conf_total,
+                    "correct": self.high_conf_correct,
+                    "accuracy": (
+                        round(self.high_conf_correct / self.high_conf_total, 4)
+                        if self.high_conf_total
+                        else 0.0
+                    ),
                 },
-                'medium': {
-                    'total': self.medium_conf_total,
-                    'correct': self.medium_conf_correct,
-                    'accuracy': round(self.medium_conf_correct / self.medium_conf_total, 4) if self.medium_conf_total else 0.0,
+                "medium": {
+                    "total": self.medium_conf_total,
+                    "correct": self.medium_conf_correct,
+                    "accuracy": (
+                        round(self.medium_conf_correct / self.medium_conf_total, 4)
+                        if self.medium_conf_total
+                        else 0.0
+                    ),
                 },
-                'low': {
-                    'total': self.low_conf_total,
-                    'correct': self.low_conf_correct,
-                    'accuracy': round(self.low_conf_correct / self.low_conf_total, 4) if self.low_conf_total else 0.0,
+                "low": {
+                    "total": self.low_conf_total,
+                    "correct": self.low_conf_correct,
+                    "accuracy": (
+                        round(self.low_conf_correct / self.low_conf_total, 4)
+                        if self.low_conf_total
+                        else 0.0
+                    ),
                 },
             },
-            'calibration': self.calibration,
-            'season_accuracy': {
-                str(k): v for k, v in self.season_accuracy.items()
-            },
+            "calibration": self.calibration,
+            "season_accuracy": {str(k): v for k, v in self.season_accuracy.items()},
         }
 
 
@@ -99,13 +111,13 @@ class Backtester:
     """Replays historical games to measure prediction engine accuracy."""
 
     CALIBRATION_BUCKETS = [
-        ('50-55%', 0.50, 0.55),
-        ('55-60%', 0.55, 0.60),
-        ('60-65%', 0.60, 0.65),
-        ('65-70%', 0.65, 0.70),
-        ('70-75%', 0.70, 0.75),
-        ('75-80%', 0.75, 0.80),
-        ('80%+', 0.80, 1.01),
+        ("50-55%", 0.50, 0.55),
+        ("55-60%", 0.55, 0.60),
+        ("60-65%", 0.60, 0.65),
+        ("65-70%", 0.65, 0.70),
+        ("70-75%", 0.70, 0.75),
+        ("75-80%", 0.75, 0.80),
+        ("80%+", 0.80, 1.01),
     ]
 
     def __init__(self, db: Database):
@@ -115,7 +127,7 @@ class Backtester:
     def run(
         self,
         seasons: Optional[List[int]] = None,
-        game_type: str = 'regular',
+        game_type: str = "regular",
         use_ml: bool = False,
     ) -> BacktestReport:
         """
@@ -138,7 +150,7 @@ class Backtester:
 
         # Init calibration buckets
         for label, _, _ in self.CALIBRATION_BUCKETS:
-            report.calibration[label] = {'total': 0, 'correct': 0}
+            report.calibration[label] = {"total": 0, "correct": 0}
 
         for season in seasons:
             season_correct = 0
@@ -165,11 +177,11 @@ class Backtester:
                 game_dict = dict(game)
 
                 # Skip tied games (unpredictable)
-                if game_dict.get('winner_id') is None:
+                if game_dict.get("winner_id") is None:
                     continue
 
-                home_team_id = game_dict['home_team_id']
-                away_team_id = game_dict['away_team_id']
+                home_team_id = game_dict["home_team_id"]
+                away_team_id = game_dict["away_team_id"]
 
                 # Get team info
                 home_team = self.db.get_team_by_id(home_team_id)
@@ -177,11 +189,11 @@ class Backtester:
                 if not home_team or not away_team:
                     continue
 
-                home_abbr = home_team['abbreviation']
-                away_abbr = away_team['abbreviation']
+                home_abbr = home_team["abbreviation"]
+                away_abbr = away_team["abbreviation"]
 
                 # Use this game's date as the cutoff so only prior data is used
-                game_date = str(game_dict.get('date', ''))[:10]
+                game_date = str(game_dict.get("date", ""))[:10]
 
                 try:
                     prediction = self.engine.predict(
@@ -195,11 +207,13 @@ class Backtester:
                         use_ml=use_ml,
                     )
                 except Exception as e:
-                    logger.warning(f"Backtest skip game {game_dict.get('game_id')}: {e}")
+                    logger.warning(
+                        f"Backtest skip game {game_dict.get('game_id')}: {e}"
+                    )
                     continue
 
                 # Determine actual winner
-                actual_winner_id = game_dict['winner_id']
+                actual_winner_id = game_dict["winner_id"]
                 if actual_winner_id == home_team_id:
                     actual_winner = prediction.home_team
                 else:
@@ -209,9 +223,9 @@ class Backtester:
                 winner_prob = prediction.predicted_winner_probability
 
                 result = BacktestResult(
-                    game_id=game_dict.get('game_id', 0),
+                    game_id=game_dict.get("game_id", 0),
                     season=season,
-                    week=game_dict.get('week', ''),
+                    week=game_dict.get("week", ""),
                     home_team=home_abbr,
                     away_team=away_abbr,
                     home_prob=prediction.home_win_probability,
@@ -230,11 +244,11 @@ class Backtester:
                 season_total += 1
 
                 # Confidence breakdown
-                if prediction.confidence == 'high':
+                if prediction.confidence == "high":
                     report.high_conf_total += 1
                     if correct:
                         report.high_conf_correct += 1
-                elif prediction.confidence == 'medium':
+                elif prediction.confidence == "medium":
                     report.medium_conf_total += 1
                     if correct:
                         report.medium_conf_correct += 1
@@ -246,17 +260,17 @@ class Backtester:
                 # Calibration buckets
                 for label, lo, hi in self.CALIBRATION_BUCKETS:
                     if lo <= winner_prob < hi:
-                        report.calibration[label]['total'] += 1
+                        report.calibration[label]["total"] += 1
                         if correct:
-                            report.calibration[label]['correct'] += 1
+                            report.calibration[label]["correct"] += 1
                         break
 
             # Per-season stats
             if season_total > 0:
                 report.season_accuracy[season] = {
-                    'total': season_total,
-                    'correct': season_correct,
-                    'accuracy': round(season_correct / season_total, 4),
+                    "total": season_total,
+                    "correct": season_correct,
+                    "accuracy": round(season_correct / season_total, 4),
                 }
 
         if report.total_games > 0:

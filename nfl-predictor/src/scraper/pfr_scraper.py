@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 
 try:
     import cloudscraper
+
     _HAS_CLOUDSCRAPER = True
 except ImportError:
     _HAS_CLOUDSCRAPER = False
@@ -20,16 +21,17 @@ except ImportError:
 from ..database.db import Database, get_database
 from .http import get_with_retry
 from .team_mappings import (
-    TeamMappings, CURRENT_TEAMS, PFR_TEAM_ABBR_MAP,
-    get_team_abbr_for_year
+    TeamMappings,
+    CURRENT_TEAMS,
+    PFR_TEAM_ABBR_MAP,
+    get_team_abbr_for_year,
 )
 
 logger = logging.getLogger(__name__)
 
 # Configure logging format
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
 BASE_URL = "https://www.pro-football-reference.com"
@@ -38,6 +40,7 @@ BASE_URL = "https://www.pro-football-reference.com"
 @dataclass
 class ScrapedGame:
     """Represents a scraped game before database insertion."""
+
     date: str
     season: int
     week: str
@@ -72,11 +75,13 @@ class PFRScraper:
         self._use_cloudscraper = False
 
         self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
-                          'AppleWebKit/537.36 (KHTML, like Gecko) '
-                          'Chrome/120.0.0.0 Safari/537.36'
-        })
+        self.session.headers.update(
+            {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            }
+        )
 
         # Prepare cloudscraper session as fallback
         if _HAS_CLOUDSCRAPER:
@@ -119,23 +124,31 @@ class PFRScraper:
             # immediately so the cloudscraper fallback below still triggers.
             response = get_with_retry(url, timeout=30, session=session)
             response.raise_for_status()
-            return BeautifulSoup(response.text, 'html.parser')
+            return BeautifulSoup(response.text, "html.parser")
         except requests.exceptions.HTTPError as e:
-            if e.response is not None and e.response.status_code == 403 and not self._use_cloudscraper:
+            if (
+                e.response is not None
+                and e.response.status_code == 403
+                and not self._use_cloudscraper
+            ):
                 if self._cs_session is not None:
                     logger.info("Got 403, retrying with cloudscraper...")
                     self._use_cloudscraper = True
                     self._rate_limit_wait()
                     try:
-                        response = get_with_retry(url, timeout=30, session=self._cs_session)
+                        response = get_with_retry(
+                            url, timeout=30, session=self._cs_session
+                        )
                         response.raise_for_status()
-                        return BeautifulSoup(response.text, 'html.parser')
+                        return BeautifulSoup(response.text, "html.parser")
                     except requests.RequestException as e2:
                         logger.error(f"cloudscraper also failed for {url}: {e2}")
                         return None
                 else:
-                    logger.error(f"Got 403 for {url} and cloudscraper is not installed. "
-                                 f"Install it with: pip install cloudscraper")
+                    logger.error(
+                        f"Got 403 for {url} and cloudscraper is not installed. "
+                        f"Install it with: pip install cloudscraper"
+                    )
                     return None
             logger.error(f"Failed to fetch {url}: {e}")
             return None
@@ -165,7 +178,7 @@ class PFRScraper:
                     abbreviation=team.abbreviation,
                     franchise_id=team.franchise_id,
                     active_from=team.active_from,
-                    active_until=team.active_until
+                    active_until=team.active_until,
                 )
                 logger.debug(f"Added team: {team.city} {team.name}")
 
@@ -186,7 +199,7 @@ class PFRScraper:
 
         team = self.db.get_team_by_abbreviation(current_abbr)
         if team:
-            return team['team_id']
+            return team["team_id"]
 
         logger.warning(f"Team not found in database: {current_abbr}")
         return None
@@ -211,21 +224,21 @@ class PFRScraper:
         games = []
 
         # Find the games table
-        table = soup.find('table', {'id': 'games'})
+        table = soup.find("table", {"id": "games"})
         if not table:
             logger.error(f"Could not find games table for season {season}")
             return []
 
-        tbody = table.find('tbody')
+        tbody = table.find("tbody")
         if not tbody:
             logger.error(f"Could not find tbody in games table for season {season}")
             return []
 
-        rows = tbody.find_all('tr')
+        rows = tbody.find_all("tr")
 
         for row in rows:
             # Skip header rows
-            if row.get('class') and 'thead' in row.get('class', []):
+            if row.get("class") and "thead" in row.get("class", []):
                 continue
 
             game = self._parse_game_row(row, season)
@@ -239,7 +252,7 @@ class PFRScraper:
         """Parse a single game row from the schedule table."""
         try:
             # Get week
-            week_cell = row.find('th', {'data-stat': 'week_num'})
+            week_cell = row.find("th", {"data-stat": "week_num"})
             if not week_cell:
                 return None
 
@@ -248,29 +261,29 @@ class PFRScraper:
                 return None
 
             # Determine game type and week
-            game_type = 'regular'
+            game_type = "regular"
             week = week_text
 
-            if week_text in ['WildCard', 'Wild Card']:
-                game_type = 'playoff'
-                week = 'Wild Card'
-            elif week_text in ['Division', 'Divisional']:
-                game_type = 'playoff'
-                week = 'Divisional'
-            elif week_text in ['ConfChamp', 'Conf. Champ.', 'Conference']:
-                game_type = 'playoff'
-                week = 'Conference'
-            elif week_text in ['SuperBowl', 'Super Bowl']:
-                game_type = 'playoff'
-                week = 'Super Bowl'
+            if week_text in ["WildCard", "Wild Card"]:
+                game_type = "playoff"
+                week = "Wild Card"
+            elif week_text in ["Division", "Divisional"]:
+                game_type = "playoff"
+                week = "Divisional"
+            elif week_text in ["ConfChamp", "Conf. Champ.", "Conference"]:
+                game_type = "playoff"
+                week = "Conference"
+            elif week_text in ["SuperBowl", "Super Bowl"]:
+                game_type = "playoff"
+                week = "Super Bowl"
 
             # Get date
-            date_cell = row.find('td', {'data-stat': 'game_date'})
+            date_cell = row.find("td", {"data-stat": "game_date"})
             if not date_cell:
                 return None
 
             date_text = date_cell.get_text(strip=True)
-            if not date_text or date_text == 'Playoffs':
+            if not date_text or date_text == "Playoffs":
                 return None
 
             # Parse date
@@ -281,31 +294,33 @@ class PFRScraper:
                 return None
 
             # Get teams
-            winner_cell = row.find('td', {'data-stat': 'winner'})
-            loser_cell = row.find('td', {'data-stat': 'loser'})
+            winner_cell = row.find("td", {"data-stat": "winner"})
+            loser_cell = row.find("td", {"data-stat": "loser"})
 
             if not winner_cell or not loser_cell:
                 return None
 
-            winner_link = winner_cell.find('a')
-            loser_link = loser_cell.find('a')
+            winner_link = winner_cell.find("a")
+            loser_link = loser_cell.find("a")
 
             if not winner_link or not loser_link:
                 return None
 
-            winner_pfr = self._extract_team_abbr(winner_link.get('href', ''))
-            loser_pfr = self._extract_team_abbr(loser_link.get('href', ''))
+            winner_pfr = self._extract_team_abbr(winner_link.get("href", ""))
+            loser_pfr = self._extract_team_abbr(loser_link.get("href", ""))
 
             if not winner_pfr or not loser_pfr:
                 return None
 
             # Get home/away indicator
-            home_indicator = row.find('td', {'data-stat': 'game_location'})
-            home_indicator_text = home_indicator.get_text(strip=True) if home_indicator else ''
+            home_indicator = row.find("td", {"data-stat": "game_location"})
+            home_indicator_text = (
+                home_indicator.get_text(strip=True) if home_indicator else ""
+            )
 
             # @ means winner was away, empty means winner was home
             # N means neutral site (like Super Bowl)
-            if home_indicator_text == '@':
+            if home_indicator_text == "@":
                 home_team = loser_pfr
                 away_team = winner_pfr
             else:
@@ -313,8 +328,8 @@ class PFRScraper:
                 away_team = loser_pfr
 
             # Get scores
-            winner_score_cell = row.find('td', {'data-stat': 'pts_win'})
-            loser_score_cell = row.find('td', {'data-stat': 'pts_lose'})
+            winner_score_cell = row.find("td", {"data-stat": "pts_win"})
+            loser_score_cell = row.find("td", {"data-stat": "pts_lose"})
 
             winner_score = None
             loser_score = None
@@ -330,7 +345,7 @@ class PFRScraper:
                     loser_score = int(score_text)
 
             # Assign scores to home/away
-            if home_indicator_text == '@':
+            if home_indicator_text == "@":
                 home_score = loser_score
                 away_score = winner_score
             else:
@@ -339,7 +354,7 @@ class PFRScraper:
 
             # Check for overtime
             overtime = False
-            ot_cell = row.find('td', {'data-stat': 'overtime'})
+            ot_cell = row.find("td", {"data-stat": "overtime"})
             if ot_cell and ot_cell.get_text(strip=True):
                 overtime = True
 
@@ -352,7 +367,7 @@ class PFRScraper:
                 away_team_pfr=away_team,
                 home_score=home_score,
                 away_score=away_score,
-                overtime=overtime
+                overtime=overtime,
             )
 
         except Exception as e:
@@ -371,7 +386,7 @@ class PFRScraper:
             ISO format date string (YYYY-MM-DD)
         """
         # Try ISO format first
-        if re.match(r'\d{4}-\d{2}-\d{2}', date_text):
+        if re.match(r"\d{4}-\d{2}-\d{2}", date_text):
             return date_text
 
         # Parse "Month Day" format
@@ -403,7 +418,7 @@ class PFRScraper:
     def _extract_team_abbr(self, href: str) -> Optional[str]:
         """Extract team abbreviation from PFR URL."""
         # URL format: /teams/xxx/yyyy.htm
-        match = re.search(r'/teams/([a-z]{3})/', href)
+        match = re.search(r"/teams/([a-z]{3})/", href)
         if match:
             return match.group(1)
         return None
@@ -455,7 +470,7 @@ class PFRScraper:
                     winner_id=winner_id,
                     venue=game.venue,
                     attendance=game.attendance,
-                    overtime=game.overtime
+                    overtime=game.overtime,
                 )
 
                 if game_id:
@@ -468,8 +483,9 @@ class PFRScraper:
 
         return inserted, skipped
 
-    def scrape_seasons(self, start_year: int = 1990, end_year: int = 2025,
-                       resume: bool = True) -> Dict[str, Any]:
+    def scrape_seasons(
+        self, start_year: int = 1990, end_year: int = 2025, resume: bool = True
+    ) -> Dict[str, Any]:
         """
         Scrape multiple seasons of NFL game data.
 
@@ -484,40 +500,40 @@ class PFRScraper:
         self.initialize_teams()
 
         stats = {
-            'seasons_attempted': 0,
-            'seasons_completed': 0,
-            'games_inserted': 0,
-            'games_skipped': 0,
-            'errors': []
+            "seasons_attempted": 0,
+            "seasons_completed": 0,
+            "games_inserted": 0,
+            "games_skipped": 0,
+            "errors": [],
         }
 
         for season in range(start_year, end_year + 1):
-            stats['seasons_attempted'] += 1
+            stats["seasons_attempted"] += 1
 
             # Check if already completed
             if resume:
-                status = self.db.get_scrape_status(season, 'full')
-                if status == 'completed':
+                status = self.db.get_scrape_status(season, "full")
+                if status == "completed":
                     logger.info(f"Season {season} already scraped, skipping")
-                    stats['seasons_completed'] += 1
+                    stats["seasons_completed"] += 1
                     continue
 
             logger.info(f"Scraping season {season}...")
-            self.db.update_scrape_status(season, 'full', 'in_progress')
+            self.db.update_scrape_status(season, "full", "in_progress")
 
             try:
                 games = self.scrape_season_schedule(season)
 
                 if games:
                     inserted, skipped = self.store_games(games)
-                    stats['games_inserted'] += inserted
-                    stats['games_skipped'] += skipped
+                    stats["games_inserted"] += inserted
+                    stats["games_skipped"] += skipped
 
                     # Calculate season stats
                     self.db.calculate_team_season_stats(season)
 
-                    self.db.update_scrape_status(season, 'full', 'completed')
-                    stats['seasons_completed'] += 1
+                    self.db.update_scrape_status(season, "full", "completed")
+                    stats["seasons_completed"] += 1
                     logger.info(
                         f"Season {season} complete: "
                         f"{inserted} inserted, {skipped} skipped"
@@ -525,14 +541,14 @@ class PFRScraper:
                 else:
                     error_msg = f"No games found for season {season}"
                     logger.error(error_msg)
-                    self.db.update_scrape_status(season, 'full', 'failed', error_msg)
-                    stats['errors'].append(error_msg)
+                    self.db.update_scrape_status(season, "full", "failed", error_msg)
+                    stats["errors"].append(error_msg)
 
             except Exception as e:
                 error_msg = f"Error scraping season {season}: {e}"
                 logger.error(error_msg)
-                self.db.update_scrape_status(season, 'full', 'failed', error_msg)
-                stats['errors'].append(error_msg)
+                self.db.update_scrape_status(season, "full", "failed", error_msg)
+                stats["errors"].append(error_msg)
 
         return stats
 
@@ -550,24 +566,26 @@ class PFRScraper:
         Returns:
             List of ScrapedGame objects
         """
-        soup = BeautifulSoup(html, 'html.parser')
+        soup = BeautifulSoup(html, "html.parser")
 
         games = []
 
-        table = soup.find('table', {'id': 'games'})
+        table = soup.find("table", {"id": "games"})
         if not table:
-            logger.error(f"Could not find games table in provided HTML for season {season}")
+            logger.error(
+                f"Could not find games table in provided HTML for season {season}"
+            )
             return []
 
-        tbody = table.find('tbody')
+        tbody = table.find("tbody")
         if not tbody:
             logger.error(f"Could not find tbody in games table for season {season}")
             return []
 
-        rows = tbody.find_all('tr')
+        rows = tbody.find_all("tr")
 
         for row in rows:
-            if row.get('class') and 'thead' in row.get('class', []):
+            if row.get("class") and "thead" in row.get("class", []):
                 continue
 
             game = self._parse_game_row(row, season)
@@ -585,11 +603,11 @@ class PFRScraper:
         )
 
         return {
-            'completed': completed_count['count'] if completed_count else 0,
-            'incomplete': [dict(row) for row in incomplete],
-            'total_games': self.db.fetchone(
-                "SELECT COUNT(*) as count FROM games"
-            )['count']
+            "completed": completed_count["count"] if completed_count else 0,
+            "incomplete": [dict(row) for row in incomplete],
+            "total_games": self.db.fetchone("SELECT COUNT(*) as count FROM games")[
+                "count"
+            ],
         }
 
 
@@ -597,21 +615,33 @@ def main():
     """Run the scraper as a standalone script."""
     import argparse
 
-    parser = argparse.ArgumentParser(description='Scrape NFL data from Pro Football Reference')
-    parser.add_argument('--start', type=int, default=1990, help='Start year (default: 1990)')
-    parser.add_argument('--end', type=int, default=2025, help='End year (default: 2025)')
-    parser.add_argument('--rate-limit', type=float, default=4.0,
-                        help='Seconds between requests (default: 4.0)')
-    parser.add_argument('--no-resume', action='store_true',
-                        help='Do not skip already-scraped seasons')
-    parser.add_argument('--progress', action='store_true',
-                        help='Show current progress and exit')
-    parser.add_argument('--season', type=int, help='Scrape only a specific season')
+    parser = argparse.ArgumentParser(
+        description="Scrape NFL data from Pro Football Reference"
+    )
     parser.add_argument(
-        '--from-file',
-        metavar='HTML_PATH',
-        help='Parse a locally saved PFR schedule HTML file instead of scraping. '
-             'Use --start to specify the season year.'
+        "--start", type=int, default=1990, help="Start year (default: 1990)"
+    )
+    parser.add_argument(
+        "--end", type=int, default=2025, help="End year (default: 2025)"
+    )
+    parser.add_argument(
+        "--rate-limit",
+        type=float,
+        default=4.0,
+        help="Seconds between requests (default: 4.0)",
+    )
+    parser.add_argument(
+        "--no-resume", action="store_true", help="Do not skip already-scraped seasons"
+    )
+    parser.add_argument(
+        "--progress", action="store_true", help="Show current progress and exit"
+    )
+    parser.add_argument("--season", type=int, help="Scrape only a specific season")
+    parser.add_argument(
+        "--from-file",
+        metavar="HTML_PATH",
+        help="Parse a locally saved PFR schedule HTML file instead of scraping. "
+        "Use --start to specify the season year.",
     )
 
     args = parser.parse_args()
@@ -625,7 +655,7 @@ def main():
             logger.error(f"File not found: {html_path}")
             return
         logger.info(f"Parsing local HTML file for season {season}: {html_path}")
-        html = html_path.read_text(encoding='utf-8')
+        html = html_path.read_text(encoding="utf-8")
         scraper.initialize_teams()
         games = scraper.parse_season_from_html(html, season)
         if games:
@@ -641,9 +671,9 @@ def main():
         print(f"Scraping Progress:")
         print(f"  Completed seasons: {progress['completed']}")
         print(f"  Total games in DB: {progress['total_games']}")
-        if progress['incomplete']:
+        if progress["incomplete"]:
             print(f"  Incomplete:")
-            for item in progress['incomplete']:
+            for item in progress["incomplete"]:
                 print(f"    - {item['season']} week {item['week']}: {item['status']}")
         return
 
@@ -658,20 +688,18 @@ def main():
     else:
         logger.info(f"Scraping seasons {args.start} to {args.end}")
         stats = scraper.scrape_seasons(
-            start_year=args.start,
-            end_year=args.end,
-            resume=not args.no_resume
+            start_year=args.start, end_year=args.end, resume=not args.no_resume
         )
         print("\nScraping Complete!")
         print(f"  Seasons attempted: {stats['seasons_attempted']}")
         print(f"  Seasons completed: {stats['seasons_completed']}")
         print(f"  Games inserted: {stats['games_inserted']}")
         print(f"  Games skipped: {stats['games_skipped']}")
-        if stats['errors']:
+        if stats["errors"]:
             print(f"  Errors: {len(stats['errors'])}")
-            for err in stats['errors'][:5]:
+            for err in stats["errors"][:5]:
                 print(f"    - {err}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -8,10 +8,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Path
 from ..deps import get_db
 from ..helpers import resolve_team, row_to_game, row_to_player_entry
 from ..schemas import (
-    TeamResponse, TeamListResponse,
-    TeamMetricsResponse, TeamProfileResponse, TeamProfileStats,
-    TeamSeasonStatsResponse, GameListResponse, TeamRosterResponse,
-    TeamScheduleEntry, TeamScheduleResponse,
+    TeamResponse,
+    TeamListResponse,
+    TeamMetricsResponse,
+    TeamProfileResponse,
+    TeamProfileStats,
+    TeamSeasonStatsResponse,
+    GameListResponse,
+    TeamRosterResponse,
+    TeamScheduleEntry,
+    TeamScheduleResponse,
 )
 from ...prediction.metrics import calculate_team_metrics
 
@@ -92,11 +98,18 @@ def get_team_profile(identifier: str, db=Depends(get_db)):
     total_al = sum(r["away_losses"] for r in rows)
 
     all_time = TeamProfileStats(
-        wins=total_wins, losses=total_losses, ties=total_ties,
+        wins=total_wins,
+        losses=total_losses,
+        ties=total_ties,
         win_pct=round(total_wins / total_gp, 4) if total_gp else 0.0,
-        games_played=total_gp, points_for=total_pf, points_against=total_pa,
+        games_played=total_gp,
+        points_for=total_pf,
+        points_against=total_pa,
         point_differential=total_pf - total_pa,
-        home_wins=total_hw, home_losses=total_hl, away_wins=total_aw, away_losses=total_al,
+        home_wins=total_hw,
+        home_losses=total_hl,
+        away_wins=total_aw,
+        away_losses=total_al,
         ppg=round(total_pf / total_gp, 1) if total_gp else 0.0,
         papg=round(total_pa / total_gp, 1) if total_gp else 0.0,
     )
@@ -104,12 +117,18 @@ def get_team_profile(identifier: str, db=Depends(get_db)):
     last = rows[0]
     last_gp = last["games_played"]
     last_season = TeamProfileStats(
-        wins=last["wins"], losses=last["losses"], ties=last["ties"],
+        wins=last["wins"],
+        losses=last["losses"],
+        ties=last["ties"],
         win_pct=round(last["win_percentage"], 4),
-        games_played=last_gp, points_for=last["points_for"], points_against=last["points_against"],
+        games_played=last_gp,
+        points_for=last["points_for"],
+        points_against=last["points_against"],
         point_differential=last["point_differential"],
-        home_wins=last["home_wins"], home_losses=last["home_losses"],
-        away_wins=last["away_wins"], away_losses=last["away_losses"],
+        home_wins=last["home_wins"],
+        home_losses=last["home_losses"],
+        away_wins=last["away_wins"],
+        away_losses=last["away_losses"],
         ppg=round(last["points_for"] / last_gp, 1) if last_gp else 0.0,
         papg=round(last["points_against"] / last_gp, 1) if last_gp else 0.0,
     )
@@ -124,24 +143,33 @@ def get_team_profile(identifier: str, db=Depends(get_db)):
     )
 
 
-@router.get("/api/teams/{identifier}/season/{season}", response_model=TeamSeasonStatsResponse)
+@router.get(
+    "/api/teams/{identifier}/season/{season}", response_model=TeamSeasonStatsResponse
+)
 def get_team_season_stats(identifier: str, season: int, db=Depends(get_db)):
     team = resolve_team(db, identifier)
     stats = db.get_team_season_stats(team["team_id"], season)
     if not stats:
-        raise HTTPException(status_code=404, detail=f"No stats for {identifier} in {season}")
+        raise HTTPException(
+            status_code=404, detail=f"No stats for {identifier} in {season}"
+        )
     s = stats[0]
     return TeamSeasonStatsResponse(
         team_id=team["team_id"],
         team_name=f"{team['city']} {team['name']}",
         season=season,
         games_played=s["games_played"],
-        wins=s["wins"], losses=s["losses"], ties=s["ties"],
+        wins=s["wins"],
+        losses=s["losses"],
+        ties=s["ties"],
         win_percentage=round(s["win_percentage"], 4),
-        points_for=s["points_for"], points_against=s["points_against"],
+        points_for=s["points_for"],
+        points_against=s["points_against"],
         point_differential=s["point_differential"],
-        home_wins=s["home_wins"], home_losses=s["home_losses"],
-        away_wins=s["away_wins"], away_losses=s["away_losses"],
+        home_wins=s["home_wins"],
+        home_losses=s["home_losses"],
+        away_wins=s["away_wins"],
+        away_losses=s["away_losses"],
     )
 
 
@@ -172,8 +200,11 @@ def get_team_roster(
     players = [row_to_player_entry(r) for r in rows]
     actual_season = rows[0]["season"] if rows else (season or 0)
     return TeamRosterResponse(
-        team_id=team["team_id"], team_abbr=team["abbreviation"],
-        season=actual_season, players=players, count=len(players),
+        team_id=team["team_id"],
+        team_abbr=team["abbreviation"],
+        season=actual_season,
+        players=players,
+        count=len(players),
     )
 
 
@@ -188,8 +219,11 @@ def get_team_starters(
     players = [row_to_player_entry(r) for r in rows]
     actual_season = rows[0]["season"] if rows else (season or 0)
     return TeamRosterResponse(
-        team_id=team["team_id"], team_abbr=team["abbreviation"],
-        season=actual_season, players=players, count=len(players),
+        team_id=team["team_id"],
+        team_abbr=team["abbreviation"],
+        season=actual_season,
+        players=players,
+        count=len(players),
     )
 
 
@@ -240,13 +274,19 @@ def get_team_upcoming(
         diff = float(opp_stats["avg_diff"] or 0) if opp_stats else 0.0
         difficulty = "hard" if diff >= 7 else "easy" if diff <= -3 else "medium"
 
-        games.append({
-            "game_id": r["game_id"], "date": str(r["date"]),
-            "week": str(r["week"]), "is_home": is_home,
-            "opp_abbr": opp_abbr, "opp_team_id": opp_id,
-            "opp_record": f"{opp_w}-{opp_l}", "opp_diff": round(diff, 1),
-            "difficulty": difficulty,
-        })
+        games.append(
+            {
+                "game_id": r["game_id"],
+                "date": str(r["date"]),
+                "week": str(r["week"]),
+                "is_home": is_home,
+                "opp_abbr": opp_abbr,
+                "opp_team_id": opp_id,
+                "opp_record": f"{opp_w}-{opp_l}",
+                "opp_diff": round(diff, 1),
+                "difficulty": difficulty,
+            }
+        )
 
     return {"team_abbr": team["abbreviation"], "season": season, "games": games}
 
@@ -259,6 +299,7 @@ def get_team_schedule(
 ):
     """Full season schedule for a team — completed games with results + upcoming games."""
     from datetime import datetime as _dt
+
     team = resolve_team(db, identifier)
     tid = team["team_id"]
     if season is None:
@@ -287,7 +328,8 @@ def get_team_schedule(
         is_home = r["home_team_id"] == tid
         opp_abbr = r["away_abbr"] if is_home else r["home_abbr"]
         opp_name_full = (
-            f"{r['away_city']} {r['away_name']}" if is_home
+            f"{r['away_city']} {r['away_name']}"
+            if is_home
             else f"{r['home_city']} {r['home_name']}"
         )
         team_score = r["home_score"] if is_home else r["away_score"]
@@ -320,24 +362,30 @@ def get_team_schedule(
                 gp = (opp_stats["wins"] or 0) + (opp_stats["losses"] or 0)
                 if gp > 0:
                     win_pct = opp_stats["wins"] / gp
-                    difficulty = "hard" if win_pct >= 0.6 else "easy" if win_pct <= 0.4 else "medium"
+                    difficulty = (
+                        "hard"
+                        if win_pct >= 0.6
+                        else "easy" if win_pct <= 0.4 else "medium"
+                    )
 
-        entries.append(TeamScheduleEntry(
-            game_id=r["game_id"],
-            date=str(r["date"])[:10],
-            week=str(r["week"]),
-            game_type=r["game_type"],
-            is_home=is_home,
-            opp_abbr=opp_abbr,
-            opp_name=opp_name_full,
-            home_score=r["home_score"],
-            away_score=r["away_score"],
-            team_score=team_score,
-            opp_score=opp_score,
-            result=result,
-            overtime=bool(r["overtime"]),
-            difficulty=difficulty,
-        ))
+        entries.append(
+            TeamScheduleEntry(
+                game_id=r["game_id"],
+                date=str(r["date"])[:10],
+                week=str(r["week"]),
+                game_type=r["game_type"],
+                is_home=is_home,
+                opp_abbr=opp_abbr,
+                opp_name=opp_name_full,
+                home_score=r["home_score"],
+                away_score=r["away_score"],
+                team_score=team_score,
+                opp_score=opp_score,
+                result=result,
+                overtime=bool(r["overtime"]),
+                difficulty=difficulty,
+            )
+        )
 
     return TeamScheduleResponse(
         team_id=tid,
@@ -345,5 +393,7 @@ def get_team_schedule(
         team_name=f"{team['city']} {team['name']}",
         season=season,
         games=entries,
-        wins=wins, losses=losses, ties=ties,
+        wins=wins,
+        losses=losses,
+        ties=ties,
     )

@@ -8,32 +8,38 @@ logger = logging.getLogger(__name__)
 # Columns to pull from the play-by-play endpoint — everything else is discarded
 # immediately to keep memory usage low.
 _PBP_COLS = [
-    'game_id', 'season', 'season_type',
-    'posteam', 'defteam',
-    'play_type',
-    'yards_gained',
-    'pass_attempt', 'rush_attempt',
-    'sack',
-    'third_down_converted', 'third_down_failed',
-    'yardline_100', 'touchdown',
-    'interception',
-    'fumble_lost',
+    "game_id",
+    "season",
+    "season_type",
+    "posteam",
+    "defteam",
+    "play_type",
+    "yards_gained",
+    "pass_attempt",
+    "rush_attempt",
+    "sack",
+    "third_down_converted",
+    "third_down_failed",
+    "yardline_100",
+    "touchdown",
+    "interception",
+    "fumble_lost",
 ]
 
 # nfl-data-py uses nflverse abbreviations which differ from ours in several cases.
 # Map nflverse → search term passed to db.find_team().
 # Only entries that differ are listed; everything else is pass-through.
 _NFL_DATA_TO_OUR: Dict[str, str] = {
-    'LA':  'LAR',   # Los Angeles Rams (nflverse "LA", our DB "LAR")
-    'JAC': 'JAX',   # Jacksonville Jaguars (nflverse "JAC", our DB "JAX")
+    "LA": "LAR",  # Los Angeles Rams (nflverse "LA", our DB "LAR")
+    "JAC": "JAX",  # Jacksonville Jaguars (nflverse "JAC", our DB "JAX")
     # Historical teams map to their historical abbreviations in our DB
-    'OAK': 'OAK',   # Oakland Raiders (in our DB as historical team)
-    'STL': 'STL',   # St. Louis Rams
-    'SD':  'SD',    # San Diego Chargers
+    "OAK": "OAK",  # Oakland Raiders (in our DB as historical team)
+    "STL": "STL",  # St. Louis Rams
+    "SD": "SD",  # San Diego Chargers
     # These are identical but listed explicitly for documentation
-    'LV':  'LV',
-    'LAC': 'LAC',
-    'WAS': 'WAS',   # Washington (all eras use 'WAS' in nflverse)
+    "LV": "LV",
+    "LAC": "LAC",
+    "WAS": "WAS",  # Washington (all eras use 'WAS' in nflverse)
 }
 
 
@@ -62,7 +68,7 @@ def import_qb_epa(years: List[int]) -> List[Dict[str, Any]]:
             "nfl_data_py is not installed. Run: pip install nfl-data-py"
         ) from exc
 
-    _EPA_COLS = ['game_id', 'season', 'season_type', 'posteam', 'play_type', 'qb_epa']
+    _EPA_COLS = ["game_id", "season", "season_type", "posteam", "play_type", "qb_epa"]
     results: List[Dict[str, Any]] = []
 
     for year in years:
@@ -74,29 +80,31 @@ def import_qb_epa(years: List[int]) -> List[Dict[str, Any]]:
             continue
 
         reg = pbp[
-            (pbp['season_type'] == 'REG') &
-            (pbp['play_type'] == 'pass') &
-            pbp['qb_epa'].notna() &
-            pbp['posteam'].notna() &
-            (pbp['posteam'] != '')
+            (pbp["season_type"] == "REG")
+            & (pbp["play_type"] == "pass")
+            & pbp["qb_epa"].notna()
+            & pbp["posteam"].notna()
+            & (pbp["posteam"] != "")
         ].copy()
 
         if reg.empty:
             logger.warning("No REG pass plays with qb_epa for %s", year)
             continue
 
-        for team, group in reg.groupby('posteam'):
-            epa_mean = float(group['qb_epa'].mean())
+        for team, group in reg.groupby("posteam"):
+            epa_mean = float(group["qb_epa"].mean())
             count = int(len(group))
-            results.append({
-                'season':          year,
-                'nfl_abbr':        team,
-                'our_abbr':        _to_our_abbr(team),
-                'qb_epa_per_play': round(epa_mean, 4),
-                'pass_play_count': count,
-            })
+            results.append(
+                {
+                    "season": year,
+                    "nfl_abbr": team,
+                    "our_abbr": _to_our_abbr(team),
+                    "qb_epa_per_play": round(epa_mean, 4),
+                    "pass_play_count": count,
+                }
+            )
 
-        logger.info("  → QB EPA: %d teams for %s", len(reg['posteam'].unique()), year)
+        logger.info("  → QB EPA: %d teams for %s", len(reg["posteam"].unique()), year)
 
     return results
 
@@ -124,7 +132,7 @@ def import_player_season_stats(years: List[int]) -> List[Dict[str, Any]]:
         ) from exc
 
     try:
-        df_stats = nfl.import_seasonal_data(years, s_type='REG')
+        df_stats = nfl.import_seasonal_data(years, s_type="REG")
     except Exception as exc:
         logger.warning("Failed to fetch seasonal data: %s", exc)
         return []
@@ -134,61 +142,68 @@ def import_player_season_stats(years: List[int]) -> List[Dict[str, Any]]:
     # per (player_id, season) by keeping the last (highest) week.
     try:
         df_roster = nfl.import_seasonal_rosters(years)
-        df_roster = (
-            df_roster
-            .sort_values('week', na_position='last')
-            .drop_duplicates(subset=['player_id', 'season'], keep='last')
+        df_roster = df_roster.sort_values("week", na_position="last").drop_duplicates(
+            subset=["player_id", "season"], keep="last"
         )
         # Build full name: prefer player_name field; fall back to first+last.
-        df_roster['_full_name'] = df_roster['player_name'].fillna('')
-        mask_empty = df_roster['_full_name'].str.strip() == ''
-        df_roster.loc[mask_empty, '_full_name'] = (
-            df_roster.loc[mask_empty, 'first_name'].fillna('') + ' '
-            + df_roster.loc[mask_empty, 'last_name'].fillna('')
+        df_roster["_full_name"] = df_roster["player_name"].fillna("")
+        mask_empty = df_roster["_full_name"].str.strip() == ""
+        df_roster.loc[mask_empty, "_full_name"] = (
+            df_roster.loc[mask_empty, "first_name"].fillna("")
+            + " "
+            + df_roster.loc[mask_empty, "last_name"].fillna("")
         ).str.strip()
         df = df_stats.merge(
-            df_roster[['player_id', 'season', '_full_name', 'position', 'team']],
-            on=['player_id', 'season'],
-            how='left',
+            df_roster[["player_id", "season", "_full_name", "position", "team"]],
+            on=["player_id", "season"],
+            how="left",
         )
         logger.info(
             "Merged %d stat rows with %d roster rows for years %s",
-            len(df_stats), len(df_roster), years,
+            len(df_stats),
+            len(df_roster),
+            years,
         )
     except Exception as exc:
         logger.warning("Roster merge failed: %s — name/team fields will be empty", exc)
         df = df_stats
-        df['_full_name'] = ''
-        df['position'] = ''
-        df['team'] = ''
+        df["_full_name"] = ""
+        df["position"] = ""
+        df["team"] = ""
 
     results: List[Dict[str, Any]] = []
     for _, row in df.iterrows():
         try:
-            full_name = str(row.get('_full_name', '') or '').strip()
-            team_raw  = str(row.get('team', '') or '').strip()
-            position  = str(row.get('position', '') or '').strip()
-            results.append({
-                'full_name':             full_name,
-                'position':              position,
-                'team_abbr':             _to_our_abbr(team_raw) if team_raw else '',
-                'season':                int(row.get('season', 0)),
-                'games':                 int(row.get('games', 0) or 0),
-                'completions':           int(row.get('completions', 0) or 0),
-                'attempts':              int(row.get('attempts', 0) or 0),
-                'passing_yards':         int(row.get('passing_yards', 0) or 0),
-                'passing_tds':           int(row.get('passing_tds', 0) or 0),
-                'interceptions':         int(row.get('interceptions', 0) or 0),
-                'carries':               int(row.get('carries', 0) or 0),
-                'rushing_yards':         int(row.get('rushing_yards', 0) or 0),
-                'rushing_tds':           int(row.get('rushing_tds', 0) or 0),
-                'targets':               int(row.get('targets', 0) or 0),
-                'receptions':            int(row.get('receptions', 0) or 0),
-                'receiving_yards':       int(row.get('receiving_yards', 0) or 0),
-                'receiving_tds':         int(row.get('receiving_tds', 0) or 0),
-                'fantasy_points_ppr':    float(row.get('fantasy_points_ppr', 0.0) or 0.0),
-                'fantasy_points_standard': float(row.get('fantasy_points', 0.0) or 0.0),
-            })
+            full_name = str(row.get("_full_name", "") or "").strip()
+            team_raw = str(row.get("team", "") or "").strip()
+            position = str(row.get("position", "") or "").strip()
+            results.append(
+                {
+                    "full_name": full_name,
+                    "position": position,
+                    "team_abbr": _to_our_abbr(team_raw) if team_raw else "",
+                    "season": int(row.get("season", 0)),
+                    "games": int(row.get("games", 0) or 0),
+                    "completions": int(row.get("completions", 0) or 0),
+                    "attempts": int(row.get("attempts", 0) or 0),
+                    "passing_yards": int(row.get("passing_yards", 0) or 0),
+                    "passing_tds": int(row.get("passing_tds", 0) or 0),
+                    "interceptions": int(row.get("interceptions", 0) or 0),
+                    "carries": int(row.get("carries", 0) or 0),
+                    "rushing_yards": int(row.get("rushing_yards", 0) or 0),
+                    "rushing_tds": int(row.get("rushing_tds", 0) or 0),
+                    "targets": int(row.get("targets", 0) or 0),
+                    "receptions": int(row.get("receptions", 0) or 0),
+                    "receiving_yards": int(row.get("receiving_yards", 0) or 0),
+                    "receiving_tds": int(row.get("receiving_tds", 0) or 0),
+                    "fantasy_points_ppr": float(
+                        row.get("fantasy_points_ppr", 0.0) or 0.0
+                    ),
+                    "fantasy_points_standard": float(
+                        row.get("fantasy_points", 0.0) or 0.0
+                    ),
+                }
+            )
         except Exception:
             continue
 
@@ -219,9 +234,16 @@ def import_weekly_qb_starts(db, seasons: List[int]) -> int:
         ) from exc
 
     _WEEKLY_COLS = [
-        'game_id', 'season', 'week', 'season_type',
-        'posteam', 'passer_player_name',
-        'play_type', 'qb_epa', 'pass_attempt', 'sack',
+        "game_id",
+        "season",
+        "week",
+        "season_type",
+        "posteam",
+        "passer_player_name",
+        "play_type",
+        "qb_epa",
+        "pass_attempt",
+        "sack",
     ]
 
     total_inserted = 0
@@ -236,11 +258,11 @@ def import_weekly_qb_starts(db, seasons: List[int]) -> int:
 
         # REG season plays where a passer is identified
         reg = pbp[
-            (pbp['season_type'] == 'REG') &
-            pbp['posteam'].notna() &
-            (pbp['posteam'] != '') &
-            pbp['passer_player_name'].notna() &
-            (pbp['passer_player_name'] != '')
+            (pbp["season_type"] == "REG")
+            & pbp["posteam"].notna()
+            & (pbp["posteam"] != "")
+            & pbp["passer_player_name"].notna()
+            & (pbp["passer_player_name"] != "")
         ].copy()
 
         if reg.empty:
@@ -249,28 +271,28 @@ def import_weekly_qb_starts(db, seasons: List[int]) -> int:
 
         rows_this_year = 0
 
-        for (week, team_abbr), game_plays in reg.groupby(['week', 'posteam']):
+        for (week, team_abbr), game_plays in reg.groupby(["week", "posteam"]):
             # Starter = QB with most pass attempts in this game
             attempt_counts = (
-                game_plays[game_plays['pass_attempt'] == 1]
-                .groupby('passer_player_name')['pass_attempt']
+                game_plays[game_plays["pass_attempt"] == 1]
+                .groupby("passer_player_name")["pass_attempt"]
                 .count()
             )
             if attempt_counts.empty:
                 continue
 
             starter_name = str(attempt_counts.idxmax())
-            snap_count   = int(attempt_counts.max())
+            snap_count = int(attempt_counts.max())
 
             # EPA per play for starter (all plays where qb_epa is available)
             starter_plays = game_plays[
-                (game_plays['passer_player_name'] == starter_name) &
-                game_plays['qb_epa'].notna()
+                (game_plays["passer_player_name"] == starter_name)
+                & game_plays["qb_epa"].notna()
             ]
             if starter_plays.empty:
                 continue
 
-            epa_per_play = round(float(starter_plays['qb_epa'].mean()), 4)
+            epa_per_play = round(float(starter_plays["qb_epa"].mean()), 4)
 
             our_abbr = _to_our_abbr(str(team_abbr))
             team_row = db.find_team(our_abbr) or db.find_team(str(team_abbr))
@@ -288,8 +310,14 @@ def import_weekly_qb_starts(db, seasons: List[int]) -> int:
                     epa_per_play = excluded.epa_per_play,
                     snap_count   = excluded.snap_count
                 """,
-                (team_row['team_id'], int(year), int(week),
-                 starter_name, epa_per_play, snap_count),
+                (
+                    team_row["team_id"],
+                    int(year),
+                    int(week),
+                    starter_name,
+                    epa_per_play,
+                    snap_count,
+                ),
             )
             rows_this_year += 1
 
@@ -335,60 +363,61 @@ def fetch_team_advanced_stats(years: List[int]) -> List[Dict[str, Any]]:
 
         # Regular season only, plays that have a possessing team
         reg = pbp[
-            (pbp['season_type'] == 'REG') &
-            pbp['posteam'].notna() &
-            (pbp['posteam'] != '')
+            (pbp["season_type"] == "REG")
+            & pbp["posteam"].notna()
+            & (pbp["posteam"] != "")
         ].copy()
 
         if reg.empty:
             logger.warning("No regular-season plays found for %s", year)
             continue
 
-        teams = sorted(reg['posteam'].dropna().unique())
+        teams = sorted(reg["posteam"].dropna().unique())
 
         for team in teams:
-            off = reg[reg['posteam'] == team]   # plays where team had ball
-            dfn = reg[reg['defteam'] == team]   # plays where team was on defense
+            off = reg[reg["posteam"] == team]  # plays where team had ball
+            dfn = reg[reg["defteam"] == team]  # plays where team was on defense
 
             # ── Yards per play (offense) ──────────────────────────────────
-            scrimmage = off[off['play_type'].isin(['pass', 'run'])]
-            ypp = float(scrimmage['yards_gained'].mean()) if len(scrimmage) > 0 else 5.5
+            scrimmage = off[off["play_type"].isin(["pass", "run"])]
+            ypp = float(scrimmage["yards_gained"].mean()) if len(scrimmage) > 0 else 5.5
 
             # ── Third-down conversion rate ────────────────────────────────
-            td3_conv  = int(off['third_down_converted'].sum())
-            td3_fail  = int(off['third_down_failed'].sum())
+            td3_conv = int(off["third_down_converted"].sum())
+            td3_fail = int(off["third_down_failed"].sum())
             td3_total = td3_conv + td3_fail
             third_down_pct = td3_conv / td3_total if td3_total > 0 else 0.38
 
             # ── Red-zone efficiency (TD% on scrimmage plays inside opp 20) ─
             rz = off[
-                (off['yardline_100'] <= 20) &
-                off['play_type'].isin(['pass', 'run'])
+                (off["yardline_100"] <= 20) & off["play_type"].isin(["pass", "run"])
             ]
-            rz_tds  = int(rz['touchdown'].sum())
+            rz_tds = int(rz["touchdown"].sum())
             rz_plays = len(rz)
-            rz_eff   = rz_tds / rz_plays if rz_plays > 0 else 0.0
+            rz_eff = rz_tds / rz_plays if rz_plays > 0 else 0.0
 
             # ── Turnovers ─────────────────────────────────────────────────
-            giveaways = int(off['interception'].sum()) + int(off['fumble_lost'].sum())
-            takeaways = int(dfn['interception'].sum()) + int(dfn['fumble_lost'].sum())
+            giveaways = int(off["interception"].sum()) + int(off["fumble_lost"].sum())
+            takeaways = int(dfn["interception"].sum()) + int(dfn["fumble_lost"].sum())
             turnover_margin = takeaways - giveaways
 
             # ── Sack rate allowed (sacks taken per dropback) ──────────────
-            sacks_taken = int(off['sack'].sum())
-            dropbacks   = int(off['pass_attempt'].sum()) + sacks_taken
-            sack_rate   = sacks_taken / dropbacks if dropbacks > 0 else 0.07
+            sacks_taken = int(off["sack"].sum())
+            dropbacks = int(off["pass_attempt"].sum()) + sacks_taken
+            sack_rate = sacks_taken / dropbacks if dropbacks > 0 else 0.07
 
-            all_results.append({
-                'season':             year,
-                'nfl_abbr':           team,
-                'our_abbr':           _to_our_abbr(team),
-                'turnover_margin':    float(turnover_margin),
-                'third_down_pct':     round(third_down_pct, 4),
-                'redzone_efficiency': round(rz_eff, 4),
-                'yards_per_play':     round(ypp, 4),
-                'sack_rate_allowed':  round(sack_rate, 4),
-            })
+            all_results.append(
+                {
+                    "season": year,
+                    "nfl_abbr": team,
+                    "our_abbr": _to_our_abbr(team),
+                    "turnover_margin": float(turnover_margin),
+                    "third_down_pct": round(third_down_pct, 4),
+                    "redzone_efficiency": round(rz_eff, 4),
+                    "yards_per_play": round(ypp, 4),
+                    "sack_rate_allowed": round(sack_rate, 4),
+                }
+            )
 
         logger.info("  → %d teams processed for %s", len(teams), year)
 

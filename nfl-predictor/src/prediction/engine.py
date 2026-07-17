@@ -7,17 +7,27 @@ from typing import Optional, List, Tuple, Dict, Any
 from ..database.db import Database, get_database
 from ..database.models import Prediction, GameFactor
 from .metrics import (
-    TeamMetrics, calculate_team_metrics, calculate_head_to_head,
-    calculate_form_rating, calculate_strength_rating
+    TeamMetrics,
+    calculate_team_metrics,
+    calculate_head_to_head,
+    calculate_form_rating,
+    calculate_strength_rating,
 )
 from .factors import apply_game_factors, FactorAdjuster
 from .feature_builder import (
-    build_feature_vector, feature_dict_to_array, _parse_week, FEATURE_NAMES,
+    build_feature_vector,
+    feature_dict_to_array,
+    _parse_week,
+    FEATURE_NAMES,
     get_rolling_starter_qb_epa,
 )
 from .ml_model import (
-    load_model, predict_with_ml, MODEL_PATH,
-    load_spread_model, predict_spread, SPREAD_MODEL_PATH,
+    load_model,
+    predict_with_ml,
+    MODEL_PATH,
+    load_spread_model,
+    predict_spread,
+    SPREAD_MODEL_PATH,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,6 +71,7 @@ class PredictionEngine:
         self._spread_model = load_spread_model()
         # Pre-warm SHAP explainer (cheap once created; None if ML unavailable)
         from .explainer import get_explainer
+
         self._explainer = get_explainer(self._ml_model)
 
     def predict(
@@ -97,8 +108,8 @@ class PredictionEngine:
         if not away:
             raise ValueError(f"Away team not found: {away_team}")
 
-        home_id = home['team_id']
-        away_id = away['team_id']
+        home_id = home["team_id"]
+        away_id = away["team_id"]
         home_name = f"{home['city']} {home['name']}"
         away_name = f"{away['city']} {away['name']}"
 
@@ -107,12 +118,14 @@ class PredictionEngine:
 
         # Calculate metrics for both teams
         home_metrics = calculate_team_metrics(
-            self.db, home_id,
+            self.db,
+            home_id,
             current_season=current_season,
             cutoff_date=cutoff_date,
         )
         away_metrics = calculate_team_metrics(
-            self.db, away_id,
+            self.db,
+            away_id,
             current_season=current_season,
             cutoff_date=cutoff_date,
         )
@@ -124,9 +137,11 @@ class PredictionEngine:
             _odds_row = self.db.get_odds_for_teams(home_id, away_id, _today)
         except Exception:
             pass
-        vegas_implied_prob = float(_odds_row["home_implied_prob"]) if (
-            _odds_row and _odds_row["home_implied_prob"] is not None
-        ) else 0.5
+        vegas_implied_prob = (
+            float(_odds_row["home_implied_prob"])
+            if (_odds_row and _odds_row["home_implied_prob"] is not None)
+            else 0.5
+        )
 
         # Calculate base win probability.
         # ML is only used when explicitly requested AND the model is loaded.
@@ -137,15 +152,21 @@ class PredictionEngine:
                 home_metrics, away_metrics, h2h_data
             )
             ml_prob, _, ml_factors = self._calculate_ml_probability(
-                home_metrics, away_metrics, home_id, away_id,
-                is_playoff=is_playoff, week=week,
+                home_metrics,
+                away_metrics,
+                home_id,
+                away_id,
+                is_playoff=is_playoff,
+                week=week,
                 vegas_implied_prob=vegas_implied_prob,
                 h2h_data=h2h_data,
                 season=current_season,
             )
             home_prob = round(0.60 * ws_prob + 0.40 * ml_prob, 4)
             away_prob = 1.0 - home_prob
-            key_factors = [f"Model: Ensemble (60% weighted-sum + 40% ML)"] + ws_factors[1:]
+            key_factors = [f"Model: Ensemble (60% weighted-sum + 40% ML)"] + ws_factors[
+                1:
+            ]
         elif use_ml:
             if not self._use_ml:
                 raise RuntimeError(
@@ -154,8 +175,12 @@ class PredictionEngine:
                     "numpy/pickle compatibility errors."
                 )
             home_prob, away_prob, key_factors = self._calculate_ml_probability(
-                home_metrics, away_metrics, home_id, away_id,
-                is_playoff=is_playoff, week=week,
+                home_metrics,
+                away_metrics,
+                home_id,
+                away_id,
+                is_playoff=is_playoff,
+                week=week,
                 vegas_implied_prob=vegas_implied_prob,
                 h2h_data=h2h_data,
                 season=current_season,
@@ -172,16 +197,25 @@ class PredictionEngine:
                 _week_int = _parse_week(week)
                 _season = current_season or 0
                 _home_roll = get_rolling_starter_qb_epa(
-                    self.db, home_id, before_week=_week_int, season=_season,
+                    self.db,
+                    home_id,
+                    before_week=_week_int,
+                    season=_season,
                     fallback=home_metrics.qb_epa_per_play,
                 )
                 _away_roll = get_rolling_starter_qb_epa(
-                    self.db, away_id, before_week=_week_int, season=_season,
+                    self.db,
+                    away_id,
+                    before_week=_week_int,
+                    season=_season,
                     fallback=away_metrics.qb_epa_per_play,
                 )
                 feat_dict_spread = build_feature_vector(
-                    home_metrics, away_metrics, h2h_data,
-                    is_playoff=is_playoff, week=week,
+                    home_metrics,
+                    away_metrics,
+                    h2h_data,
+                    is_playoff=is_playoff,
+                    week=week,
                     vegas_implied_prob=vegas_implied_prob,
                     home_starter_qb_epa=_home_roll,
                     away_starter_qb_epa=_away_roll,
@@ -219,22 +253,22 @@ class PredictionEngine:
         """Return metadata about the prediction model configuration."""
         return {
             # Legacy field — kept for backward compat
-            "model_type":                 "weighted_sum",
+            "model_type": "weighted_sum",
             # Active default is always weighted-sum; ML requires use_ml=True
-            "active_model":               "weighted_sum",
-            "ml_model_loaded":            self._use_ml,
-            "ml_available":               self._ml_model is not None,
-            "ensemble_available":         self._use_ml,
+            "active_model": "weighted_sum",
+            "ml_model_loaded": self._use_ml,
+            "ml_available": self._ml_model is not None,
+            "ensemble_available": self._use_ml,
             # Use FEATURE_NAMES as the canonical source (34 after vegas removal)
-            "feature_count":              len(FEATURE_NAMES),
-            "model_file_exists":          MODEL_PATH.exists(),
-            "ml_oos_accuracy":            0.668 if self._use_ml else None,
-            "weighted_sum_oos_accuracy":  0.672,
-            "ensemble_oos_accuracy":      None,  # updated after retrain + eval
-            "recommendation":             "weighted_sum performs better on 2023-2024 OOS data",
-            "spread_model_loaded":        self._spread_model is not None,
-            "spread_model_mae":           None,  # updated after retrain
-            "vegas_feature_removed":      True,
+            "feature_count": len(FEATURE_NAMES),
+            "model_file_exists": MODEL_PATH.exists(),
+            "ml_oos_accuracy": 0.668 if self._use_ml else None,
+            "weighted_sum_oos_accuracy": 0.672,
+            "ensemble_oos_accuracy": None,  # updated after retrain + eval
+            "recommendation": "weighted_sum performs better on 2023-2024 OOS data",
+            "spread_model_loaded": self._spread_model is not None,
+            "spread_model_mae": None,  # updated after retrain
+            "vegas_feature_removed": True,
         }
 
     def explain_prediction(
@@ -266,11 +300,16 @@ class PredictionEngine:
 
             home_metrics = calculate_team_metrics(self.db, home["team_id"])
             away_metrics = calculate_team_metrics(self.db, away["team_id"])
-            h2h = calculate_head_to_head(self.db, home["team_id"], away["team_id"], limit=10)
+            h2h = calculate_head_to_head(
+                self.db, home["team_id"], away["team_id"], limit=10
+            )
 
             return generate_shap_explanation(
-                home_metrics, away_metrics, h2h,
-                is_playoff=is_playoff, week=week,
+                home_metrics,
+                away_metrics,
+                h2h,
+                is_playoff=is_playoff,
+                week=week,
                 model=self._ml_model,
                 feature_names=self._ml_features,
             )
@@ -302,18 +341,27 @@ class PredictionEngine:
         week_int = _parse_week(week)
         _season = season or 0
         home_roll_epa = get_rolling_starter_qb_epa(
-            self.db, home_id, before_week=week_int, season=_season,
+            self.db,
+            home_id,
+            before_week=week_int,
+            season=_season,
             fallback=home_metrics.qb_epa_per_play,
         )
         away_roll_epa = get_rolling_starter_qb_epa(
-            self.db, away_id, before_week=week_int, season=_season,
+            self.db,
+            away_id,
+            before_week=week_int,
+            season=_season,
             fallback=away_metrics.qb_epa_per_play,
         )
 
         # --- Build feature vector (use pre-computed h2h_data from predict()) ---
         feat_dict = build_feature_vector(
-            home_metrics, away_metrics, h2h_data or {},
-            is_playoff=is_playoff, week=week,
+            home_metrics,
+            away_metrics,
+            h2h_data or {},
+            is_playoff=is_playoff,
+            week=week,
             vegas_implied_prob=vegas_implied_prob,
             home_starter_qb_epa=home_roll_epa,
             away_starter_qb_epa=away_roll_epa,
@@ -408,10 +456,8 @@ class PredictionEngine:
         home_win_pct = home_metrics.weighted_win_pct
         away_win_pct = away_metrics.weighted_win_pct
 
-        win_pct_component = self._normalize_to_probability(
-            home_win_pct, away_win_pct
-        )
-        components.append(('win_pct', win_pct_component, 0.15))
+        win_pct_component = self._normalize_to_probability(home_win_pct, away_win_pct)
+        components.append(("win_pct", win_pct_component, 0.15))
 
         key_factors.append(
             f"{home_metrics.team_abbr}: {home_metrics.current_season_wins}-"
@@ -431,14 +477,14 @@ class PredictionEngine:
         strength_component = self._normalize_to_probability(
             home_strength, away_strength
         )
-        components.append(('strength', strength_component, 0.15))
+        components.append(("strength", strength_component, 0.15))
 
         # 3. Recent form (15%)
         home_form = calculate_form_rating(home_metrics)
         away_form = calculate_form_rating(away_metrics)
 
         form_component = self._normalize_to_probability(home_form, away_form)
-        components.append(('form', form_component, 0.15))
+        components.append(("form", form_component, 0.15))
 
         recent_total_home = home_metrics.recent_wins + home_metrics.recent_losses
         recent_total_away = away_metrics.recent_wins + away_metrics.recent_losses
@@ -455,7 +501,7 @@ class PredictionEngine:
         away_sos = away_metrics.strength_of_schedule
 
         sos_component = self._normalize_to_probability(home_sos, away_sos)
-        components.append(('sos', sos_component, 0.15))
+        components.append(("sos", sos_component, 0.15))
 
         key_factors.append(
             f"SOS: {home_metrics.team_abbr} {home_sos:.3f}, "
@@ -466,10 +512,8 @@ class PredictionEngine:
         home_at_home = home_metrics.home_win_pct
         away_on_road = away_metrics.away_win_pct
 
-        split_component = self._normalize_to_probability(
-            home_at_home, away_on_road
-        )
-        components.append(('splits', split_component, 0.15))
+        split_component = self._normalize_to_probability(home_at_home, away_on_road)
+        components.append(("splits", split_component, 0.15))
 
         home_games = home_metrics.home_wins + home_metrics.home_losses
         if home_games > 0:
@@ -497,8 +541,10 @@ class PredictionEngine:
                 + away_metrics.third_down_pct * 0.2
                 + away_metrics.redzone_efficiency * 0.1
             )
-            adv_component = self._normalize_to_probability(home_adv_score, away_adv_score)
-            components.append(('advanced', adv_component, 0.15))
+            adv_component = self._normalize_to_probability(
+                home_adv_score, away_adv_score
+            )
+            components.append(("advanced", adv_component, 0.15))
 
             key_factors.append(
                 f"Turnover margin: {home_metrics.team_abbr} "
@@ -508,24 +554,26 @@ class PredictionEngine:
         else:
             # No advanced data — redistribute 15% to win_pct
             components = [
-                (name, prob, weight + 0.15) if name == 'win_pct' else (name, prob, weight)
+                (
+                    (name, prob, weight + 0.15)
+                    if name == "win_pct"
+                    else (name, prob, weight)
+                )
                 for name, prob, weight in components
             ]
 
         # 7. Head-to-head record (10%)
         h2h = h2h_data
-        if h2h['total_games'] >= 2:
-            if h2h['total_games'] > 0:
-                h2h_home_pct = h2h['team1_wins'] / h2h['total_games']
-                h2h_away_pct = h2h['team2_wins'] / h2h['total_games']
+        if h2h["total_games"] >= 2:
+            if h2h["total_games"] > 0:
+                h2h_home_pct = h2h["team1_wins"] / h2h["total_games"]
+                h2h_away_pct = h2h["team2_wins"] / h2h["total_games"]
             else:
                 h2h_home_pct = 0.5
                 h2h_away_pct = 0.5
 
-            h2h_component = self._normalize_to_probability(
-                h2h_home_pct, h2h_away_pct
-            )
-            components.append(('h2h', h2h_component, 0.10))
+            h2h_component = self._normalize_to_probability(h2h_home_pct, h2h_away_pct)
+            components.append(("h2h", h2h_component, 0.10))
 
             key_factors.append(
                 f"Head-to-head (last {h2h['total_games']}): "
@@ -534,7 +582,11 @@ class PredictionEngine:
         else:
             # Redistribute H2H weight (10%) to win_pct component
             components = [
-                (name, prob, weight + 0.10) if name == 'win_pct' else (name, prob, weight)
+                (
+                    (name, prob, weight + 0.10)
+                    if name == "win_pct"
+                    else (name, prob, weight)
+                )
                 for name, prob, weight in components
             ]
 
@@ -554,14 +606,10 @@ class PredictionEngine:
         away_rest = away_metrics.rest_days
         if home_rest >= 10 and away_rest <= 8:
             home_prob += 0.015
-            key_factors.append(
-                f"{home_metrics.team_abbr} coming off bye (+1.5%)"
-            )
+            key_factors.append(f"{home_metrics.team_abbr} coming off bye (+1.5%)")
         elif away_rest >= 10 and home_rest <= 8:
             home_prob -= 0.015
-            key_factors.append(
-                f"{away_metrics.team_abbr} coming off bye (+1.5%)"
-            )
+            key_factors.append(f"{away_metrics.team_abbr} coming off bye (+1.5%)")
 
         # Ensure probabilities are valid
         home_prob = max(0.02, min(0.98, home_prob))
@@ -569,11 +617,7 @@ class PredictionEngine:
 
         return home_prob, away_prob, key_factors
 
-    def _normalize_to_probability(
-        self,
-        home_value: float,
-        away_value: float
-    ) -> float:
+    def _normalize_to_probability(self, home_value: float, away_value: float) -> float:
         """
         Normalize two values to a probability for the home team.
 
@@ -600,9 +644,7 @@ class PredictionEngine:
         return home_shifted / (home_shifted + away_shifted)
 
     def _determine_confidence(
-        self,
-        home_metrics: TeamMetrics,
-        away_metrics: TeamMetrics
+        self, home_metrics: TeamMetrics, away_metrics: TeamMetrics
     ) -> str:
         """
         Determine confidence level based on data quality.
@@ -613,23 +655,27 @@ class PredictionEngine:
         Returns:
             Confidence level: 'low', 'medium', or 'high'
         """
-        home_current = (home_metrics.current_season_wins
-                        + home_metrics.current_season_losses
-                        + home_metrics.current_season_ties)
-        away_current = (away_metrics.current_season_wins
-                        + away_metrics.current_season_losses
-                        + away_metrics.current_season_ties)
+        home_current = (
+            home_metrics.current_season_wins
+            + home_metrics.current_season_losses
+            + home_metrics.current_season_ties
+        )
+        away_current = (
+            away_metrics.current_season_wins
+            + away_metrics.current_season_losses
+            + away_metrics.current_season_ties
+        )
         min_current = min(home_current, away_current)
 
         # HIGH: both teams have 10+ current-season games (week 11 onward)
         if min_current >= 10:
-            return 'high'
+            return "high"
         # MEDIUM: 3–9 current-season games (weeks 4–10)
         elif min_current >= 3:
-            return 'medium'
+            return "medium"
         # LOW: fewer than 3 current-season games (weeks 1–3, or pre-season)
         else:
-            return 'low'
+            return "low"
 
     def get_team_summary(self, team: str, season: Optional[int] = None) -> str:
         """
@@ -646,7 +692,7 @@ class PredictionEngine:
         if not team_row:
             return f"Team not found: {team}"
 
-        team_id = team_row['team_id']
+        team_id = team_row["team_id"]
         team_name = f"{team_row['city']} {team_row['name']}"
 
         if season:
@@ -685,12 +731,7 @@ class PredictionEngine:
             f"Last 5: {metrics.recent_wins}-{metrics.recent_losses}"
         )
 
-    def get_head_to_head_summary(
-        self,
-        team1: str,
-        team2: str,
-        limit: int = 10
-    ) -> str:
+    def get_head_to_head_summary(self, team1: str, team2: str, limit: int = 10) -> str:
         """
         Get head-to-head summary between two teams.
 
@@ -713,23 +754,23 @@ class PredictionEngine:
         t1_name = f"{t1['city']} {t1['name']}"
         t2_name = f"{t2['city']} {t2['name']}"
 
-        h2h = calculate_head_to_head(self.db, t1['team_id'], t2['team_id'], limit)
+        h2h = calculate_head_to_head(self.db, t1["team_id"], t2["team_id"], limit)
 
-        if h2h['total_games'] == 0:
+        if h2h["total_games"] == 0:
             return f"No games found between {t1_name} and {t2_name}"
 
         lines = [
             f"\nHead-to-Head: {t1_name} vs {t2_name}",
             f"Overall: {t1['abbreviation']} {h2h['team1_wins']}-{h2h['team2_wins']}"
             f"{'-' + str(h2h['ties']) if h2h['ties'] else ''} {t2['abbreviation']}",
-            f"\nRecent Games:"
+            f"\nRecent Games:",
         ]
 
-        for game in h2h['games'][:limit]:
+        for game in h2h["games"][:limit]:
             winner_mark = ""
-            if game['winner_id'] == t1['team_id']:
+            if game["winner_id"] == t1["team_id"]:
                 winner_mark = f" <- {t1['abbreviation']} W"
-            elif game['winner_id'] == t2['team_id']:
+            elif game["winner_id"] == t2["team_id"]:
                 winner_mark = f" <- {t2['abbreviation']} W"
             else:
                 winner_mark = " (TIE)"
@@ -756,9 +797,9 @@ class PredictionEngine:
         if not team_row:
             return f"Team not found: {team}"
 
-        team_id = team_row['team_id']
+        team_id = team_row["team_id"]
         team_name = f"{team_row['city']} {team_row['name']}"
-        team_abbr = team_row['abbreviation']
+        team_abbr = team_row["abbreviation"]
 
         games = self.db.get_team_games(team_id, limit=count)
 
@@ -768,27 +809,27 @@ class PredictionEngine:
         lines = [f"\nLast {len(games)} games for {team_name}:"]
 
         for game in games:
-            is_home = game['home_team_id'] == team_id
+            is_home = game["home_team_id"] == team_id
 
             if is_home:
-                opp = game['away_abbr']
-                team_score = game['home_score']
-                opp_score = game['away_score']
+                opp = game["away_abbr"]
+                team_score = game["home_score"]
+                opp_score = game["away_score"]
                 location = "vs"
             else:
-                opp = game['home_abbr']
-                team_score = game['away_score']
-                opp_score = game['home_score']
+                opp = game["home_abbr"]
+                team_score = game["away_score"]
+                opp_score = game["home_score"]
                 location = "@"
 
-            if game['winner_id'] == team_id:
+            if game["winner_id"] == team_id:
                 result = "W"
-            elif game['winner_id'] is None:
+            elif game["winner_id"] is None:
                 result = "T"
             else:
                 result = "L"
 
-            ot = " (OT)" if game['overtime'] else ""
+            ot = " (OT)" if game["overtime"] else ""
 
             lines.append(
                 f"  {game['date']}: {result} {team_score}-{opp_score} "
@@ -811,9 +852,9 @@ class PredictionEngine:
         if not team_row:
             return f"Team not found: {team}"
 
-        team_id = team_row['team_id']
+        team_id = team_row["team_id"]
         team_name = f"{team_row['city']} {team_row['name']}"
-        team_abbr = team_row['abbreviation']
+        team_abbr = team_row["abbreviation"]
 
         games = self.db.get_playoff_games(team_id)
 
@@ -823,41 +864,37 @@ class PredictionEngine:
         # Group by season
         seasons: Dict[int, List] = {}
         for game in games:
-            season = game['season']
+            season = game["season"]
             if season not in seasons:
                 seasons[season] = []
             seasons[season].append(game)
 
-        wins = sum(1 for g in games if g['winner_id'] == team_id)
+        wins = sum(1 for g in games if g["winner_id"] == team_id)
         losses = len(games) - wins
 
-        lines = [
-            f"\nPlayoff History: {team_name}",
-            f"Overall: {wins}-{losses}",
-            ""
-        ]
+        lines = [f"\nPlayoff History: {team_name}", f"Overall: {wins}-{losses}", ""]
 
         for season in sorted(seasons.keys(), reverse=True):
             season_games = seasons[season]
-            season_wins = sum(1 for g in season_games if g['winner_id'] == team_id)
+            season_wins = sum(1 for g in season_games if g["winner_id"] == team_id)
             season_losses = len(season_games) - season_wins
 
             lines.append(f"{season} ({season_wins}-{season_losses}):")
 
-            for game in sorted(season_games, key=lambda g: g['date']):
-                is_home = game['home_team_id'] == team_id
+            for game in sorted(season_games, key=lambda g: g["date"]):
+                is_home = game["home_team_id"] == team_id
 
                 if is_home:
-                    opp = game['away_abbr']
-                    team_score = game['home_score']
-                    opp_score = game['away_score']
+                    opp = game["away_abbr"]
+                    team_score = game["home_score"]
+                    opp_score = game["away_score"]
                 else:
-                    opp = game['home_abbr']
-                    team_score = game['away_score']
-                    opp_score = game['home_score']
+                    opp = game["home_abbr"]
+                    team_score = game["away_score"]
+                    opp_score = game["home_score"]
 
-                result = "W" if game['winner_id'] == team_id else "L"
-                ot = " (OT)" if game['overtime'] else ""
+                result = "W" if game["winner_id"] == team_id else "L"
+                ot = " (OT)" if game["overtime"] else ""
 
                 lines.append(
                     f"  {game['week']}: {result} {team_score}-{opp_score} "

@@ -34,16 +34,18 @@ def parse_adp_csv(text: str) -> List[Tuple[str, float]]:
     fields = {f.strip().lower(): f for f in reader.fieldnames}
 
     name_field = next(
-        (fields[k] for k in ('player name', 'player', 'name') if k in fields), None)
+        (fields[k] for k in ("player name", "player", "name") if k in fields), None
+    )
     adp_field = next(
-        (fields[k] for k in ('adp', 'avg', 'avg.', 'rk', 'rank') if k in fields), None)
+        (fields[k] for k in ("adp", "avg", "avg.", "rk", "rank") if k in fields), None
+    )
     if not name_field or not adp_field:
         return []
 
     rows: List[Tuple[str, float]] = []
     for r in reader:
-        name = (r.get(name_field) or '').strip()
-        raw = (r.get(adp_field) or '').strip().replace(',', '')
+        name = (r.get(name_field) or "").strip()
+        raw = (r.get(adp_field) or "").strip().replace(",", "")
         if not name or not raw:
             continue
         try:
@@ -53,8 +55,9 @@ def parse_adp_csv(text: str) -> List[Tuple[str, float]]:
     return rows
 
 
-def import_adp(db, csv_text: str, season: int,
-               source: str = 'csv') -> Tuple[int, List[str]]:
+def import_adp(
+    db, csv_text: str, season: int, source: str = "csv"
+) -> Tuple[int, List[str]]:
     """Match ADP rows to players and upsert into player_adp.
 
     Returns (matched_count, unmatched_names).
@@ -62,7 +65,7 @@ def import_adp(db, csv_text: str, season: int,
     matched = 0
     unmatched: List[str] = []
     for name, adp in parse_adp_csv(csv_text):
-        player_id = _match_player_id(db, name, '')
+        player_id = _match_player_id(db, name, "")
         if player_id is None:
             unmatched.append(name)
             continue

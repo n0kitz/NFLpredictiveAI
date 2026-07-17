@@ -13,44 +13,44 @@ logger = logging.getLogger(__name__)
 
 # The Odds API full team name → our internal abbreviation
 TEAM_NAME_MAP: dict[str, str] = {
-    "Arizona Cardinals":    "ARI",
-    "Atlanta Falcons":      "ATL",
-    "Baltimore Ravens":     "BAL",
-    "Buffalo Bills":        "BUF",
-    "Carolina Panthers":    "CAR",
-    "Chicago Bears":        "CHI",
-    "Cincinnati Bengals":   "CIN",
-    "Cleveland Browns":     "CLE",
-    "Dallas Cowboys":       "DAL",
-    "Denver Broncos":       "DEN",
-    "Detroit Lions":        "DET",
-    "Green Bay Packers":    "GB",
-    "Houston Texans":       "HOU",
-    "Indianapolis Colts":   "IND",
+    "Arizona Cardinals": "ARI",
+    "Atlanta Falcons": "ATL",
+    "Baltimore Ravens": "BAL",
+    "Buffalo Bills": "BUF",
+    "Carolina Panthers": "CAR",
+    "Chicago Bears": "CHI",
+    "Cincinnati Bengals": "CIN",
+    "Cleveland Browns": "CLE",
+    "Dallas Cowboys": "DAL",
+    "Denver Broncos": "DEN",
+    "Detroit Lions": "DET",
+    "Green Bay Packers": "GB",
+    "Houston Texans": "HOU",
+    "Indianapolis Colts": "IND",
     "Jacksonville Jaguars": "JAX",
-    "Kansas City Chiefs":   "KC",
-    "Las Vegas Raiders":    "LV",
+    "Kansas City Chiefs": "KC",
+    "Las Vegas Raiders": "LV",
     "Los Angeles Chargers": "LAC",
-    "Los Angeles Rams":     "LAR",
-    "Miami Dolphins":       "MIA",
-    "Minnesota Vikings":    "MIN",
+    "Los Angeles Rams": "LAR",
+    "Miami Dolphins": "MIA",
+    "Minnesota Vikings": "MIN",
     "New England Patriots": "NE",
-    "New Orleans Saints":   "NO",
-    "New York Giants":      "NYG",
-    "New York Jets":        "NYJ",
-    "Philadelphia Eagles":  "PHI",
-    "Pittsburgh Steelers":  "PIT",
-    "San Francisco 49ers":  "SF",
-    "Seattle Seahawks":     "SEA",
+    "New Orleans Saints": "NO",
+    "New York Giants": "NYG",
+    "New York Jets": "NYJ",
+    "Philadelphia Eagles": "PHI",
+    "Pittsburgh Steelers": "PIT",
+    "San Francisco 49ers": "SF",
+    "Seattle Seahawks": "SEA",
     "Tampa Bay Buccaneers": "TB",
-    "Tennessee Titans":     "TEN",
-    "Washington Commanders":"WAS",
+    "Tennessee Titans": "TEN",
+    "Washington Commanders": "WAS",
     # Historical / alternate names that may appear
     "Washington Football Team": "WAS",
-    "Washington Redskins":      "WAS",
-    "Oakland Raiders":          "OAK",
-    "San Diego Chargers":       "SD",
-    "St. Louis Rams":           "STL",
+    "Washington Redskins": "WAS",
+    "Oakland Raiders": "OAK",
+    "San Diego Chargers": "SD",
+    "St. Louis Rams": "STL",
 }
 
 _BASE = "https://api.the-odds-api.com/v4"
@@ -105,10 +105,10 @@ class OddsScraper:
             resp = get_with_retry(
                 f"{_BASE}/sports/americanfootball_nfl/odds",
                 params={
-                    "apiKey":      api_key,
-                    "regions":     "us",
-                    "markets":     "spreads,totals,h2h",
-                    "oddsFormat":  "american",
+                    "apiKey": api_key,
+                    "regions": "us",
+                    "markets": "spreads,totals,h2h",
+                    "oddsFormat": "american",
                 },
                 timeout=10,
             )
@@ -121,9 +121,7 @@ class OddsScraper:
         self.last_requests_remaining = _safe_int(
             resp.headers.get("x-requests-remaining")
         )
-        self.last_requests_used = _safe_int(
-            resp.headers.get("x-requests-used")
-        )
+        self.last_requests_used = _safe_int(resp.headers.get("x-requests-used"))
 
         fetched_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         results: list[dict] = []
@@ -131,17 +129,17 @@ class OddsScraper:
         for game in resp.json():
             home_name = game.get("home_team", "")
             away_name = game.get("away_team", "")
-            commence  = game.get("commence_time", "")
+            commence = game.get("commence_time", "")
             game_date = commence[:10] if commence else ""  # YYYY-MM-DD
 
-            spread       = None
-            over_under   = None
+            spread = None
+            over_under = None
             home_ml: Optional[int] = None
             away_ml: Optional[int] = None
 
             for bookmaker in game.get("bookmakers", []):
                 for market in bookmaker.get("markets", []):
-                    key      = market["key"]
+                    key = market["key"]
                     outcomes = {o["name"]: o for o in market.get("outcomes", [])}
 
                     if key == "spreads" and spread is None:
@@ -162,7 +160,11 @@ class OddsScraper:
                             away_ml = int(a["price"])
 
                 # Stop after first bookmaker that has all three markets
-                if home_ml is not None and spread is not None and over_under is not None:
+                if (
+                    home_ml is not None
+                    and spread is not None
+                    and over_under is not None
+                ):
                     break
 
             # Vig-adjusted implied probs
@@ -174,17 +176,19 @@ class OddsScraper:
                 home_implied = round(h_raw / total, 4)
                 away_implied = round(a_raw / total, 4)
 
-            results.append({
-                "external_game_id":  game.get("id", ""),
-                "home_team":         self.map_team_name(home_name),
-                "away_team":         self.map_team_name(away_name),
-                "game_date":         game_date,
-                "spread":            spread,
-                "over_under":        over_under,
-                "home_implied_prob": home_implied,
-                "away_implied_prob": away_implied,
-                "fetched_at":        fetched_at,
-            })
+            results.append(
+                {
+                    "external_game_id": game.get("id", ""),
+                    "home_team": self.map_team_name(home_name),
+                    "away_team": self.map_team_name(away_name),
+                    "game_date": game_date,
+                    "spread": spread,
+                    "over_under": over_under,
+                    "home_implied_prob": home_implied,
+                    "away_implied_prob": away_implied,
+                    "fetched_at": fetched_at,
+                }
+            )
 
         return results
 
@@ -203,9 +207,9 @@ class OddsScraper:
             resp = get_with_retry(
                 f"{_BASE}/sports/americanfootball_nfl/scores",
                 params={
-                    "apiKey":   api_key,
+                    "apiKey": api_key,
                     "daysFrom": 3,
-                    "season":   season,
+                    "season": season,
                 },
                 timeout=10,
             )
@@ -224,6 +228,7 @@ class OddsScraper:
 
 
 # ── Private helpers ─────────────────────────────────────────────────────────
+
 
 def _safe_int(value: Optional[str]) -> Optional[int]:
     """Convert a header string to int, None if missing/invalid."""

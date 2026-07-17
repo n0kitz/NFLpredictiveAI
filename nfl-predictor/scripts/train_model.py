@@ -58,7 +58,9 @@ def main():
     spread_result = train_spread_model(db)
     print(f"\n  ── Spread Model Results ──")
     print(f"  Samples:      {spread_result['n_training_samples']:,}")
-    print(f"  CV MAE:       {spread_result['cv_mae']:.2f} ± {spread_result['cv_std']:.2f} pts")
+    print(
+        f"  CV MAE:       {spread_result['cv_mae']:.2f} ± {spread_result['cv_std']:.2f} pts"
+    )
     print(f"  Fold MAEs:    {spread_result['fold_maes']}")
 
     print("\n  ── Training Results ──")
@@ -72,16 +74,22 @@ def main():
     # Engine will pick up the freshly saved model
     db_ml = Database()  # fresh connection so engine.load_model() sees the new file
     bt_ml = Backtester(db_ml)
-    ml_reg  = bt_ml.run(seasons=OOS_SEASONS, game_type="regular")
-    ml_po   = bt_ml.run(seasons=OOS_SEASONS, game_type="playoff")
-    ml_all  = bt_ml.run(seasons=OOS_SEASONS, game_type=None)
+    ml_reg = bt_ml.run(seasons=OOS_SEASONS, game_type="regular")
+    ml_po = bt_ml.run(seasons=OOS_SEASONS, game_type="playoff")
+    ml_all = bt_ml.run(seasons=OOS_SEASONS, game_type=None)
 
-    print(f"  ML regular season: {ml_reg.correct_predictions}/{ml_reg.total_games} "
-          f"= {_pct(ml_reg.correct_predictions, ml_reg.total_games)}")
-    print(f"  ML playoffs:       {ml_po.correct_predictions}/{ml_po.total_games} "
-          f"= {_pct(ml_po.correct_predictions, ml_po.total_games)}")
-    print(f"  ML all games:      {ml_all.correct_predictions}/{ml_all.total_games} "
-          f"= {_pct(ml_all.correct_predictions, ml_all.total_games)}")
+    print(
+        f"  ML regular season: {ml_reg.correct_predictions}/{ml_reg.total_games} "
+        f"= {_pct(ml_reg.correct_predictions, ml_reg.total_games)}"
+    )
+    print(
+        f"  ML playoffs:       {ml_po.correct_predictions}/{ml_po.total_games} "
+        f"= {_pct(ml_po.correct_predictions, ml_po.total_games)}"
+    )
+    print(
+        f"  ML all games:      {ml_all.correct_predictions}/{ml_all.total_games} "
+        f"= {_pct(ml_all.correct_predictions, ml_all.total_games)}"
+    )
 
     # ── 3. OOS backtest with weighted-sum ─────────────────────────────────────
     print(f"\n[4/4] OOS backtest 2023-2024 with weighted-sum (no ML)…")
@@ -101,16 +109,22 @@ def main():
             self.engine = _WeightedSumEngine(db)
 
     bt_ws = _WSSBactester(Database())
-    ws_reg  = bt_ws.run(seasons=OOS_SEASONS, game_type="regular")
-    ws_po   = bt_ws.run(seasons=OOS_SEASONS, game_type="playoff")
-    ws_all  = bt_ws.run(seasons=OOS_SEASONS, game_type=None)
+    ws_reg = bt_ws.run(seasons=OOS_SEASONS, game_type="regular")
+    ws_po = bt_ws.run(seasons=OOS_SEASONS, game_type="playoff")
+    ws_all = bt_ws.run(seasons=OOS_SEASONS, game_type=None)
 
-    print(f"  WS regular season: {ws_reg.correct_predictions}/{ws_reg.total_games} "
-          f"= {_pct(ws_reg.correct_predictions, ws_reg.total_games)}")
-    print(f"  WS playoffs:       {ws_po.correct_predictions}/{ws_po.total_games} "
-          f"= {_pct(ws_po.correct_predictions, ws_po.total_games)}")
-    print(f"  WS all games:      {ws_all.correct_predictions}/{ws_all.total_games} "
-          f"= {_pct(ws_all.correct_predictions, ws_all.total_games)}")
+    print(
+        f"  WS regular season: {ws_reg.correct_predictions}/{ws_reg.total_games} "
+        f"= {_pct(ws_reg.correct_predictions, ws_reg.total_games)}"
+    )
+    print(
+        f"  WS playoffs:       {ws_po.correct_predictions}/{ws_po.total_games} "
+        f"= {_pct(ws_po.correct_predictions, ws_po.total_games)}"
+    )
+    print(
+        f"  WS all games:      {ws_all.correct_predictions}/{ws_all.total_games} "
+        f"= {_pct(ws_all.correct_predictions, ws_all.total_games)}"
+    )
 
     # ── 4. Append comparison to backtest_report.md ────────────────────────────
     def delta(ml_n, ml_d, ws_n, ws_d):
@@ -126,9 +140,11 @@ def main():
         ws_s = ws_reg.season_accuracy.get(ssn, {})
         ml_acc = f"{ml_s.get('accuracy', 0):.1%}" if ml_s else "N/A"
         ws_acc = f"{ws_s.get('accuracy', 0):.1%}" if ws_s else "N/A"
-        d_str  = delta(
-            ml_s.get('correct', 0), ml_s.get('total', 0),
-            ws_s.get('correct', 0), ws_s.get('total', 0),
+        d_str = delta(
+            ml_s.get("correct", 0),
+            ml_s.get("total", 0),
+            ws_s.get("correct", 0),
+            ws_s.get("total", 0),
         )
         per_season_lines.append(f"| {ssn} | {ws_acc} | {ml_acc} | {d_str} |")
 

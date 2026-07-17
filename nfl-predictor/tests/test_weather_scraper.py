@@ -10,7 +10,19 @@ class TestDomeReturnsImmediately:
     """Dome teams should return immediately without making any HTTP call."""
 
     # Pick a representative set of dome teams
-    DOME_TEAMS = ["ATL", "DET", "IND", "MIN", "NO", "LV", "DAL", "ARI", "HOU", "LAR", "LAC"]
+    DOME_TEAMS = [
+        "ATL",
+        "DET",
+        "IND",
+        "MIN",
+        "NO",
+        "LV",
+        "DAL",
+        "ARI",
+        "HOU",
+        "LAR",
+        "LAC",
+    ]
 
     def test_dome_teams_return_is_dome_true(self):
         scraper = WeatherScraper()
@@ -23,8 +35,15 @@ class TestDomeReturnsImmediately:
         scraper = WeatherScraper()
         result = scraper.fetch_game_weather("ATL", "2026-09-07")
         assert result is not None
-        expected_keys = {"is_dome", "condition", "temperature_c", "wind_speed_kmh",
-                         "precipitation_mm", "weather_code", "is_adverse"}
+        expected_keys = {
+            "is_dome",
+            "condition",
+            "temperature_c",
+            "wind_speed_kmh",
+            "precipitation_mm",
+            "weather_code",
+            "is_adverse",
+        }
         assert expected_keys == set(result.keys())
 
     def test_dome_condition_string(self):

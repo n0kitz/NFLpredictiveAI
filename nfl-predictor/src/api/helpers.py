@@ -4,8 +4,11 @@ from typing import Optional, List
 from fastapi import HTTPException
 
 from .schemas import (
-    GameResponse, InjuryEntry, WeatherResponse,
-    PlayerEntry, PlayerStatsEntry,
+    GameResponse,
+    InjuryEntry,
+    WeatherResponse,
+    PlayerEntry,
+    PlayerStatsEntry,
 )
 
 

@@ -238,7 +238,7 @@ class PFRScraper:
 
         for row in rows:
             # Skip header rows
-            if row.get("class") and "thead" in row.get("class", []):
+            if "thead" in (row.get("class") or []):
                 continue
 
             game = self._parse_game_row(row, season)
@@ -499,7 +499,7 @@ class PFRScraper:
         """
         self.initialize_teams()
 
-        stats = {
+        stats: Dict[str, Any] = {
             "seasons_attempted": 0,
             "seasons_completed": 0,
             "games_inserted": 0,
@@ -585,7 +585,7 @@ class PFRScraper:
         rows = tbody.find_all("tr")
 
         for row in rows:
-            if row.get("class") and "thead" in row.get("class", []):
+            if "thead" in (row.get("class") or []):
                 continue
 
             game = self._parse_game_row(row, season)
@@ -602,12 +602,11 @@ class PFRScraper:
             "SELECT COUNT(*) as count FROM scrape_progress WHERE status = 'completed'"
         )
 
+        total_row = self.db.fetchone("SELECT COUNT(*) as count FROM games")
         return {
             "completed": completed_count["count"] if completed_count else 0,
             "incomplete": [dict(row) for row in incomplete],
-            "total_games": self.db.fetchone("SELECT COUNT(*) as count FROM games")[
-                "count"
-            ],
+            "total_games": total_row["count"] if total_row else 0,
         }
 
 

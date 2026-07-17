@@ -36,15 +36,13 @@ jobs:
       - name: Lint (ruff)
         run: pip install ruff && ruff check --select E9,F63,F7,F82 src scripts
 
-      # Style + types are reported but non-blocking for now — the codebase
-      # predates these checks; tighten to blocking once the backlog is clean.
+      # Blocking since 2026-07-17 — backlog cleared (73 files black-formatted,
+      # 55 mypy errors fixed).
       - name: Format check (black)
         run: pip install black && black --check src scripts tests
-        continue-on-error: true
 
       - name: Type check (mypy)
         run: pip install mypy && mypy --ignore-missing-imports src
-        continue-on-error: true
 
       - name: Run tests
         run: python -m pytest -q

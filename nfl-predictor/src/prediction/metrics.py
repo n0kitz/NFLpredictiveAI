@@ -559,7 +559,7 @@ def calculate_head_to_head(
     """
     games = db.get_head_to_head(team1_id, team2_id, limit)
 
-    result = {
+    result: Dict[str, Any] = {
         "team1_wins": 0,
         "team2_wins": 0,
         "ties": 0,

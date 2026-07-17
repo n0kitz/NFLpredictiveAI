@@ -227,7 +227,7 @@ def apply_game_factors(
     home_adjustment = 0.0
     away_adjustment = 0.0
 
-    adjuster = FactorAdjuster(None)  # We don't need DB for calculation
+    adjuster = FactorAdjuster(None)  # type: ignore[arg-type]  # calc-only, no DB needed
 
     for factor in factors:
         adjustment = adjuster.calculate_adjustment(factor)

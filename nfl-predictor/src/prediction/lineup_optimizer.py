@@ -114,7 +114,7 @@ def optimize_lineup(
     n_lineups: int = 20,
     correlations: bool = True,
     max_from_team: int = 8,
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """Generate up to `n_lineups` distinct optimal lineups using MILP.
 
     Parameters
@@ -129,8 +129,8 @@ def optimize_lineup(
 
     Returns
     -------
-    List of lineup dicts, each with 'rank', 'players', 'projected_points',
-    'total_salary', 'correlation_bonus', and 'slots'.
+    Dict with 'lineups' (each having 'rank', 'players', 'projected_points',
+    'total_salary', 'correlation_bonus'), 'exposure', 'total_lineups', 'slots'.
     """
     try:
         import pulp

@@ -148,14 +148,14 @@ class Game:
     @property
     def point_differential(self) -> Optional[int]:
         """Get point differential (home - away)."""
-        if not self.is_completed:
+        if self.home_score is None or self.away_score is None:
             return None
         return self.home_score - self.away_score
 
     @property
     def total_points(self) -> Optional[int]:
         """Get total points scored."""
-        if not self.is_completed:
+        if self.home_score is None or self.away_score is None:
             return None
         return self.home_score + self.away_score
 
@@ -366,11 +366,11 @@ class Prediction:
 
         if self.factors_applied:
             lines.append("\nApplied Game Factors:")
-            for factor in self.factors_applied:
-                sign = "+" if factor.impact_rating > 0 else ""
+            for gf in self.factors_applied:
+                sign = "+" if gf.impact_rating > 0 else ""
                 lines.append(
-                    f"  - {factor.team_abbr}: {factor.factor_type.value} "
-                    f"({sign}{factor.impact_rating})"
+                    f"  - {gf.team_abbr}: {gf.factor_type.value} "
+                    f"({sign}{gf.impact_rating})"
                 )
         else:
             lines.append(

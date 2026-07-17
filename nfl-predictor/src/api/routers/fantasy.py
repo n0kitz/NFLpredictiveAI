@@ -33,7 +33,7 @@ def _proj_row_to_entry(
     bye_by_team: Optional[dict] = None,
 ) -> FantasyProjectionEntry:
     d = dict(r)
-    contribs = []
+    contribs: list = []
     raw = d.get("contributions_json")
     if raw:
         try:

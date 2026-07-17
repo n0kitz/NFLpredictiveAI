@@ -248,7 +248,7 @@ class Database:
             ),
         )
         self.commit()
-        return cursor.lastrowid
+        return int(cursor.lastrowid or 0)
 
     def get_team_by_abbreviation(self, abbreviation: str) -> Optional[sqlite3.Row]:
         """Get team by abbreviation."""
@@ -342,7 +342,7 @@ class Database:
             ),
         )
         self.commit()
-        return cursor.lastrowid
+        return int(cursor.lastrowid or 0)
 
     def get_games_by_season(
         self, season: int, game_type: Optional[str] = None
@@ -561,7 +561,7 @@ class Database:
             query, (game_id, team_id, factor_type, factor_value, impact_rating)
         )
         self.commit()
-        return cursor.lastrowid
+        return int(cursor.lastrowid or 0)
 
     def get_game_factors(self, game_id: int) -> List[sqlite3.Row]:
         """Get all factors for a game."""
@@ -623,7 +623,7 @@ class Database:
             if not games:
                 continue
 
-            stats = {
+            stats: Dict[str, Any] = {
                 "games_played": 0,
                 "wins": 0,
                 "losses": 0,
@@ -708,7 +708,7 @@ class Database:
             ),
         )
         self.commit()
-        return cursor.lastrowid
+        return int(cursor.lastrowid or 0)
 
     def get_prediction_history(
         self, limit: int = 50, offset: int = 0
@@ -1102,7 +1102,7 @@ class Database:
                     now,
                 ),
             )
-            return cursor.lastrowid
+            return int(cursor.lastrowid or 0)
 
     def upsert_roster_entry(self, entry: Dict[str, Any]) -> None:
         """Insert or update a roster entry."""

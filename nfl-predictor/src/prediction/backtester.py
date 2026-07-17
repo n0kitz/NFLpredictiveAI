@@ -165,7 +165,7 @@ class Backtester:
                 FROM games g
                 WHERE g.season = ? AND g.home_score IS NOT NULL
             """
-            params = [season]
+            params: list = [season]
             if game_type:
                 query += " AND g.game_type = ?"
                 params.append(game_type)

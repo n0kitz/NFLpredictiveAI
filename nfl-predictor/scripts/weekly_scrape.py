@@ -265,6 +265,7 @@ def main():
     try:
         from src.scraper.player_weekly_importer import (
             aggregate_kicker_dst_season_stats,
+            aggregate_offense_season_stats,
             fetch_stats_player_week,
             import_kicker_weekly_stats,
             import_player_weekly_stats,
@@ -276,6 +277,9 @@ def main():
         k_rows = import_kicker_weekly_stats(db, [current_season], df=spw)
         dst_rows = import_dst_weekly_stats(db, [current_season], df=spw)
         aggregate_kicker_dst_season_stats(db, [current_season])
+        # Offensive season totals also come from weekly rows (nfl_data_py's
+        # seasonal feed is dead for 2025+); draft rankings depend on them.
+        aggregate_offense_season_stats(db, [current_season])
         logger.info(
             f"Weekly player stats: {rows} offense, {k_rows} kicker, "
             f"{dst_rows} DST rows upserted for {current_season}"

@@ -11,6 +11,7 @@ Supplements: nfl_data_py.import_snap_counts (offense_pct → snap_pct).
 """
 
 import logging
+import unicodedata
 from typing import Any, Dict, List, Optional
 
 from .nfl_data_importer import _to_our_abbr
@@ -134,6 +135,107 @@ def aggregate_kicker_dst_season_stats(
     return upserted
 
 
+#: A weekly row counts as a game when the player was on the field or scored.
+#: Snap columns are sparsely populated upstream, so points alone can prove
+#: participation; counting inactive weeks would deflate points-per-game and
+#: therefore every VBD ranking derived from it.
+_PLAYED_WEEK_SQL = (
+    "(COALESCE(snaps, 0) > 0 OR COALESCE(snap_pct, 0) > 0 "
+    "OR COALESCE(fantasy_points_ppr, 0) != 0)"
+)
+
+
+def aggregate_offense_season_stats(
+    db, seasons: List[int], positions=("QB", "RB", "WR", "TE")
+) -> int:
+    """Roll weekly offensive rows up into ``player_season_stats``.
+
+    ``nfl_data_py.import_seasonal_data`` 404s for 2025+ (nflverse retired the
+    release, same as the weekly one), leaving draft rankings and leaderboards —
+    which both read ``player_season_stats`` — with no offensive rows at all.
+    The weekly parquet feed still covers those seasons, so the season totals are
+    summed from it instead.
+
+    Mirrors :func:`aggregate_kicker_dst_season_stats` but carries the counting
+    stats through as well. ``team_id`` is the player's latest week, so a
+    mid-season trade files the season under the team he ended it with.
+
+    Returns:
+        Number of season rows upserted.
+    """
+    upserted = 0
+    placeholders = ",".join("?" for _ in positions)
+
+    for season in seasons:
+        rows = db.fetchall(
+            f"""
+            SELECT player_id,
+                   SUM(CASE WHEN {_PLAYED_WEEK_SQL} THEN 1 ELSE 0 END) AS games_played,
+                   SUM(COALESCE(pass_attempts, 0))    AS pass_attempts,
+                   SUM(COALESCE(pass_completions, 0)) AS pass_completions,
+                   SUM(COALESCE(pass_yards, 0))       AS pass_yards,
+                   SUM(COALESCE(pass_tds, 0))         AS pass_tds,
+                   SUM(COALESCE(interceptions, 0))    AS interceptions,
+                   SUM(COALESCE(rush_attempts, 0))    AS rush_attempts,
+                   SUM(COALESCE(rush_yards, 0))       AS rush_yards,
+                   SUM(COALESCE(rush_tds, 0))         AS rush_tds,
+                   SUM(COALESCE(targets, 0))          AS targets,
+                   SUM(COALESCE(receptions, 0))       AS receptions,
+                   SUM(COALESCE(rec_yards, 0))        AS rec_yards,
+                   SUM(COALESCE(rec_tds, 0))          AS rec_tds,
+                   SUM(COALESCE(fantasy_points_ppr, 0))      AS fp_ppr,
+                   SUM(COALESCE(fantasy_points_standard, 0)) AS fp_std,
+                   (SELECT team_id FROM player_weekly_stats w2
+                     WHERE w2.player_id = w.player_id AND w2.season = w.season
+                     ORDER BY w2.week DESC LIMIT 1) AS team_id
+            FROM player_weekly_stats w
+            WHERE season = ? AND position IN ({placeholders})
+            GROUP BY player_id
+            """,
+            (season, *positions),
+        )
+
+        for r in rows:
+            if r["team_id"] is None:
+                continue
+
+            carries = r["rush_attempts"] or 0
+            catches = r["receptions"] or 0
+            db.upsert_player_season_stats(
+                {
+                    "player_id": r["player_id"],
+                    "team_id": r["team_id"],
+                    "season": season,
+                    "games_played": r["games_played"] or 0,
+                    "pass_attempts": r["pass_attempts"] or 0,
+                    "pass_completions": r["pass_completions"] or 0,
+                    "pass_yards": r["pass_yards"] or 0,
+                    "pass_tds": r["pass_tds"] or 0,
+                    "interceptions": r["interceptions"] or 0,
+                    "rush_attempts": carries,
+                    "rush_yards": r["rush_yards"] or 0,
+                    "rush_tds": r["rush_tds"] or 0,
+                    "yards_per_carry": (
+                        round((r["rush_yards"] or 0) / carries, 2) if carries else 0.0
+                    ),
+                    "targets": r["targets"] or 0,
+                    "receptions": catches,
+                    "rec_yards": r["rec_yards"] or 0,
+                    "rec_tds": r["rec_tds"] or 0,
+                    "yards_per_reception": (
+                        round((r["rec_yards"] or 0) / catches, 2) if catches else 0.0
+                    ),
+                    "fantasy_points_ppr": round(r["fp_ppr"] or 0.0, 1),
+                    "fantasy_points_standard": round(r["fp_std"] or 0.0, 1),
+                }
+            )
+            upserted += 1
+
+    db.commit()
+    logger.info("Offense season aggregates: %d rows for seasons %s", upserted, seasons)
+    return upserted
+
+
 def import_kicker_weekly_stats(db, years: List[int], df=None) -> int:
     """Persist kicker weekly rows into player_weekly_stats.
 
@@ -184,29 +286,144 @@ def import_kicker_weekly_stats(db, years: List[int], df=None) -> int:
     return upserted
 
 
-def _match_player_id(db, full_name: str, position: str) -> Optional[int]:
-    """Resolve a weekly-data name to our internal player_id.
+_NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 
-    Tries exact full_name first, then last-name + position as a fallback.
+
+def normalize_player_name(name: str) -> str:
+    """Reduce a player name to a comparable form.
+
+    Folds accents, drops punctuation and generational suffixes, lowercases
+    and collapses whitespace, so "Eddy Piñeiro" and "Kenneth Walker III"
+    compare equal to our "Eddy Pineiro" and "Kenneth Walker".
+    """
+    if not name:
+        return ""
+    decomposed = unicodedata.normalize("NFKD", name)
+    ascii_only = "".join(c for c in decomposed if not unicodedata.combining(c))
+    # Apostrophes are dropped, not spaced, so "Ja'Marr" and "JaMarr" agree;
+    # other punctuation (hyphens, periods) becomes a separator.
+    without_quotes = "".join(c for c in ascii_only if c not in "'’`")
+    cleaned = "".join(c if c.isalnum() or c.isspace() else " " for c in without_quotes)
+    parts = [p for p in cleaned.lower().split() if p]
+    while len(parts) > 2 and parts[-1] in _NAME_SUFFIXES:
+        parts.pop()
+    return " ".join(parts)
+
+
+def purge_weekly_stats(db, seasons: List[int]) -> int:
+    """Delete every player_weekly_stats row for the given seasons.
+
+    Imports upsert on (player_id, season, week), so a row written under a
+    wrong name match is never corrected by re-importing — it stays attached
+    to the wrong player. Rebuilding a season means clearing it first.
+
+    Returns the number of rows removed.
+    """
+    if not seasons:
+        return 0
+    placeholders = ",".join("?" for _ in seasons)
+    cur = db.execute(
+        f"DELETE FROM player_weekly_stats WHERE season IN ({placeholders})",
+        tuple(seasons),
+    )
+    db.commit()
+    removed = cur.rowcount or 0
+    logger.info("Purged %d weekly rows for seasons %s", removed, seasons)
+    return removed
+
+
+def _first_names_compatible(a: str, b: str) -> bool:
+    """True when two first names plausibly denote the same person.
+
+    Equal, or one a prefix of the other with at least three characters, so
+    "Josh"/"Joshua" match while "Brian"/"Bijan" and "Russell"/"Zach" don't.
+    A bare initial is too weak to accept.
+    """
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+    return len(shorter) >= 3 and longer.startswith(shorter)
+
+
+def _match_player_id(db, full_name: str, position: str) -> Optional[int]:
+    """Resolve a feed name to our internal player_id.
+
+    Order matters, strongest evidence first:
+
+    1. exact full name + position
+    2. exact full name
+    3. normalized full name (accent- and suffix-tolerant)
+    4. last name + position — last resort, and only when unambiguous
+
+    Every fuzzy step requires a *unique* candidate. A wrong match is worse
+    than no match: it silently overwrites another player's row. This is not
+    hypothetical — the last-name step used to take the first row it found,
+    so the 2026 ADP import resolved "Brian Robinson" (we store "Brian
+    Robinson Jr.") to Bijan Robinson and replaced his ADP of 2.2 with 107.0.
+
     Returns None if no confident match.
     """
     if not full_name:
         return None
+
+    # Position first when we have one: names collide across positions (two
+    # Mike Williamses), and an unqualified LIMIT 1 would pick either.
+    if position:
+        row = db.fetchone(
+            "SELECT player_id FROM players WHERE full_name = ? AND position = ? LIMIT 1",
+            (full_name, position),
+        )
+        if row:
+            return int(row["player_id"])
     row = db.fetchone(
         "SELECT player_id FROM players WHERE full_name = ? LIMIT 1",
         (full_name,),
     )
     if row:
         return int(row["player_id"])
-    parts = full_name.strip().split()
-    if len(parts) >= 2:
-        last = parts[-1]
-        row = db.fetchone(
-            "SELECT player_id FROM players WHERE last_name = ? AND position = ? LIMIT 1",
-            (last, position),
+
+    if position:
+        candidates = db.fetchall(
+            "SELECT player_id, full_name, last_name FROM players WHERE position = ?",
+            (position,),
         )
-        if row:
-            return int(row["player_id"])
+    else:
+        candidates = db.fetchall(
+            "SELECT player_id, full_name, last_name FROM players", ()
+        )
+
+    target = normalize_player_name(full_name)
+    if not target:
+        return None
+    hits = {
+        int(c["player_id"])
+        for c in candidates
+        if normalize_player_name(c["full_name"]) == target
+    }
+    if len(hits) == 1:
+        return hits.pop()
+    if hits:
+        return None  # genuinely ambiguous — refuse rather than guess
+
+    # Last resort: last name within the position — unique *and* with a
+    # compatible first name. Uniqueness alone is not enough: a player we
+    # simply don't carry would inherit a namesake's row (the 2025 feed's
+    # Russell Wilson matching our only QB Wilson, Zach).
+    parts = target.split()
+    if position and len(parts) >= 2:
+        first, last = parts[0], parts[-1]
+        by_last = {
+            int(c["player_id"])
+            for c in candidates
+            if normalize_player_name(c["last_name"] or "").split()[-1:] == [last]
+            and _first_names_compatible(
+                first, normalize_player_name(c["full_name"]).split()[0]
+            )
+        }
+        if len(by_last) == 1:
+            return by_last.pop()
     return None
 
 

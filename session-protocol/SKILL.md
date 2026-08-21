@@ -11,6 +11,7 @@ Always on. No invocation needed. Applies to every session in this repo.
 ## During work — hard hygiene rules (each one cost a real session once)
 
 - **Every Bash call**: `cd nfl-predictor && source .venv/bin/activate && …` inline. Shell state does NOT persist between calls. Anaconda base silently breaks player-ML and returns wrong results without erroring (2026-07-08: sanity check returned 0 floors under anaconda, 609 under .venv — same code).
+- **`source .venv/bin/activate` is not proof.** 2026-08-21: an activated call still ran `/opt/anaconda3` pytest. Prefer `.venv/bin/python -m pytest …` / `.venv/bin/python -c …` — an explicit interpreter can't be shadowed. When a result surprises you, print `sys.executable` + `numpy.__version__` before believing it.
 - **Never run experiments against `data/nfl.db`** — it is git-tracked. Copy to scratchpad first, point `Database(Path(...))` at the copy (needs `Path`, not str).
 - **After running pytest**: `git status data/nfl.db` — API tests write predictions into the real DB. `git restore data/nfl.db` before committing.
 - **vitest only from `frontend/`** — from repo root it silently skips jsdom/setup and "passes".

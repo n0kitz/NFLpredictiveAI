@@ -27,7 +27,7 @@
 
 ## What this project is — and where it's going
 
-Full-stack NFL **game-prediction + fantasy-football decision engine**. Python 3.12 / FastAPI / SQLite backend (9,455 games 1990–2025, weighted + ML prediction engines, fantasy projections for QB/RB/WR/TE/K/DST, VBD draft rankings, MILP lineup optimizer). React 19 / TypeScript / Tailwind v4 frontend (11 pages incl. a 7-tab fantasy hub and a live draft board). Docker Compose + weekly cron + GitHub Actions CI.
+Full-stack NFL **game-prediction + fantasy-football decision engine**. Python 3.12 / FastAPI / SQLite backend (9,455 games 1990–2025, weighted + ML prediction engines, fantasy projections for QB/RB/WR/TE/K/DST, VBD draft rankings, MILP lineup optimizer). React 19 / TypeScript / Tailwind v4 frontend (12 pages incl. a 7-tab fantasy hub, a live draft board and a draft-strategy simulator). Docker Compose + weekly cron + GitHub Actions CI.
 
 **The mission, definition of done, roadmap, and operating calendar live in `nfl-predictor/GUIDEBOOK.md` — read it before proposing new work.** Short version: (1) win the user's fantasy.nfl.com league, (2) keep the game model honest and baseline-beating, (3) make the service run itself. Judge every change against those three pillars.
 
@@ -44,8 +44,8 @@ Full-stack NFL **game-prediction + fantasy-football decision engine**. Python 3.
 
 ```bash
 cd nfl-predictor && source .venv/bin/activate
-python -m pytest -q                        # 349 tests (~16 s in a clean .venv)
-cd frontend && npm run build && npm test   # tsc + vite build, 64 vitest tests (run from frontend/ — vitest setup needs that cwd)
+python -m pytest -q                        # 510 tests (~15 s in a clean .venv)
+cd frontend && npm run build && npm test   # tsc + vite build, 120 vitest tests (run from frontend/ — vitest setup needs that cwd)
 ```
 
 ## Running
@@ -71,14 +71,17 @@ cd nfl-predictor && docker compose up --build       # frontend :3000 (nginx) →
 | League config (backend) | `src/prediction/league_settings.py` (scoring, league_size, replacement ranks, tiers) |
 | Matchup grades A–F | `src/prediction/matchup_engine.py` (DvP/pace/PROE) |
 | Lineup optimizer | `src/prediction/lineup_optimizer.py` (MILP/PuLP, season + DK/FD) |
+| Roster-aware advice | `src/prediction/roster_advisor.py` (`build_roster_pool`, `lineup_advice`, `swap_list`) + `frontend/src/pages/fantasy/MyTeamTab.tsx` |
 | Player weekly data | `src/scraper/player_weekly_importer.py` (**nflverse `stats_player_week` parquet — nfl_data_py weekly is dead for 2025+**) |
 | DST data | `src/scraper/dst_importer.py` (synthetic players `DST-{abbr}` + defteam aggregation) |
-| ADP import | `src/scraper/adp_importer.py` + `scripts/import_adp.py` → `player_adp` table |
+| ADP import | `src/scraper/adp_importer.py` (live `fetch_ffc_adp` **or** CSV) + `scripts/import_adp.py` → `player_adp` table |
+| Player name matching | `normalize_player_name` + `_match_player_id` in `player_weekly_importer.py` (accent/suffix tolerant, position-aware) |
 | NFL.com sync (experimental) | `src/scraper/nfl_fantasy_api.py` + `routers/nfl_league.py` (`NFL_FANTASY_COOKIE`) |
 | Scraper HTTP | `src/scraper/http.py` (`get_with_retry` — never raw `requests.get` in scrapers) |
 | Settings / env | `src/config.py` (backend) · `frontend/src/config.ts` (seasons: `CURRENT_SEASON`, `UPCOMING_SEASON`…) |
 | League config (frontend) | `frontend/src/pages/fantasy/leagueSettings.ts` (`useLeagueSettings` localStorage hook) |
 | Draft board logic | `frontend/src/pages/fantasy/draftBoard.ts` (pure: snake, needs, tier breaks) + `pages/DraftBoardPage.tsx` |
+| Draft simulator | `frontend/src/pages/fantasy/draftSim.ts` (pure: seeded RNG, 8 strategies, bot archetypes, batch compare) + `pages/DraftSimulatorPage.tsx` |
 | API client / types | `frontend/src/api/client.ts` + `types.ts` |
 | Weekly cron | `scripts/weekly_scrape.py` (Wed 06:00 UTC; fcntl-locked; purges stale projections before regen) |
 | Observability | `src/observability.py` → `/api/metrics`, JSON logs, `X-Request-ID` |
@@ -97,7 +100,7 @@ cd nfl-predictor && docker compose up --build       # frontend :3000 (nginx) →
 
 ## Frontend routes
 
-`/` Dashboard · `/predict` · `/teams` · `/teams/:abbr` (+ `/schedule`) · `/compare/:t1?/:t2?` · `/seasons/:year?` (standings/games/playoff picture) · `/history` (self-graded prediction log) · `/playoffs` (bracket sim) · `/players/:id` (+ game log) · `/games/:id` (scoreboard, retrodiction HIT/MISS, ATS cover, box score) · `/fantasy` (7 tabs: Dashboard, Leaderboards, Waiver, Draft, Trade, Power Rankings, Optimizer) · `/draft` (live draft board)
+`/` Dashboard · `/predict` · `/teams` · `/teams/:abbr` (+ `/schedule`) · `/compare/:t1?/:t2?` · `/seasons/:year?` (standings/games/playoff picture) · `/history` (self-graded prediction log) · `/playoffs` (bracket sim) · `/players/:id` (+ game log) · `/games/:id` (scoreboard, retrodiction HIT/MISS, ATS cover, box score) · `/fantasy` (7 tabs: Dashboard, Leaderboards, Waiver, Draft, Trade, Power Rankings, Optimizer) · `/draft` (live draft board) · `/draft/sim` (strategy simulator: batch compare + mock draft)
 
 ## Architecture notes that prevent rework
 
@@ -108,12 +111,16 @@ cd nfl-predictor && docker compose up --build       # frontend :3000 (nginx) →
 - Draft rankings: two-season ppg blend 65/35 + small-sample shrinkage (<8 games) + age/injury penalties → VBD vs `LeagueSettings.replacement_ranks()` → **board ordered by VBD** (never raw points). Real ADP from `player_adp` beats synthetic rank ADP.
 - DST = 32 synthetic players; ESPN kickers `PK`→`K` normalized at scrape; K scoring FG 0-49=3 / 50+=5 / XP=1; DST points-allowed brackets per NFL.com defaults.
 - `sqlite3.Row`: bracket access only — `.get()` doesn't exist.
+- **ESPN 403s custom User-Agents** (since 2026-08-20). `roster_scraper`/`schedule_scraper` must send the default `python-requests/x.y.z` — a `Mozilla/…` or app-branded UA gets every team rejected. Guarded by `tests/test_espn_user_agent.py`. (PFR still *needs* a browser UA — don't touch `pfr_scraper`.)
+- **`player_season_stats` is built from weekly rows**, not `nfl_data_py` — its seasonal feed 404s for 2025+ exactly like the weekly one. `aggregate_offense_season_stats()` + `aggregate_kicker_dst_season_stats()` in `player_weekly_importer.py`. Draft rankings and leaderboards read this table, so a missing season silently degrades both.
+- `LAST_COMPLETED_SEASON` ≠ `CURRENT_SEASON - 1` in the offseason — see `lastCompletedSeason()` in `frontend/src/config.ts`.
+- **ADP**: `python scripts/import_adp.py --season <yr>` fetches live consensus ADP (Fantasy Football Calculator, public JSON, no key); `--file` still takes a CSV. FFC echoes `teams` but returns **the same pooled ADP for every league size** — league size enters through VBD, not ADP. Positions arrive as `PK`/`DEF` and are normalized to `K`/`DST`; defenses match by team abbr to the synthetic `DST-{abbr}` player, not by name.
 - Frontend: ErrorBoundary wraps routes; all pages lazy; team theming via `teamColors.ts` + CSS vars; Recharts for charts; no state library — localStorage hooks (`useLeagueSettings`, `myRoster`, draft board) are the persistence layer.
 - Frontend tests: vitest **must run from `frontend/`** (setup + jsdom config), localStorage is polyfilled in `src/test/setup.ts`.
 
 ## Database tables (beyond the obvious)
 
-`teams` · `games` · `game_factors` · `team_season_stats` · `team_advanced_stats` (PBP aggregates 2010+) · `prediction_history` (self-grading, `game_id`-linked) · `game_odds` · `injury_reports` · `game_weather` · `players` (incl. synthetic DST) · `roster_entries` (per season; 2026 loaded) · `player_season_stats` · `player_weekly_stats` (2018+, offense + kicker FG buckets + `dst_*` columns) · `fantasy_projections` (cache) · `draft_rankings` (last-request cache) · `player_adp` · `fantasy_leagues`/`user_rosters` · `matchup_cache` · `scrape_log`
+`teams` · `games` · `game_factors` · `team_season_stats` · `team_advanced_stats` (PBP aggregates 2010+) · `prediction_history` (self-grading, `game_id`-linked) · `game_odds` · `injury_reports` · `game_weather` · `players` (incl. synthetic DST) · `roster_entries` (per season; 2026 loaded) · `player_season_stats` (2018+ offense/K/DST, aggregated from weekly) · `player_weekly_stats` (2018+, offense + kicker FG buckets + `dst_*` columns) · `fantasy_projections` (cache) · `draft_rankings` (last-request cache) · `player_adp` · `fantasy_leagues`/`user_rosters` · `matchup_cache` · `scrape_progress` (resumable scraping) · `scrape_log` (cron run outcomes)
 
 ## Data operations cheat sheet
 

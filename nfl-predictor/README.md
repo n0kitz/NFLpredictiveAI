@@ -24,9 +24,9 @@
 - **Experimental**: read-only fantasy.nfl.com league sync (settings + rosters)
 
 ### Platform
-- FastAPI + SQLite backend (51 endpoints across 7 domain routers, Swagger at `/docs`), React 19 + TypeScript + Tailwind v4 frontend (13 routes)
+- FastAPI + SQLite backend (51 endpoints across 7 domain routers, Swagger at `/docs`), React 19 + TypeScript + Tailwind v4 frontend (14 routes)
 - Docker Compose: nginx frontend → internal API + weekly cron container (Wed 06:00 UTC full data refresh)
-- GitHub Actions CI: lint + 349 backend / 64 frontend tests on every push; GHCR images on `v*` tags
+- GitHub Actions CI: lint + 510 backend / 120 frontend tests on every push; GHCR images on `v*` tags
 - Observability: structured JSON logs, `X-Request-ID`, `GET /api/metrics`
 
 ---
@@ -57,8 +57,8 @@ docker compose up --build -d              # frontend :3000 (nginx) → api inter
 
 ### Tests
 ```bash
-python -m pytest -q                       # backend (349)
-cd frontend && npm test && npm run build  # frontend (64) + typecheck
+python -m pytest -q                       # backend (510)
+cd frontend && npm test && npm run build  # frontend (109) + typecheck
 ```
 
 ---
@@ -99,7 +99,7 @@ nfl-predictor/
 │   └── database/       # SQLite schema + migrations + CRUD
 ├── frontend/src/       # React app: pages/, pages/fantasy/, api/, components/, theme/
 ├── scripts/            # cron, imports, training, backtest
-├── tests/              # 349 pytest across 22 files
+├── tests/              # 510 pytest across 31 files
 └── data/nfl.db         # SQLite — ships loaded
 ```
 

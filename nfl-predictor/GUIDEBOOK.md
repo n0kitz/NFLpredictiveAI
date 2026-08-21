@@ -1,7 +1,7 @@
 # NFL Predictor — Guidebook
 
 > **The canonical answer to four questions: what is this project, what does "as good as it can possibly be" look like, how far along is it, and what do I do next?**
-> Last updated: 2026-07-17 (black+mypy blocking in CI; rosters refreshed) · Supersedes `PROJECT_PLAN.md` · Dev setup: `README.md` · Data scraping: `SCRAPING_GUIDE.md` · Agent conventions: `../CLAUDE.md`
+> Last updated: 2026-08-21 (Phase 2: My Team advisor, N-way start/sit in Standard scoring, roster-constrained lineup optimizer; injury pipeline fully repaired; 10 hardcoded season defaults replaced; 510 backend + 120 frontend tests) · Supersedes `PROJECT_PLAN.md` · Dev setup: `README.md` · Data scraping: `SCRAPING_GUIDE.md` · Agent conventions: `../CLAUDE.md`
 
 ---
 
@@ -43,10 +43,11 @@ Legend: ✅ done · 🟡 partial / needs action · ⬜ open
 | 1.1 | Draft rankings driven by **VBD over replacement**, parametric in league size (8–20) and scoring (standard / half-PPR / PPR) | ✅ |
 | 1.2 | **All NFL.com roster positions** projectable: QB/RB/WR/TE ✅ ML, K/DST ✅ heuristic from real weekly data | ✅ |
 | 1.3 | **Live draft board** (`/draft`): snake tracking, best-available by need-boosted VBD, tier-break alerts, refresh-proof | ✅ |
-| 1.4 | **Real ADP** loaded so the board shows value-vs-market (`scripts/import_adp.py`) | 🟡 code done — `player_adp` is empty; import a FantasyPros CSV before draft night |
+| 1.3b | **Draft simulator** (`/draft/sim`): batch-compare 8 strategies over seeded mock drafts vs mixed-personality bots, plus an interactive mock draft to rehearse | ✅ |
+| 1.4 | **Real ADP** loaded so the board shows value-vs-market (`scripts/import_adp.py`) | ✅ 2026-08-21 — **211 rows loaded** from Fantasy Football Calculator's public API (`python scripts/import_adp.py --season 2026`, no download). Re-run before draft night; the last run is the one that counts |
 | 1.5 | League scoring **verified against the actual fantasy.nfl.com settings page** (esp. K/DST rules) | ⬜ user action, ~10 min, do before draft |
-| 1.6 | In-season loop: projections → start/sit → waiver (own roster excluded, VBD-ranked) → trade analyzer → optimizer, all league-settings-aware | ✅ |
-| 1.7 | 2026 rosters current on draft night (weekly `import_rosters.py --season 2026 --skip-stats` through August; final run day before draft) | 🟡 refreshed 2026-07-17 (2,961 entries); repeat weekly |
+| 1.6 | In-season loop: projections → start/sit → waiver (own roster excluded, VBD-ranked) → trade analyzer → optimizer, all league-settings-aware | ✅ **+My Team tab**: give roster once → optimal lineup + swap list with reasons + injury flags; `rank_start_sit` ranks N players in Standard scoring |
+| 1.7 | 2026 rosters current on draft night (weekly `import_rosters.py --season 2026 --skip-stats` through August; final run day before draft) | 🟡 refreshed 2026-08-20 (3,202 entries, 32/32 teams); repeat weekly — **final run the day before the draft is mandatory** (196 entries are pre-cutdown leftovers) |
 | 1.8 | **The league is won.** (The only criterion that matters; graded in January.) | ⬜ |
 
 ### Pillar 2 — Honest Model
@@ -68,10 +69,10 @@ Legend: ✅ done · 🟡 partial / needs action · ⬜ open
 |---|-----------|--------|
 | 3.1 | **Deployed on an always-on host** (VPS/Fly/Render), frontend behind nginx, API internal, HTTPS | ⬜ **the** gap between "codebase" and "product" |
 | 3.2 | Cron container verified firing Wednesdays on the host; a missed run is visible (`scrape_log`, `/api/metrics`) | ⬜ blocked by 3.1 |
-| 3.3 | Enrichment live: `ODDS_API_KEY` set + `fetch_odds.py` / `fetch_conditions.py` populating (today: `game_odds` = 0, `injury_reports` = 0) | ⬜ key + two commands |
+| 3.3 | Enrichment live: `ODDS_API_KEY` set + `fetch_odds.py` / `fetch_conditions.py` populating | 🟡 **injuries flowing 2026-08-21** (95 fantasy-relevant rows, all 32 teams resolvable). `game_weather` waits on games inside the 14-day window (season starts 09-10); `game_odds` still needs `ODDS_API_KEY` |
 | 3.4 | A `v*` tag published → GHCR images built by CI (pipeline ✅, first tag ⬜) | 🟡 |
 | 3.5 | CI green on every push: ruff + black + mypy (blocking) + pytest / eslint + tsc + vitest; Docker job on tags | ✅ |
-| 3.6 | Full test suite green: **349 backend + 64 frontend** | ✅ |
+| 3.6 | Full test suite green: **510 backend + 120 frontend** | ✅ |
 | 3.7 | Observability: JSON logs, `X-Request-ID`, `/api/metrics` | ✅ |
 | 3.8 | Data pipeline survives upstream drift (nflverse URL scheme change of 2025 already absorbed; retry/backoff on all scrapers) | ✅ |
 
@@ -86,7 +87,7 @@ This project is calendar-driven. "Done" is not a state, it's a rhythm:
 
 | When | What | Tooling |
 |------|------|---------|
-| **July (now)** | Import real ADP · verify league scoring · weekly 2026 roster refresh · deploy (§5 Now) | `import_adp.py`, `import_rosters.py` |
+| **August (now — draft is weeks away)** | Import real ADP · verify league scoring · weekly 2026 roster refresh · deploy (§5 Now) | `import_adp.py`, `import_rosters.py` |
 | **Aug/Sep — draft night** | Final roster refresh the day before · run the draft from `/draft` | Draft board |
 | **In season, Wed AM** | Cron refreshes everything; you check waivers + set lineup | `weekly_scrape.py` (auto) |
 | **In season, Sunday** | Watch the model's picks self-grade; check `/history` accuracy | auto |
@@ -99,13 +100,17 @@ This project is calendar-driven. "Done" is not a state, it's a rhythm:
 
 ### Now — before the draft (highest leverage, days not weeks)
 1. **Deploy** (3.1/3.2): `docker compose up -d` on a small host; confirm cron fires; set `ODDS_API_KEY` + `CORS_ORIGINS`. Tag `v1.0.0` → images publish.
-2. **Load ADP** (1.4): download FantasyPros 2026 ADP CSV → `python scripts/import_adp.py --file <csv> --season 2026`.
+2. ~~**Load ADP** (1.4)~~ ✅ 2026-08-21 — 211 rows via `python scripts/import_adp.py --season 2026`. Re-run before draft night; the last run is the one that counts.
+2b. **Rebuild weekly stats** — `bash rebuild-weekly-stats.sh`. One-time repair of wrong-player rows; see the ⚠️ block in §7.
 3. **Verify league scoring** (1.5): screenshot the league's scoring settings; diff against `kicker_fantasy_points` / `dst_importer.py` defaults; encode any deltas.
 4. **Weekly roster refresh** (1.7) until draft.
 
 ### Next — in-season quality
 - **Mobile pass** on the fantasy hub + draft board (draft night happens on couches, not desks). First code pass done 2026-07-08 (tables scroll horizontally instead of clipping, dashboards stack on small screens) — still needs a check on a real phone.
 - ~~Flip `black`/`mypy` to blocking~~ ✅ 2026-07-17: backlog cleared (73 files formatted, 55 type errors → 0), both CI steps blocking. Frontend eslint stays non-blocking (react-hooks findings, tracked separately).
+
+### Next — draft prep
+- **Use the simulator before draft night** (`/draft/sim`): run 100+ drafts from your actual slot and league size to see which strategy wins. Early results from slot 1 favour Hero-RB / Best-Available; slot 10 favours Robust-RB / Late-QB — but re-run it once real ADP is loaded, because that changes the bots' behaviour and makes "Value vs ADP" meaningful.
 
 ### Later — v2 ambitions (only if the itch strikes)
 - **Season simulator**: Monte-Carlo the remaining schedule → playoff odds per team, magic numbers on the Season page.
@@ -127,7 +132,8 @@ This project is calendar-driven. "Done" is not a state, it's a rhythm:
 ```bash
 # Pre-draft (July–Sep)
 python scripts/import_rosters.py --season 2026 --skip-stats   # weekly roster churn
-python scripts/import_adp.py --file <FantasyPros.csv> --season 2026
+python scripts/import_adp.py --season 2026                    # live consensus ADP
+python scripts/import_adp.py --season 2026 --file <FantasyPros.csv>   # or a specific CSV
 
 # Model refresh (monthly in-season; mandatory each February)
 python scripts/train_model.py              # game + spread (34-feat)
@@ -146,24 +152,68 @@ python scripts/import_schedule.py          # load the new season's schedule/game
 
 ### Verification (before any "it works" claim)
 ```bash
-python -m pytest -q                         # 349 backend (~16 s in a clean .venv)
-cd frontend && npm run build && npm test    # tsc + 64 vitest
+python -m pytest -q                         # 510 backend (~15 s in a clean .venv)
+cd frontend && npm run build && npm test    # tsc + 120 vitest
 ```
 
 ### Gotchas (the ones that actually bite)
-- **nfl_data_py `import_weekly_data` is dead for 2025+** — nflverse retired that release. Weekly data comes from `fetch_stats_player_week()` (`src/scraper/player_weekly_importer.py`). Don't "fix" imports back to nfl_data_py.
+- **nfl_data_py is dead for 2025+ — both feeds.** `import_weekly_data` *and* `import_seasonal_data` 404 (nflverse retired those releases). Weekly data comes from `fetch_stats_player_week()`; season totals are aggregated from those weekly rows by `aggregate_offense_season_stats()` / `aggregate_kicker_dst_season_stats()`. Don't "fix" imports back to nfl_data_py.
+- **ESPN 403s custom User-Agents** (since 2026-08-20) — `roster_scraper` and `schedule_scraper` must send the default `python-requests/…` UA. A browser-spoofed or app-branded UA fails all 32 teams. `pfr_scraper` is a different host and still needs its browser UA.
+- **Empty or kicker-only leaderboards / a draft board that ignores last season** → `player_season_stats` has no offensive rows for that season. Rebuild: `python scripts/import_player_weekly.py --start <yr> --end <yr>`.
 - **Projections look heuristic/zeroed** → stale cached rows from a wrong-env server. `DELETE FROM fantasy_projections WHERE season=? AND week=?`, regenerate from the `.venv`. (Cron now purges before regenerating.)
 - **Projections empty for a season** → that season has no `roster_entries`.
 - **`sqlite3.Row`**: bracket access only, `.get()` doesn't exist.
 - **DST are synthetic players** (`espn_id='DST-{abbr}'`); ESPN kickers arrive as `PK` and are normalized to `K`.
 - **Schema changes** go to `schema.sql` **and** the `MIGRATIONS` list in `db.py` (currently at v25).
+- **ADP `teams` is not segmented.** FFC echoes the `teams` parameter but returns identical pooled ADP for 8- and 14-team leagues (verified 2026-08-21). Never present ADP as tuned to league size — VBD is what carries league size.
 
 ---
 
-## 7. State snapshot — 2026-07-07 (re-verified)
+## 7. State snapshot — 2026-08-21 (re-verified)
 
-- **Data**: 9,455 games (1990–2025) · player weekly stats 2018–2025 incl. K + DST · 2,961 roster entries for 2026 (refreshed 2026-07-17) · `game_odds` 0 · `injury_reports` 0 · `player_adp` 0 (the three empties are §5-Now items).
+- **Data**: 9,727 games (1990–2026 — the 2026 schedule is loaded: 272 games, kickoff 2026-09-10, all unplayed) · player weekly stats 2018–2025 incl. K + DST · `player_season_stats` now covers 2018–2025 for offense too (2,146 rows rebuilt from weekly; 2025 previously had **zero** QB/RB/WR/TE rows) · 3,202 roster entries for 2026 (32/32 teams, refreshed 2026-08-20) · `game_odds` 0 · `injury_reports` 0 · **`player_adp` 211 (loaded 2026-08-21)**. `player_weekly_stats` needs the one-time rebuild flagged above.
 - **Models**: game GradientBoosting 34-feat OOS 0.668 (weighted-sum 0.672 remains default; ML opt-in via `?model=ml`) · player models 16-feat, MAE QB 6.48 / RB 5.66 / WR 5.50 / TE 4.26 · K/DST heuristic.
-- **Tests**: 349 backend + 64 frontend, all green.
-- **Git/CI**: main in sync with origin · CI green · no release tag yet.
+- **Tests**: 510 backend (31 files) + 120 frontend, all green (~15 s backend).
+- **Git/CI**: CI green (ruff + black + mypy all clean).
 - **Deployment**: none — local/Docker only. This is the top of the list.
+
+### ⚠️ Open repair — run before trusting the draft board
+**`player_weekly_stats` holds rows attached to the wrong player** and needs one rebuild:
+
+```bash
+bash ../rebuild-weekly-stats.sh      # or: python scripts/import_player_weekly.py --start 2018 --end 2025 --rebuild
+```
+
+The old name matcher fell back to last-name-within-position and took the first row it found, so e.g. **Brian Robinson's 2025 stats were written onto Bijan Robinson** (Bijan: 18 weekly rows vs 17 in source; Brian: none at all). 2024 is worse — 119 players carried more rows than the source has. The matcher is fixed and test-guarded, but **re-importing does not repair this**: upserts key on `(player_id, season, week)`, so wrong-player rows survive. `--rebuild` purges the range first. Re-aggregation of `player_season_stats` happens in the same run, which is what draft rankings read.
+
+(Some over-counts are a second, milder cause: older imports didn't filter `season_type=='REG'`, so playoff weeks leaked in. The rebuild fixes both.)
+
+### Added 2026-08-21 (third pass — the "My Team" advisor)
+- **`/fantasy` now opens on a "My Team" tab.** Give it your roster once and it returns the best legal lineup under *your* league settings, the specific swaps to get there (with reasons, not just numbers), injury warnings on your own players, and a per-position "who should I start?" ranking.
+- **Start/sit ranked on PPR in a Standard league** — a correctness bug in the exact feature being asked about. `calculate_projection` returns both totals but the comparison used `projected_points_ppr`, systematically over-valuing high-reception players. Now goes through `LeagueSettings.points_from_projection`, and the explanation quotes the same number it ranked on. Live: Chase leads Nacua by **+1.0 in standard but +3.2 in PPR**.
+- **Start/sit generalised from 2 players to N** (`rank_start_sit`, `POST /api/fantasy/start-sit/rank`) — "which of my three WRs?" now has an answer. The old two-player endpoint delegates to it, so nothing regressed.
+- **Roster-constrained optimizer** (`src/prediction/roster_advisor.py`, `POST /api/fantasy/my-team/lineup`). The Optimizer tab searches every player in the league (a DFS question); this is limited to the roster you own. Reuses the MILP solver with `correlations=False` and no per-team cap — both are DFS constructs that distort a season-long roster.
+
+> **Do not source lineup advice from `fantasy_projections`.** For an upcoming season those cached rows are unreliable: for 2026 wk1 the bulk generator put Jake Haener (backup QB) at 12.0 and Bijan Robinson at 5.4, while `calculate_projection` gives 1.65 and 17.16 — inverted. `build_roster_pool()` therefore projects each rostered player directly (≤25 players, cheap) and that is the verified path. **The bulk `generate_weekly_projections` path is still wrong for future seasons and needs its own investigation** — identical values repeat across unrelated players, which points at a constant feature vector.
+
+### Fixed 2026-08-21 (second pass — injuries)
+- **Injury pipeline was dead at the team level.** ESPN's payload carries no `team` object (only `displayName`), so every row got `team_abbr=""` and `fetch_conditions.py` grouped them all under one unusable key — the real reason `injury_reports` sat at 0. Now resolved via `TEAM_NAME_TO_ABBR`; unresolvable rows are **dropped with a count**, never blanked. 800 fetched → 95 stored across 30 teams.
+- **`Questionable` was unreachable.** The scraper filtered it out while `_INJURY_RULES` defined a 0.7× discount for it, so questionable starters projected as fully healthy. Filter now matches the rules; positions narrowed to `QB/RB/WR/TE/K` (K was missing, defensive positions were noise). 88 of the 95 stored rows are Questionable.
+- **Injury→player matching was the worst bug of the day.** Every lookup keyed on the last *token* of a name — and `"Marvin Harrison Jr.".split()[-1]` is `"Jr."`, so `LIKE '%jr.%'` returned an unrelated player. Measured on live data: **168 of 1013 rostered fantasy players inherited a stranger's injury**, and an `Out` row multiplies a projection by 0.0. Populating the table would have armed this. Matching now uses the normalized full name and refuses to guess on collisions: **168 wrong → 0**, 95 rows → exactly 95 players.
+- **10 hardcoded season defaults** (`Query(2024)`, `= 2024`) across `fantasy.py`, `teams.py`, `matchup.py`, `schemas.py` replaced with date-derived constants in a new season block in `src/config.py` (`CURRENT_SEASON`, `LAST_COMPLETED_SEASON`, `ACTIVE_SEASON`). A regex guard test fails the build if a literal returns.
+
+> **Note on draft rankings:** `generate_draft_rankings` applies only an injury-*frequency* penalty; it does **not** exclude ruled-out players — and that is correct. A preseason "Out" (George Kittle in August) says nothing about Week 1, so dropping him from a draft board would be a mistake. Injuries bite in *weekly* projections, verified live: Kittle → 0.0, Khalil Shakir (Q) → 7.28 (0.7×).
+
+### Added 2026-08-21
+- **Live ADP fetch** (`fetch_ffc_adp` in `adp_importer.py`): `python scripts/import_adp.py --season 2026` pulls consensus ADP from Fantasy Football Calculator's public API — no CSV download, re-runnable as the market moves, and available for standard / half-PPR / PPR. The CSV path still works via `--file`. An import that matches nothing now exits 1 instead of quietly leaving synthetic rank ADP in place.
+- **Name matching rewritten, strongest evidence first** — exact name+position → exact name → accent/suffix-folded normalized comparison → last name+position. Every fuzzy step now requires a *unique* candidate, and the last-name step also requires a compatible first name. This took the 2026 ADP match rate to **211/211** and, more importantly, stopped three classes of wrong match: shared last names ("Brian Robinson" → Bijan), players we don't carry inheriting a namesake's row ("Russell Wilson" → Zach Wilson, because ours was the only QB Wilson), and position-blind exact matches (two Mike Williamses). Collisions across the full 2025 feed: 9 → **0**.
+- **`purge_weekly_stats` + `--rebuild`** on `import_player_weekly.py`, because a matching fix is not retroactive without one.
+
+### Added 2026-08-20
+- **Draft simulator** (`/draft/sim`, `frontend/src/pages/fantasy/draftSim.ts`): seeded-RNG mock drafts against four bot archetypes, eight selectable strategies, batch comparison ranked by best-legal-lineup points, plus an interactive mock draft. Reuses the live board's snake/needs logic so the two can't drift. 400 drafts run in ~1.2 s.
+
+### Fixed this session (were silently wrong)
+- **ESPN 403** — both ESPN scrapers sent a custom User-Agent; ESPN now serves only honest client UAs, so all 32 roster fetches failed. The roster importer reported "complete" and exited 0 on 0 upserts; it now exits 1.
+- **2025 season stats missing** — `nfl_data_py.import_seasonal_data` 404s for 2025+ (same retirement as the weekly feed), so the draft board fell back to 2024-only data. Rebuilt from weekly rows: Christian McCaffrey moved from #255 to #9 on the 2026 board, Puka Nacua #30→#5.
+- **`LAST_COMPLETED_SEASON` off by one in the offseason** — four fantasy tabs were requesting 2024 while 2025 was fully played.
+- **`scrape_log` table missing** from the tracked DB despite `db_version` = 25, so cron failure logging raised `no such table`. Added to `schema.sql`, which self-heals on next open.

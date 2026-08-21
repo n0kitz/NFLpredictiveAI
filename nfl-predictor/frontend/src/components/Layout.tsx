@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { to: '/playoffs', label: 'Playoffs' },
   { to: '/fantasy', label: 'Fantasy' },
   { to: '/draft', label: 'Draft' },
+  { to: '/draft/sim', label: 'Draft Sim' },
 ];
 
 function PlayerSearch() {

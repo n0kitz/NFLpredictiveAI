@@ -95,6 +95,18 @@ CREATE TABLE IF NOT EXISTS scrape_progress (
     UNIQUE(season, week)
 );
 
+-- Weekly cron run outcomes (failure visibility for weekly_scrape.py).
+-- Also created by migration v7; kept here because schema.sql is the single
+-- source of truth and re-running it repairs databases that were stamped at a
+-- later version without ever getting the table.
+CREATE TABLE IF NOT EXISTS scrape_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_at TEXT NOT NULL,
+    success INTEGER NOT NULL DEFAULT 0,
+    error_message TEXT,
+    seasons_scraped TEXT
+);
+
 -- Prediction history (auto-saved from /api/predict)
 CREATE TABLE IF NOT EXISTS prediction_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

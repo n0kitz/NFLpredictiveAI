@@ -1632,6 +1632,21 @@ class Database:
                     break
         return result
 
+    def get_player_team_id(self, player_id: int, season: int) -> Optional[int]:
+        """Return the player's team for `season`, falling back to their most recent entry."""
+        row = self.fetchone(
+            "SELECT team_id FROM roster_entries WHERE player_id = ? AND season = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (player_id, season),
+        )
+        if not row:
+            row = self.fetchone(
+                "SELECT team_id FROM roster_entries WHERE player_id = ? "
+                "ORDER BY season DESC LIMIT 1",
+                (player_id,),
+            )
+        return row["team_id"] if row else None
+
     def get_draft_rankings(
         self,
         season: int,

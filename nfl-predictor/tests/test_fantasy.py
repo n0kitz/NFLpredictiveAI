@@ -442,6 +442,32 @@ class TestByeWeekDerivation:
 
 
 @pytest.mark.skipif(not db_available, reason="Real database not found")
+class TestPlayerTeamId:
+    def test_returns_team_for_rostered_player(self, real_db):
+        row = real_db.fetchone(
+            "SELECT player_id, team_id, season FROM roster_entries LIMIT 1"
+        )
+        if not row:
+            pytest.skip("No roster_entries data")
+        team_id = real_db.get_player_team_id(row["player_id"], row["season"])
+        assert team_id == row["team_id"]
+
+    def test_falls_back_to_most_recent_season(self, real_db):
+        # A player with a roster entry in some season, queried under a season
+        # they were never rostered in, should still resolve via fallback.
+        row = real_db.fetchone(
+            "SELECT player_id, team_id FROM roster_entries ORDER BY season DESC LIMIT 1"
+        )
+        if not row:
+            pytest.skip("No roster_entries data")
+        team_id = real_db.get_player_team_id(row["player_id"], 1901)
+        assert team_id == row["team_id"]
+
+    def test_unknown_player_returns_none(self, real_db):
+        assert real_db.get_player_team_id(999999999, 2026) is None
+
+
+@pytest.mark.skipif(not db_available, reason="Real database not found")
 class TestVBD:
     def test_replacement_qb12_near_zero(self, real_scorer):
         rankings = real_scorer.generate_draft_rankings(2025, "ppr")

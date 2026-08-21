@@ -10,6 +10,8 @@ import { useLeagueSettings } from './leagueSettings';
 import {
   PositionFilterBar, PosBadge, Headshot, MTooltip,
 } from './shared';
+import StreamingPanel from './StreamingPanel';
+import FaabPanel from './FaabPanel';
 
 export default function WaiverTab({ excludeIds = [] }: { excludeIds?: number[] }) {
   const [week, setWeek] = useState(1);
@@ -73,6 +75,9 @@ export default function WaiverTab({ excludeIds = [] }: { excludeIds?: number[] }
           Hide bye week
         </label>
       </div>
+
+      <StreamingPanel week={week} excludeIds={excludeIds} />
+      <FaabPanel week={week} rosterIds={excludeIds} />
 
       {loading ? <Spinner text="Loading waiver wire…" /> : (
         <div className="rounded-xl border border-border bg-surface-850 overflow-x-auto">

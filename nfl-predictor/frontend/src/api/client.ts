@@ -8,6 +8,9 @@
 import type {
   LineupAdvice,
   StartSitRank,
+  ScheduleOutlook,
+  StreamingResult,
+  FaabResult,
   Team, TeamList, GameList, Prediction, PredictionExplanation,
   H2H, TeamMetrics, TeamSeasonStats, TeamProfile, HealthStatus,
   AccuracyStats, InlineFactor, PredictionHistory,
@@ -178,6 +181,53 @@ export const api = {
       slots,
       scoring,
       league_size: leagueSize,
+    }),
+
+  getScheduleOutlook: (
+    playerIds: number[],
+    season = ACTIVE_SEASON,
+    weeks: number[] = [15, 16, 17],
+  ) =>
+    post<ScheduleOutlook>('/fantasy/schedule-outlook', {
+      player_ids: playerIds,
+      season,
+      weeks,
+    }),
+
+  getStreamingCandidates: (
+    position: string,
+    week: number,
+    season = ACTIVE_SEASON,
+    excludePlayerIds: number[] = [],
+    limit = 10,
+  ) =>
+    post<StreamingResult>('/fantasy/streaming', {
+      position,
+      week,
+      season,
+      exclude_player_ids: excludePlayerIds,
+      limit,
+    }),
+
+  getFaabRecommendations: (
+    rosterPlayerIds: number[],
+    week: number,
+    season = ACTIVE_SEASON,
+    position = 'all',
+    scoring = 'standard',
+    leagueSize = 10,
+    budgetRemaining = 100,
+    limit = 15,
+  ) =>
+    post<FaabResult>('/fantasy/waiver/faab', {
+      roster_player_ids: rosterPlayerIds,
+      week,
+      season,
+      position,
+      scoring,
+      league_size: leagueSize,
+      budget_remaining: budgetRemaining,
+      limit,
     }),
 
   // Playoff Picture

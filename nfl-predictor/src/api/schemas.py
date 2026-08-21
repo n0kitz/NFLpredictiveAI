@@ -695,6 +695,92 @@ class LineupAdviceResponse(BaseModel):
     warnings: List[str] = []
 
 
+class ScheduleOutlookRequest(BaseModel):
+    player_ids: List[int] = Field(max_length=25)
+    season: int = ACTIVE_SEASON
+    weeks: List[int] = [15, 16, 17]
+
+
+class PlayoffWeekOutlook(BaseModel):
+    week: int
+    opponent_team_id: Optional[int] = None
+    opponent_team_abbr: Optional[str] = None
+    dvp: Optional[float] = None
+    difficulty: Optional[str] = None
+
+
+class PlayerScheduleOutlook(BaseModel):
+    player_id: int
+    full_name: str
+    position: Optional[str] = None
+    team_abbr: Optional[str] = None
+    bye_week: Optional[int] = None
+    playoff_weeks: List[PlayoffWeekOutlook]
+    playoff_sos_score: Optional[float] = None
+
+
+class ScheduleOutlookResponse(BaseModel):
+    season: int
+    players: List[PlayerScheduleOutlook]
+    bye_collisions: Dict[int, List[int]]
+
+
+class StreamingRequest(BaseModel):
+    position: str
+    week: int
+    season: int = ACTIVE_SEASON
+    exclude_player_ids: List[int] = Field(default_factory=list, max_length=25)
+    limit: int = Field(10, ge=1, le=32)
+
+
+class StreamingCandidate(BaseModel):
+    player_id: int
+    full_name: str
+    team_abbr: Optional[str] = None
+    opponent_team_abbr: Optional[str] = None
+    grade: str
+    score: float
+    explanation: str
+
+
+class StreamingResponse(BaseModel):
+    position: str
+    week: int
+    season: int
+    candidates: List[StreamingCandidate]
+
+
+class FaabRequest(BaseModel):
+    roster_player_ids: List[int] = Field(max_length=25)
+    week: int
+    season: int = ACTIVE_SEASON
+    position: str = "all"
+    scoring: str = "standard"
+    league_size: int = 10
+    budget_remaining: int = Field(100, ge=0, le=1000)
+    limit: int = Field(15, ge=1, le=50)
+
+
+class FaabCandidate(BaseModel):
+    player_id: int
+    full_name: str
+    position: Optional[str] = None
+    team_abbr: Optional[str] = None
+    projected_points: float
+    replacement_points: float
+    delta: float
+    tier: str
+    suggested_bid_pct: int
+    suggested_bid_amount: int
+
+
+class FaabResponse(BaseModel):
+    week: int
+    season: int
+    budget_remaining: int
+    candidates: List[FaabCandidate]
+
+
 class StartSitPlayerEntry(BaseModel):
     player_id: int
     full_name: str

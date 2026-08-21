@@ -22,6 +22,10 @@ neutral_script_rates(db, team_id, season)
 
 matchup_grade(db, player_id, opp_team_id, position, season, week)
     Composite A/B/C/D/F grade + 0-100 score for a player vs opponent.
+
+league_avg_dvp(pos)
+    League-average PPR allowed to a position, for comparing a specific
+    opp_position_dvp() result against the baseline.
 """
 
 from __future__ import annotations
@@ -104,6 +108,11 @@ def _query_dvp(
     if not rows or rows[0]["avg_ppr"] is None:
         return None
     return float(rows[0]["avg_ppr"])
+
+
+def league_avg_dvp(pos: str) -> float:
+    """League-average PPR allowed to `pos`, the baseline opp_position_dvp() is judged against."""
+    return _AVG_DVP.get(pos.upper(), 10.0)
 
 
 def pace_adjusted_plays(db, team_id: int, season: int) -> float:

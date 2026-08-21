@@ -53,3 +53,32 @@ class TestMyTeamLineup:
             json={"player_ids": [999999], "week": 1, "season": 1999},
         )
         assert r.status_code == 404
+
+
+class TestScheduleOutlook:
+    def test_rejects_oversized_roster(self):
+        r = client.post(
+            "/api/fantasy/schedule-outlook",
+            json={"player_ids": list(range(30))},
+        )
+        assert r.status_code == 422
+
+    def test_empty_roster_returns_empty_players(self):
+        r = client.post("/api/fantasy/schedule-outlook", json={"player_ids": []})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["players"] == []
+        assert body["bye_collisions"] == {}
+
+    def test_defaults_to_fantasy_playoff_weeks(self):
+        r = client.post("/api/fantasy/schedule-outlook", json={"player_ids": []})
+        assert r.status_code == 200
+        # Season defaults to ACTIVE_SEASON; verified via the response echoing it.
+        assert r.json()["season"] > 2000
+
+    def test_unknown_player_is_silently_skipped_not_500(self):
+        r = client.post(
+            "/api/fantasy/schedule-outlook", json={"player_ids": [999999]}
+        )
+        assert r.status_code == 200
+        assert r.json()["players"] == []

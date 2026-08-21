@@ -516,6 +516,68 @@ export interface LineupAdvice {
   warnings: string[];
 }
 
+export interface PlayoffWeekOutlook {
+  week: number;
+  opponent_team_id: number | null;
+  opponent_team_abbr: string | null;
+  dvp: number | null;
+  difficulty: 'hard' | 'medium' | 'easy' | null;
+}
+
+export interface PlayerScheduleOutlook {
+  player_id: number;
+  full_name: string;
+  position: string | null;
+  team_abbr: string | null;
+  bye_week: number | null;
+  playoff_weeks: PlayoffWeekOutlook[];
+  playoff_sos_score: number | null;
+}
+
+export interface ScheduleOutlook {
+  season: number;
+  players: PlayerScheduleOutlook[];
+  // Pydantic serialises int dict keys as JSON strings — week number as string.
+  bye_collisions: Record<string, number[]>;
+}
+
+export interface StreamingCandidate {
+  player_id: number;
+  full_name: string;
+  team_abbr: string | null;
+  opponent_team_abbr: string | null;
+  grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  score: number;
+  explanation: string;
+}
+
+export interface StreamingResult {
+  position: string;
+  week: number;
+  season: number;
+  candidates: StreamingCandidate[];
+}
+
+export interface FaabCandidate {
+  player_id: number;
+  full_name: string;
+  position: string | null;
+  team_abbr: string | null;
+  projected_points: number;
+  replacement_points: number;
+  delta: number;
+  tier: 'speculative' | 'solid' | 'priority' | 'must-add';
+  suggested_bid_pct: number;
+  suggested_bid_amount: number;
+}
+
+export interface FaabResult {
+  week: number;
+  season: number;
+  budget_remaining: number;
+  candidates: FaabCandidate[];
+}
+
 export interface DraftRanking {
   player_id: number;
   full_name: string;

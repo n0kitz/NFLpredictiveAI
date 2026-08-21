@@ -11,6 +11,7 @@ from src.prediction.matchup_engine import (
     pass_rate_over_expected,
     neutral_script_rates,
     matchup_grade,
+    league_avg_dvp,
     _sigmoid_score,
     _AVG_DVP,
 )
@@ -97,6 +98,20 @@ class TestOppPositionDvp:
         ]
         result = opp_position_dvp(db, 1, "RB", 2024, 10)
         assert abs(result - 9.8) < 0.01
+
+
+# ── Unit: league_avg_dvp ───────────────────────────────────────────────────────
+
+
+class TestLeagueAvgDvp:
+    def test_known_position_matches_table(self):
+        assert league_avg_dvp("WR") == _AVG_DVP["WR"]
+
+    def test_lowercase_position_normalised(self):
+        assert league_avg_dvp("rb") == _AVG_DVP["RB"]
+
+    def test_unknown_position_falls_back_to_10(self):
+        assert league_avg_dvp("LB") == 10.0
 
 
 # ── Unit: pace_adjusted_plays ─────────────────────────────────────────────────

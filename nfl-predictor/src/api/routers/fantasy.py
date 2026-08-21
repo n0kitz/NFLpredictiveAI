@@ -13,6 +13,12 @@ from ..schemas import (
     StartSitRankResponse,
     LineupAdviceRequest,
     LineupAdviceResponse,
+    ScheduleOutlookRequest,
+    ScheduleOutlookResponse,
+    StreamingRequest,
+    StreamingResponse,
+    FaabRequest,
+    FaabResponse,
     FantasyPlayerEntry,
     FantasyLeaderboardResponse,
     FantasyProjectionEntry,
@@ -195,6 +201,72 @@ def my_team_lineup(req: LineupAdviceRequest, db=Depends(get_db)):
             status_code=503, detail="Optimizer unavailable (pulp missing)"
         )
     return LineupAdviceResponse(**result)
+
+
+@router.post("/api/fantasy/schedule-outlook", response_model=ScheduleOutlookResponse)
+def get_schedule_outlook(req: ScheduleOutlookRequest, db=Depends(get_db)):
+    """Bye weeks + fantasy-playoff (weeks 15-17 by default) matchup difficulty."""
+    from ...prediction.schedule_outlook import build_schedule_outlook
+
+    result = build_schedule_outlook(db, req.player_ids, req.season, req.weeks)
+    return ScheduleOutlookResponse(**result)
+
+
+@router.post("/api/fantasy/streaming", response_model=StreamingResponse)
+def get_streaming_candidates(req: StreamingRequest, db=Depends(get_db)):
+    """Best available DST/K/QB for a week, ranked by matchup grade, roster excluded."""
+    from ...prediction.streaming import streaming_candidates
+
+    try:
+        candidates = streaming_candidates(
+            db,
+            req.position,
+            req.week,
+            req.season,
+            exclude_player_ids=req.exclude_player_ids,
+            limit=req.limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    return StreamingResponse(
+        position=req.position.upper(),
+        week=req.week,
+        season=req.season,
+        candidates=candidates,
+    )
+
+
+@router.post("/api/fantasy/waiver/faab", response_model=FaabResponse)
+def get_faab_recommendations(req: FaabRequest, db=Depends(get_db)):
+    """Waiver targets ranked by value over the roster's own replacement level."""
+    from ...prediction.fantasy_scorer import FantasyScorer
+    from ...prediction.league_settings import LeagueSettings
+    from ...prediction.waiver_advisor import faab_recommendations
+
+    try:
+        settings = LeagueSettings(scoring=req.scoring, league_size=req.league_size)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    scorer = FantasyScorer(db)
+    candidates = faab_recommendations(
+        db,
+        scorer,
+        req.roster_player_ids,
+        req.week,
+        req.season,
+        settings=settings,
+        position=req.position,
+        budget_remaining=req.budget_remaining,
+        limit=req.limit,
+    )
+    return FaabResponse(
+        week=req.week,
+        season=req.season,
+        budget_remaining=req.budget_remaining,
+        candidates=candidates,
+    )
 
 
 @router.get("/api/fantasy/start-sit", response_model=StartSitResponse)

@@ -10,12 +10,14 @@ import PowerRankingsTab from './fantasy/PowerRankingsTab';
 import OptimizerTab from './fantasy/OptimizerTab';
 import RosterImportHelper from './fantasy/RosterImportHelper';
 import MyTeamTab from './fantasy/MyTeamTab';
+import ScheduleTab from './fantasy/ScheduleTab';
+import WeeklyBriefingTab from './fantasy/WeeklyBriefingTab';
 
-const TABS = ['My Team', 'Dashboard', 'Leaderboards', 'Waiver Wire', 'Draft', 'Trade Analyzer', 'Power Rankings', 'Optimizer'] as const;
+const TABS = ['Weekly Briefing', 'My Team', 'Schedule', 'Dashboard', 'Leaderboards', 'Waiver Wire', 'Draft', 'Trade Analyzer', 'Power Rankings', 'Optimizer'] as const;
 type Tab = typeof TABS[number];
 
 export default function FantasyPage() {
-  const [active, setActive] = useState<Tab>('My Team');
+  const [active, setActive] = useState<Tab>('Weekly Briefing');
   // Persisted per season so the imported roster survives reloads
   const [rosterIds, setRosterIds] = useState<number[]>(() => loadMyRoster(ACTIVE_SEASON));
   const updateRoster = (ids: number[]) => {
@@ -63,7 +65,9 @@ export default function FantasyPage() {
           )}
         </div>
       )}
+      {active === 'Weekly Briefing' && <WeeklyBriefingTab rosterIds={rosterIds} onImported={updateRoster} />}
       {active === 'My Team'        && <MyTeamTab rosterIds={rosterIds} onImported={updateRoster} />}
+      {active === 'Schedule'       && <ScheduleTab rosterIds={rosterIds} onImported={updateRoster} />}
       {active === 'Leaderboards'   && <LeaderboardsTab />}
       {active === 'Waiver Wire'    && <WaiverTab excludeIds={rosterIds} />}
       {active === 'Draft'          && <DraftTab />}

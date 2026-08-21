@@ -461,6 +461,61 @@ export interface StartSitResult {
   confidence: string;
 }
 
+export interface StartSitRankEntry {
+  rank: number;
+  player_id: number;
+  full_name: string;
+  position: string | null;
+  team_abbr: string | null;
+  headshot_url: string | null;
+  projected_points: number;
+  projected_points_ppr: number;
+  matchup_score: number;
+  injury_status: string | null;
+  verdict: 'start' | 'sit';
+  edge_over_next: number;
+  confidence: string;
+  reasoning: string;
+}
+
+export interface StartSitRank {
+  week: number;
+  season: number;
+  slots: number;
+  scoring: string;
+  confidence: string;
+  ranked: StartSitRankEntry[];
+}
+
+export interface LineupSlotEntry {
+  player_id: number;
+  full_name: string;
+  position: string | null;
+  team_abbr: string | null;
+  slot: string | null;
+  projected_points: number;
+}
+
+export interface LineupSwapEntry {
+  slot: string | null;
+  start_player_id: number;
+  start_name: string;
+  sit_player_id: number;
+  sit_name: string;
+  point_delta: number;
+  reason: string;
+}
+
+export interface LineupAdvice {
+  lineup: LineupSlotEntry[];
+  bench: LineupSlotEntry[];
+  projected_points: number;
+  current_projected_points: number;
+  points_gained: number;
+  swaps: LineupSwapEntry[];
+  warnings: string[];
+}
+
 export interface DraftRanking {
   player_id: number;
   full_name: string;

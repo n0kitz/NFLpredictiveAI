@@ -6,6 +6,8 @@
  */
 
 import type {
+  LineupAdvice,
+  StartSitRank,
   Team, TeamList, GameList, Prediction, PredictionExplanation,
   H2H, TeamMetrics, TeamSeasonStats, TeamProfile, HealthStatus,
   AccuracyStats, InlineFactor, PredictionHistory,
@@ -17,7 +19,7 @@ import type {
   MatchupGrade, OptimizeRequest, OptimizeDFSRequest, OptimizeResponse,
   NflLeagueSync,
 } from './types';
-import { CURRENT_SEASON, LAST_COMPLETED_SEASON, ACCURACY_SEASONS } from '../config';
+import { CURRENT_SEASON, LAST_COMPLETED_SEASON, ACTIVE_SEASON, ACCURACY_SEASONS } from '../config';
 
 const BASE = '/api';
 
@@ -142,6 +144,41 @@ export const api = {
     week: number;
     season: number;
   }) => post<TradeAnalysis>('/fantasy/trade-analyze', body),
+
+  // My Team — roster-aware advice
+  getMyTeamLineup: (
+    playerIds: number[],
+    week: number,
+    season = ACTIVE_SEASON,
+    currentStarterIds?: number[],
+    scoring = 'standard',
+    leagueSize = 10,
+  ) =>
+    post<LineupAdvice>('/fantasy/my-team/lineup', {
+      player_ids: playerIds,
+      week,
+      season,
+      current_starter_ids: currentStarterIds ?? null,
+      scoring,
+      league_size: leagueSize,
+    }),
+
+  getStartSitRank: (
+    playerIds: number[],
+    week: number,
+    season = ACTIVE_SEASON,
+    slots = 1,
+    scoring = 'standard',
+    leagueSize = 10,
+  ) =>
+    post<StartSitRank>('/fantasy/start-sit/rank', {
+      player_ids: playerIds,
+      week,
+      season,
+      slots,
+      scoring,
+      league_size: leagueSize,
+    }),
 
   // Playoff Picture
   getPlayoffPicture: (year: number) =>

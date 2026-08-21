@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CURRENT_SEASON } from '../config';
+import { ACTIVE_SEASON } from '../config';
 import { loadMyRoster, saveMyRoster } from './fantasy/myRoster';
 import DashboardTab from './fantasy/DashboardTab';
 import LeaderboardsTab from './fantasy/LeaderboardsTab';
@@ -9,17 +9,18 @@ import TradeTabWithValues from './fantasy/TradeTab';
 import PowerRankingsTab from './fantasy/PowerRankingsTab';
 import OptimizerTab from './fantasy/OptimizerTab';
 import RosterImportHelper from './fantasy/RosterImportHelper';
+import MyTeamTab from './fantasy/MyTeamTab';
 
-const TABS = ['Dashboard', 'Leaderboards', 'Waiver Wire', 'Draft', 'Trade Analyzer', 'Power Rankings', 'Optimizer'] as const;
+const TABS = ['My Team', 'Dashboard', 'Leaderboards', 'Waiver Wire', 'Draft', 'Trade Analyzer', 'Power Rankings', 'Optimizer'] as const;
 type Tab = typeof TABS[number];
 
 export default function FantasyPage() {
-  const [active, setActive] = useState<Tab>('Dashboard');
+  const [active, setActive] = useState<Tab>('My Team');
   // Persisted per season so the imported roster survives reloads
-  const [rosterIds, setRosterIds] = useState<number[]>(() => loadMyRoster(CURRENT_SEASON));
+  const [rosterIds, setRosterIds] = useState<number[]>(() => loadMyRoster(ACTIVE_SEASON));
   const updateRoster = (ids: number[]) => {
     setRosterIds(ids);
-    saveMyRoster(CURRENT_SEASON, ids);
+    saveMyRoster(ACTIVE_SEASON, ids);
   };
 
   return (
@@ -62,6 +63,7 @@ export default function FantasyPage() {
           )}
         </div>
       )}
+      {active === 'My Team'        && <MyTeamTab rosterIds={rosterIds} onImported={updateRoster} />}
       {active === 'Leaderboards'   && <LeaderboardsTab />}
       {active === 'Waiver Wire'    && <WaiverTab excludeIds={rosterIds} />}
       {active === 'Draft'          && <DraftTab />}

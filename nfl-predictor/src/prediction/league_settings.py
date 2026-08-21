@@ -11,7 +11,7 @@ Defaults mirror a fantasy.nfl.com league: Standard scoring (no PPR),
 
 import math
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Any, Dict, List
 
 NFL_DEFAULT_SLOTS: Dict[str, int] = {
     "QB": 1,
@@ -67,6 +67,21 @@ class LeagueSettings:
         """Cumulative overall-rank cutoffs for draft tiers 1-8, scaled to size."""
         n = self.league_size
         return [n * m for m in (1, 3, 5, 7, 9, 11, 13, 15)]
+
+    def points_from_projection(self, proj: Dict[str, Any]) -> float:
+        """Pick the projection field matching this league's scoring.
+
+        The Python twin of ``points_expr``. Weekly projections carry both PPR
+        and standard totals; ranking start/sit on the wrong one quietly favours
+        high-reception players in a standard league.
+        """
+        ppr = float(proj.get("projected_points_ppr") or 0.0)
+        std = float(proj.get("projected_points_std") or 0.0)
+        if self.scoring == "ppr":
+            return ppr
+        if self.scoring == "half_ppr":
+            return (ppr + std) / 2
+        return std
 
     def points_expr(self, alias: str = "pss") -> str:
         """SQL expression selecting fantasy points under this scoring format."""

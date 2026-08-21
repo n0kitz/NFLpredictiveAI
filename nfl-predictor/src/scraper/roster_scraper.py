@@ -6,7 +6,7 @@ Fetches current NFL roster data for all 32 teams.
 
 import logging
 import time
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 
 import requests
 
@@ -59,7 +59,49 @@ ESPN_PLAYER_STATS_URL = (
     "/athletes/{espn_id}/stats?season={season}"
 )
 
-_HEADERS = {"User-Agent": "NFL-Predictor/1.0 (educational project)"}
+# ESPN's site API 403s custom and browser-spoofed User-Agents (verified
+# 2026-08-20: every one of the 32 team endpoints returned 403). It still serves
+# honest client identifiers, so we deliberately leave the default
+# ``python-requests/x.y.z`` UA in place instead of setting our own.
+# Guarded by tests/test_espn_user_agent.py.
+
+
+def evaluate_roster_import(
+    teams_fetched: int,
+    entries_upserted: int,
+    expected_teams: int = 32,
+) -> Tuple[bool, str]:
+    """Judge the outcome of a roster-import run.
+
+    A run that upserts nothing is a hard failure even though no exception was
+    raised — that is exactly what the 2026-08-20 ESPN 403 outage looked like,
+    and it was reported as success. Callers should exit non-zero when ``ok`` is
+    False so cron and humans notice.
+
+    Args:
+        teams_fetched:    Teams that returned at least one player.
+        entries_upserted: Roster entries written to the DB.
+        expected_teams:   Teams the run should have covered (32 in the NFL).
+
+    Returns:
+        ``(ok, message)`` — ``message`` is always non-empty and safe to print.
+    """
+    coverage = f"{teams_fetched}/{expected_teams}"
+
+    if entries_upserted == 0:
+        return False, (
+            f"FAILED: no roster entries upserted ({coverage} teams returned "
+            "players). Every ESPN fetch failed — check for a 403 (User-Agent "
+            "policy) or an upstream outage before trusting the draft board."
+        )
+
+    if teams_fetched < expected_teams:
+        return True, (
+            f"PARTIAL: only {coverage} teams returned players "
+            f"({entries_upserted} entries). Missing teams keep stale roster data."
+        )
+
+    return True, f"OK: {coverage} teams imported ({entries_upserted} entries)."
 
 
 def _inches_to_cm(inches: Optional[int]) -> Optional[float]:
@@ -80,7 +122,6 @@ class RosterScraper:
     def __init__(self, request_delay: float = 1.0):
         self._delay = request_delay
         self._session = requests.Session()
-        self._session.headers.update(_HEADERS)
 
     def fetch_team_roster(self, team_abbr: str) -> List[Dict[str, Any]]:
         """

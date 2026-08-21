@@ -28,7 +28,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from src.database.db import Database
-from src.scraper.roster_scraper import RosterScraper
+from src.scraper.roster_scraper import RosterScraper, evaluate_roster_import
 from src.scraper.nfl_data_importer import import_player_season_stats
 
 CURRENT_SEASON = (
@@ -240,6 +240,19 @@ def main() -> None:
     db.commit()
     print(f"  Players upserted:        {players_upserted}")
     print(f"  Roster entries upserted: {roster_entries_upserted}")
+
+    # A run that imported nothing must not look like a success (see
+    # src/scraper/roster_scraper.evaluate_roster_import).
+    teams_with_players = sum(1 for players in all_rosters.values() if players)
+    import_ok, import_message = evaluate_roster_import(
+        teams_fetched=teams_with_players,
+        entries_upserted=roster_entries_upserted,
+    )
+    print(f"  {import_message}")
+
+    if not import_ok:
+        db.close()
+        sys.exit(1)
 
     # ── Step 2: nfl_data_py player season stats ───────────────────────────────
     if args.skip_stats:

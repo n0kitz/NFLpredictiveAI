@@ -73,10 +73,10 @@ class ScheduleScraper:
 
     def __init__(self, db=None) -> None:
         self.db = db
+        # No custom User-Agent: ESPN's site API 403s spoofed/custom UAs but
+        # serves the default ``python-requests/x.y.z``. See roster_scraper.py
+        # and tests/test_espn_user_agent.py.
         self._session = requests.Session()
-        self._session.headers.update(
-            {"User-Agent": "Mozilla/5.0 (compatible; NFL-Predictor)"}
-        )
 
     def fetch_week(
         self, season: int, week: int, season_type: int = 2

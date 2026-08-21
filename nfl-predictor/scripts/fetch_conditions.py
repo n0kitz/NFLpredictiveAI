@@ -17,7 +17,11 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.database.db import Database
-from src.scraper.injury_scraper import InjuryScraper, STADIUM_COORDS
+from src.scraper.injury_scraper import (
+    InjuryScraper,
+    STADIUM_COORDS,
+    evaluate_injury_import,
+)
 from src.scraper.weather_scraper import WeatherScraper
 
 
@@ -38,14 +42,23 @@ def main() -> int:
         by_team.setdefault(abbr, []).append(inj)
 
     inj_stored = 0
+    unknown_teams: list[str] = []
     for abbr, injuries in by_team.items():
         team = db.get_team_by_abbreviation(abbr)
         if not team:
+            unknown_teams.append(abbr)
             continue
         db.upsert_injuries(team["team_id"], injuries)
         inj_stored += len(injuries)
 
-    print(f"Stored {inj_stored} key injury record(s) across {len(by_team)} team(s).")
+    print(f"Stored {inj_stored} injury record(s) across {len(by_team)} team(s).")
+    if unknown_teams:
+        print(f"  Unknown team abbreviations skipped: {sorted(unknown_teams)}")
+
+    inj_ok, inj_message = evaluate_injury_import(
+        fetched=len(all_injuries), relevant=len(key_injuries), stored=inj_stored
+    )
+    print(f"  {inj_message}")
 
     # ── Weather for upcoming games (next 14 days) ─────────
     today = date.today()
@@ -96,7 +109,11 @@ def main() -> int:
         wx_stored += 1
 
     print(f"Stored weather for {wx_stored} game(s). Skipped: {wx_skipped}.")
-    return 0
+
+    # Weather is best-effort (no games in the window during the offseason), but
+    # a failed injury import must surface — projections silently treat injured
+    # players as healthy without it.
+    return 0 if inj_ok else 1
 
 
 if __name__ == "__main__":

@@ -120,29 +120,42 @@ class TestCalculateProjection:
             "headshot_url": None,
         }
 
-    def test_out_player_projects_zero(self, scorer, mock_db):
-        mock_db.fetchone.return_value = {
-            "player_name": "Mahomes",
-            "injury_status": "Out",
+    def _injury(self, status: str, name: str = "Patrick Mahomes") -> dict:
+        return {
+            "player_name": name,
+            "position": "QB",
+            "team_id": 1,
+            "injury_status": status,
             "report_date": "2024-10-01",
         }
+
+    def test_out_player_projects_zero(self, scorer, mock_db):
+        mock_db.get_all_current_injuries.return_value = [self._injury("Out")]
         result = scorer.calculate_projection(1, 1, 2024, None)
         assert result["projected_points_ppr"] == 0.0
         assert result["projected_points_std"] == 0.0
         assert result["confidence"] == "high"
-        mock_db.fetchone.return_value = None
+        mock_db.get_all_current_injuries.return_value = []
 
     def test_doubtful_reduces_projection(self, scorer, mock_db):
-        mock_db.fetchone.return_value = {
-            "player_name": "Mahomes",
-            "injury_status": "Doubtful",
-            "report_date": "2024-10-01",
-        }
+        mock_db.get_all_current_injuries.return_value = [self._injury("Doubtful")]
         result = scorer.calculate_projection(1, 1, 2024, None)
         # 22 ppg * 0.2 ≈ 4.4
         assert result["projected_points_ppr"] < 10.0
         assert result["confidence"] == "low"
-        mock_db.fetchone.return_value = None
+        mock_db.get_all_current_injuries.return_value = []
+
+    def test_last_name_only_injury_row_does_not_match(self, scorer, mock_db):
+        """Deliberate strictness: a bare surname identifies no one.
+
+        Matching on the last token is what let "Michael Penix Jr." zero out
+        "Marvin Harrison Jr." — 168 of 1013 rostered players were mis-attributed.
+        """
+        mock_db.get_all_current_injuries.return_value = [self._injury("Out", "Mahomes")]
+        result = scorer.calculate_projection(1, 1, 2024, None)
+        assert result["projected_points_ppr"] > 0.0
+        assert result["injury_status"] is None
+        mock_db.get_all_current_injuries.return_value = []
 
     def test_base_projection_from_season_stats(self, scorer, mock_db):
         mock_db.fetchone.return_value = None  # no injury

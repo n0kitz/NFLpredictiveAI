@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
+from ..scraper.player_weekly_importer import normalize_player_name
 from .player_features import (
     build_player_feature_vector,
     feature_dict_to_array,
@@ -33,6 +34,72 @@ _INJURY_RULES: Dict[str, tuple] = {
 
 _FANTASY_POSITIONS = ("QB", "RB", "WR", "TE", "K", "DST")
 _POSITIONS_SQL = ",".join(f"'{p}'" for p in _FANTASY_POSITIONS)
+
+
+def build_injury_index(rows: Any) -> Dict[str, List[Dict[str, Any]]]:
+    """Index injury rows by normalized full name.
+
+    Keying on the last *token* was catastrophic: for "Marvin Harrison Jr." that
+    token is "Jr.", so a LIKE '%jr.%' lookup returned an unrelated player and an
+    "Out" status zeroed a healthy projection. Normalizing the whole name (accent
+    and suffix tolerant) makes the key identify one person.
+    """
+    index: Dict[str, List[Dict[str, Any]]] = {}
+    for row in rows or []:
+        name = (row["player_name"] or "").strip()
+        if not name:
+            continue
+        key = normalize_player_name(name)
+        if not key:
+            continue
+        index.setdefault(key, []).append(
+            {
+                "player_name": name,
+                "position": (row["position"] or "").upper(),
+                "injury_status": row["injury_status"],
+                "team_id": row["team_id"] if "team_id" in row.keys() else None,
+            }
+            if hasattr(row, "keys")
+            else {
+                "player_name": name,
+                "position": (row.get("position") or "").upper(),
+                "injury_status": row.get("injury_status"),
+                "team_id": row.get("team_id"),
+            }
+        )
+    return index
+
+
+def lookup_injury(
+    index: Dict[str, List[Dict[str, Any]]],
+    full_name: str,
+    position: Optional[str] = None,
+    team_id: Optional[int] = None,
+) -> Optional[str]:
+    """Return the injury status for a player, or None when not confidently known.
+
+    Requires a full-name match. When several players share a normalized name,
+    position and team narrow it; if they cannot, we return None rather than
+    guess — a wrong "Out" silently zeroes a projection.
+    """
+    key = normalize_player_name(full_name or "")
+    if not key:
+        return None
+    candidates = index.get(key)
+    if not candidates:
+        return None
+    if len(candidates) > 1 and position:
+        narrowed = [c for c in candidates if c["position"] == position.upper()]
+        if narrowed:
+            candidates = narrowed
+    if len(candidates) > 1 and team_id is not None:
+        narrowed = [c for c in candidates if c["team_id"] == team_id]
+        if narrowed:
+            candidates = narrowed
+    if len(candidates) != 1:
+        return None
+    return candidates[0]["injury_status"]
+
 
 # Two-season blend weights for projected season points (recency-weighted ppg)
 _BLEND_LAST = 0.65
@@ -240,7 +307,7 @@ class FantasyScorer:
         weather_impact = False
 
         # Injury adjustment
-        inj = self._get_injury_for_player(name)
+        inj = self._get_injury_for_player(name, position=pos)
         if inj:
             status = inj["injury_status"]
             injury_status = status
@@ -348,13 +415,10 @@ class FantasyScorer:
             (season, season),
         )
 
-        # ── 2. All injuries (most recent report date) keyed by lowercase last name ─
-        injuries_by_last: Dict[str, str] = {}
-        for inj in self.db.get_all_current_injuries():
-            name = (inj["player_name"] or "").strip()
-            if name:
-                last = name.split()[-1].lower()
-                injuries_by_last[last] = inj["injury_status"]
+        # ── 2. All injuries (most recent report date), indexed by full name ──
+        # Keyed on the normalized FULL name, not the last token: "Jr."/"III"
+        # suffixes made last-token keys collide across unrelated players.
+        injury_index = build_injury_index(self.db.get_all_current_injuries())
 
         # ── 3. All games for this week → map team_id → game row ──────────────
         week_games = self.db.fetchall(
@@ -463,10 +527,9 @@ class FantasyScorer:
             injury_status: Optional[str] = None
             weather_impact = False
 
-            # Injury from prefetched dict (last-name match)
+            # Injury from the prefetched full-name index
             if name:
-                last = name.strip().split()[-1].lower()
-                status = injuries_by_last.get(last)
+                status = lookup_injury(injury_index, name, position=pos)
                 if status:
                     injury_status = status
                     if status in _INJURY_RULES:
@@ -718,18 +781,18 @@ class FantasyScorer:
                 (season,),
             )
 
-        # Bulk injury-report counts keyed by lowercase last name (avoids one
-        # LIKE query per player)
+        # Bulk injury-report counts keyed by normalized FULL name (avoids one
+        # query per player). Last-name keys summed unrelated players together —
+        # every "Jr." shared a bucket — inflating the durability penalty.
         injury_counts: Dict[str, int] = {}
         for r in self.db.fetchall(
             "SELECT player_name, COUNT(*) AS cnt FROM injury_reports "
             "GROUP BY player_name",
             (),
         ):
-            name = (r["player_name"] or "").strip()
-            if name:
-                last = name.split()[-1].lower()
-                injury_counts[last] = injury_counts.get(last, 0) + int(r["cnt"])
+            key = normalize_player_name((r["player_name"] or "").strip())
+            if key:
+                injury_counts[key] = injury_counts.get(key, 0) + int(r["cnt"])
 
         # Compute adjusted scores
         scored: List[Dict[str, Any]] = []
@@ -753,12 +816,9 @@ class FantasyScorer:
                     pass
 
             # Injury-frequency penalty: −5 % per report beyond 2
-            last = (
-                (r["full_name"] or "").strip().split()[-1].lower()
-                if r["full_name"]
-                else ""
+            inj_count = injury_counts.get(
+                normalize_player_name((r["full_name"] or "").strip()), 0
             )
-            inj_count = injury_counts.get(last, 0)
             if inj_count > 2:
                 score *= max(0.8, 1.0 - 0.05 * (inj_count - 2))
 
@@ -957,107 +1017,186 @@ class FantasyScorer:
 
     # ── Start / Sit recommendation ───────────────────────────────────────────
 
+    def _enrich_projection(self, proj: Dict[str, Any], pid: int) -> Dict[str, Any]:
+        """Attach player identity + current team to a raw projection."""
+        player = self.db.get_player_by_id(pid)
+        if player:
+            proj.setdefault("full_name", player["full_name"])
+            proj["headshot_url"] = player["headshot_url"]
+        team_row = self.db.fetchone(
+            """
+            SELECT t.abbreviation FROM teams t
+            JOIN roster_entries re ON re.team_id = t.team_id
+            WHERE re.player_id = ?
+            ORDER BY re.season DESC LIMIT 1
+            """,
+            (pid,),
+        )
+        proj["team_abbr"] = team_row["abbreviation"] if team_row else None
+        return proj
+
+    @staticmethod
+    def _start_sit_reasoning(
+        proj: Dict[str, Any], points: float, edge: float, is_start: bool
+    ) -> str:
+        """Explain a start/sit call in the league's own scoring.
+
+        Availability beats everything else; after that the sentence quotes the
+        same number the ranking used, so the advice and the maths agree.
+        """
+        inj = proj.get("injury_status")
+        if inj in ("Out", "IR", "PUP"):
+            return f"Ruled out ({inj}) - do not start."
+        if inj == "Doubtful":
+            return "Doubtful to play - avoid unless you have no alternative."
+
+        parts: List[str] = []
+        ms = float(proj.get("matchup_score", 1.0) or 1.0)
+        if ms >= 1.1:
+            parts.append(f"Favourable matchup (score {ms:.2f})")
+        elif ms < 0.9:
+            parts.append(f"Tough matchup (score {ms:.2f})")
+
+        if is_start:
+            if edge and edge < 1.0:
+                parts.append(
+                    f"projects {points:.1f} pts, but only +{edge:.1f} over the "
+                    "next option - a coin flip"
+                )
+            elif edge:
+                parts.append(
+                    f"projects {points:.1f} pts, +{edge:.1f} over the next option"
+                )
+            else:
+                parts.append(f"projects {points:.1f} pts")
+        else:
+            parts.append(f"projects {points:.1f} pts")
+
+        if inj == "Questionable":
+            parts.append("questionable, so confirm he is active before kickoff")
+        if proj.get("weather_impact"):
+            parts.append("adverse weather expected")
+        return ". ".join(p[0].upper() + p[1:] for p in parts) + "."
+
+    def rank_start_sit(
+        self,
+        player_ids: List[int],
+        week: int,
+        season: int,
+        slots: int = 1,
+        settings: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Rank any number of players for a week and say which to start.
+
+        Ranks on the league's scoring format (standard by default) rather than
+        PPR, and marks the top ``slots`` entries as starts. Players that cannot
+        be projected are skipped rather than ranked at zero.
+        """
+        from .league_settings import LeagueSettings
+
+        settings = settings or LeagueSettings()
+
+        entries: List[Dict[str, Any]] = []
+        for pid in player_ids:
+            proj = self.calculate_projection(pid, week, season, None)
+            if not proj:
+                continue
+            proj = self._enrich_projection(proj, pid)
+            entries.append(
+                {
+                    "player_id": pid,
+                    "proj": proj,
+                    "points": settings.points_from_projection(proj),
+                }
+            )
+
+        entries.sort(key=lambda e: e["points"], reverse=True)
+
+        ranked: List[Dict[str, Any]] = []
+        for i, e in enumerate(entries):
+            proj = e["proj"]
+            edge = (
+                round(e["points"] - entries[i + 1]["points"], 2)
+                if i + 1 < len(entries)
+                else 0.0
+            )
+            is_start = i < slots
+            ranked.append(
+                {
+                    "rank": i + 1,
+                    "player_id": e["player_id"],
+                    "full_name": proj.get("full_name", ""),
+                    "position": proj.get("position"),
+                    "team_abbr": proj.get("team_abbr"),
+                    "headshot_url": proj.get("headshot_url"),
+                    "projected_points": round(e["points"], 2),
+                    "projected_points_ppr": proj.get("projected_points_ppr", 0.0),
+                    "matchup_score": proj.get("matchup_score", 1.0),
+                    "injury_status": proj.get("injury_status"),
+                    "verdict": "start" if is_start else "sit",
+                    "edge_over_next": edge,
+                    "confidence": proj.get("confidence", "medium"),
+                    "reasoning": self._start_sit_reasoning(
+                        proj, e["points"], edge, is_start
+                    ),
+                }
+            )
+
+        confidences = [r["confidence"] for r in ranked]
+        if not confidences:
+            overall = "low"
+        elif "low" in confidences:
+            overall = "low"
+        elif all(c == "high" for c in confidences):
+            overall = "high"
+        else:
+            overall = "medium"
+
+        return {
+            "week": week,
+            "season": season,
+            "slots": slots,
+            "scoring": settings.scoring,
+            "confidence": overall,
+            "ranked": ranked,
+        }
+
     def start_sit_recommendation(
         self,
         player1_id: int,
         player2_id: int,
         week: int,
         season: int,
+        settings: Optional[Any] = None,
     ) -> Dict[str, Any]:
+        """Compare two players and recommend which to start.
+
+        Kept for the existing endpoint; delegates to rank_start_sit so both
+        paths rank identically.
         """
-        Compare two players and recommend which to start for the given week.
+        result = self.rank_start_sit(
+            [player1_id, player2_id], week, season, slots=1, settings=settings
+        )
+        ranked = result["ranked"]
+        if len(ranked) < 2:
+            return {}
 
-        Returns a dict with 'start', 'sit' (each a full projection dict + reasoning),
-        and 'confidence'.
-        """
-        p1 = self.calculate_projection(player1_id, week, season, None)
-        p2 = self.calculate_projection(player2_id, week, season, None)
-
-        def _enrich(proj: Dict, pid: int) -> Dict:
-            player = self.db.get_player_by_id(pid)
-            if player:
-                proj.setdefault("full_name", player["full_name"])
-                proj["headshot_url"] = player["headshot_url"]
-            team_row = self.db.fetchone(
-                """
-                SELECT t.abbreviation FROM teams t
-                JOIN roster_entries re ON re.team_id = t.team_id
-                WHERE re.player_id = ?
-                ORDER BY re.season DESC LIMIT 1
-                """,
-                (pid,),
-            )
-            proj["team_abbr"] = team_row["abbreviation"] if team_row else None
-            return proj
-
-        p1 = _enrich(p1, player1_id)
-        p2 = _enrich(p2, player2_id)
-
-        if p1.get("projected_points_ppr", 0) >= p2.get("projected_points_ppr", 0):
-            start_proj, sit_proj = p1, p2
-            start_id, sit_id = player1_id, player2_id
-        else:
-            start_proj, sit_proj = p2, p1
-            start_id, sit_id = player2_id, player1_id
-
-        def _reasoning(proj: Dict, is_start: bool) -> str:
-            inj = proj.get("injury_status")
-            if inj in ("Out", "IR", "PUP"):
-                return f"Ruled out ({inj}) — do not start."
-            if inj == "Doubtful":
-                return "Doubtful to play — avoid if possible."
-            ms = proj.get("matchup_score", 1.0)
-            pts = proj.get("projected_points_ppr", 0.0)
-            parts = []
-            if is_start:
-                parts.append(
-                    f"Favorable matchup (score {ms:.2f})"
-                    if ms >= 1.1
-                    else f"Higher projected output ({pts:.1f} pts)"
-                )
-            else:
-                parts.append(
-                    f"Tough matchup (score {ms:.2f})"
-                    if ms < 0.9
-                    else f"Lower projected output ({pts:.1f} pts)"
-                )
-            if proj.get("weather_impact"):
-                parts.append("adverse weather expected")
-            return ". ".join(parts) + "."
-
-        conf_vals = [
-            start_proj.get("confidence", "medium"),
-            sit_proj.get("confidence", "medium"),
-        ]
-        if "low" in conf_vals:
-            overall_conf = "low"
-        elif all(c == "high" for c in conf_vals):
-            overall_conf = "high"
-        else:
-            overall_conf = "medium"
+        def _legacy(entry: Dict[str, Any]) -> Dict[str, Any]:
+            return {
+                "player_id": entry["player_id"],
+                "full_name": entry["full_name"],
+                "position": entry["position"],
+                "team_abbr": entry["team_abbr"],
+                "headshot_url": entry["headshot_url"],
+                "projected_points_ppr": entry["projected_points_ppr"],
+                "matchup_score": entry["matchup_score"],
+                "reasoning": entry["reasoning"],
+            }
 
         return {
-            "start": {
-                "player_id": start_id,
-                "full_name": start_proj.get("full_name", ""),
-                "position": start_proj.get("position"),
-                "team_abbr": start_proj.get("team_abbr"),
-                "headshot_url": start_proj.get("headshot_url"),
-                "projected_points_ppr": start_proj.get("projected_points_ppr", 0.0),
-                "matchup_score": start_proj.get("matchup_score", 1.0),
-                "reasoning": _reasoning(start_proj, True),
-            },
-            "sit": {
-                "player_id": sit_id,
-                "full_name": sit_proj.get("full_name", ""),
-                "position": sit_proj.get("position"),
-                "team_abbr": sit_proj.get("team_abbr"),
-                "headshot_url": sit_proj.get("headshot_url"),
-                "projected_points_ppr": sit_proj.get("projected_points_ppr", 0.0),
-                "matchup_score": sit_proj.get("matchup_score", 1.0),
-                "reasoning": _reasoning(sit_proj, False),
-            },
-            "confidence": overall_conf,
+            "start": _legacy(ranked[0]),
+            "sit": _legacy(ranked[1]),
+            "confidence": result["confidence"],
         }
 
     # ── Private helpers ──────────────────────────────────────────────────────
@@ -1085,31 +1224,45 @@ class FantasyScorer:
             raw = (1.0 + (rz_eff - _AVG_RZ_EFF)) * 0.4 + (ypp / _AVG_YPP) * 0.6
         return round(max(0.7, min(1.3, raw)), 3)
 
-    def _get_injury_for_player(self, player_name: str) -> Optional[Any]:
-        """Get the most recent injury record matching the player's last name."""
+    def _get_injury_for_player(
+        self,
+        player_name: str,
+        position: Optional[str] = None,
+        team_id: Optional[int] = None,
+    ) -> Optional[Any]:
+        """Get the current injury status for a player, or None if not confident.
+
+        Matches on the full normalized name. The previous last-token LIKE query
+        attributed 168 of 1013 rostered fantasy players to the wrong injury.
+        """
         if not player_name:
             return None
-        last = player_name.strip().split()[-1]
-        return self.db.fetchone(
-            """
-            SELECT * FROM injury_reports
-            WHERE player_name LIKE ?
-            ORDER BY report_date DESC
-            LIMIT 1
-            """,
-            (f"%{last}%",),
-        )
+        index = build_injury_index(self.db.get_all_current_injuries())
+        status = lookup_injury(index, player_name, position, team_id)
+        return {"injury_status": status} if status else None
 
-    def _get_injury_frequency(self, player_name: str) -> int:
-        """Count all injury_reports entries for a player (approximate last-name match)."""
+    def _get_injury_frequency(
+        self, player_name: str, position: Optional[str] = None
+    ) -> int:
+        """Count injury_reports entries for a player (full-name match)."""
         if not player_name:
             return 0
-        last = player_name.strip().split()[-1]
-        row = self.db.fetchone(
-            "SELECT COUNT(*) AS cnt FROM injury_reports WHERE player_name LIKE ?",
-            (f"%{last}%",),
+        key = normalize_player_name(player_name)
+        if not key:
+            return 0
+        rows = self.db.fetchall(
+            "SELECT player_name, position, COUNT(*) AS cnt FROM injury_reports "
+            "GROUP BY player_name, position",
+            (),
         )
-        return int(row["cnt"] or 0) if row else 0
+        total = 0
+        for r in rows:
+            if normalize_player_name(r["player_name"] or "") != key:
+                continue
+            if position and (r["position"] or "").upper() != position.upper():
+                continue
+            total += int(r["cnt"] or 0)
+        return total
 
     def _is_starter(self, player_id: int, season: int) -> bool:
         """Return True if the player is marked as a starter in roster_entries."""

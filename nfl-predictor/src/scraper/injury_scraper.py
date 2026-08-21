@@ -87,14 +87,152 @@ _ESPN_INJURIES_URL = (
     "https://site.api.espn.com/apis/site/v2/sports/football/nfl/injuries"
 )
 
+# Full team display name → internal abbreviation.
+#
+# ESPN's injuries endpoint identifies a team ONLY by ``displayName`` — there is
+# no ``team`` object and no abbreviation anywhere in the payload (verified
+# 2026-08-21). Same-city pairs (Rams/Chargers, Giants/Jets) mean the nickname
+# is the discriminator, so the full name is the key.
+TEAM_NAME_TO_ABBR: dict[str, str] = {
+    "Arizona Cardinals": "ARI",
+    "Atlanta Falcons": "ATL",
+    "Baltimore Ravens": "BAL",
+    "Buffalo Bills": "BUF",
+    "Carolina Panthers": "CAR",
+    "Chicago Bears": "CHI",
+    "Cincinnati Bengals": "CIN",
+    "Cleveland Browns": "CLE",
+    "Dallas Cowboys": "DAL",
+    "Denver Broncos": "DEN",
+    "Detroit Lions": "DET",
+    "Green Bay Packers": "GB",
+    "Houston Texans": "HOU",
+    "Indianapolis Colts": "IND",
+    "Jacksonville Jaguars": "JAX",
+    "Kansas City Chiefs": "KC",
+    "Las Vegas Raiders": "LV",
+    "Los Angeles Chargers": "LAC",
+    "Los Angeles Rams": "LAR",
+    "Miami Dolphins": "MIA",
+    "Minnesota Vikings": "MIN",
+    "New England Patriots": "NE",
+    "New Orleans Saints": "NO",
+    "New York Giants": "NYG",
+    "New York Jets": "NYJ",
+    "Philadelphia Eagles": "PHI",
+    "Pittsburgh Steelers": "PIT",
+    "San Francisco 49ers": "SF",
+    "Seattle Seahawks": "SEA",
+    "Tampa Bay Buccaneers": "TB",
+    "Tennessee Titans": "TEN",
+    "Washington Commanders": "WAS",
+}
+
+
+def parse_injuries(payload: dict, report_date: Optional[str] = None) -> list[dict]:
+    """Flatten an ESPN injuries payload into rows.
+
+    Rows whose team or player cannot be identified are dropped rather than
+    emitted with an empty ``team_abbr`` — a blank team silently collapses every
+    injury into one unusable group downstream.
+    """
+    entries = payload.get("injuries", payload.get("items", [])) or []
+    today = report_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    rows: list[dict] = []
+    unresolved: set[str] = set()
+
+    for entry in entries:
+        display_name = (entry.get("displayName") or "").strip()
+        abbr = TEAM_NAME_TO_ABBR.get(display_name)
+        if not abbr:
+            # Older payloads nested a team object; keep honouring it if present.
+            espn_abbr = (entry.get("team") or {}).get("abbreviation", "")
+            abbr = ESPN_TEAM_MAP.get(espn_abbr) if espn_abbr else None
+        if not abbr:
+            if display_name:
+                unresolved.add(display_name)
+            continue
+
+        for inj in entry.get("injuries") or []:
+            athlete = inj.get("athlete") or {}
+            player_name = (athlete.get("displayName") or "").strip()
+            if not player_name:
+                continue
+            pos_obj = athlete.get("position")
+            position = (
+                pos_obj.get("abbreviation", "") if isinstance(pos_obj, dict) else ""
+            )
+            status = (
+                inj.get("status")
+                or (inj.get("type") or {}).get("description", "")
+                or (inj.get("type") or {}).get("name", "")
+            )
+            rows.append(
+                {
+                    "team_abbr": abbr,
+                    "player_name": player_name,
+                    "position": position,
+                    "injury_status": str(status).strip(),
+                    "report_date": today,
+                }
+            )
+
+    if unresolved:
+        logger.warning(
+            "Dropped injuries for %d unresolved team(s): %s",
+            len(unresolved),
+            ", ".join(sorted(unresolved)),
+        )
+    return rows
+
+
+def evaluate_injury_import(
+    fetched: int, relevant: int, stored: int
+) -> tuple[bool, str]:
+    """Classify an injury import so a silent no-op cannot pass for success.
+
+    ``injury_reports`` sat empty for months while the fetch reported success:
+    every row carried a blank team, so nothing could be attributed and nothing
+    stored. Fetching without storing is a failure, not a quiet zero.
+    """
+    if fetched == 0:
+        return False, (
+            "FAILED: ESPN returned no injuries at all — treat as an outage "
+            "and check the endpoint before trusting projections."
+        )
+    if stored == 0:
+        return False, (
+            f"FAILED: fetched {fetched} injuries ({relevant} fantasy-relevant) "
+            "but stored 0. Projections and draft rankings will treat injured "
+            "players as healthy."
+        )
+    if relevant and stored < relevant:
+        return True, (
+            f"PARTIAL: stored {stored}/{relevant} fantasy-relevant injuries "
+            f"(of {fetched} fetched). Unstored rows are usually teams missing "
+            "from the teams table."
+        )
+    return (
+        True,
+        f"OK: stored {stored} fantasy-relevant injuries (of {fetched} fetched).",
+    )
+
 
 class InjuryScraper:
     """Scrape NFL injury reports from ESPN's public API."""
 
-    KEY_POSITIONS: list[str] = ["QB", "WR", "RB", "TE", "OT", "CB", "DE", "LB"]
+    # Positions that score fantasy points on their own. Defensive players and
+    # linemen were previously tracked here but are irrelevant to a fantasy
+    # roster; kickers were missing despite being a scoring slot.
+    KEY_POSITIONS: list[str] = ["QB", "WR", "RB", "TE", "K"]
 
-    # Statuses treated as meaningfully impactful
-    _SIGNIFICANT_STATUSES: frozenset[str] = frozenset(["Out", "Doubtful", "IR", "PUP"])
+    # Statuses treated as meaningfully impactful. "Questionable" belongs here:
+    # FantasyScorer._INJURY_RULES discounts it to 0.7x, and excluding it made
+    # that rule unreachable.
+    _SIGNIFICANT_STATUSES: frozenset[str] = frozenset(
+        ["Out", "Doubtful", "IR", "PUP", "Questionable"]
+    )
 
     def fetch_injuries(self) -> list[dict]:
         """
@@ -115,42 +253,7 @@ class InjuryScraper:
             logger.warning("Unexpected error fetching injuries: %s", exc)
             return []
 
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        results: list[dict] = []
-
-        # ESPN returns either data["injuries"] or data["items"]
-        entries = data.get("injuries", data.get("items", []))
-
-        for entry in entries:
-            team = entry.get("team", {})
-            espn_abbr = team.get("abbreviation", "")
-            internal_abbr = ESPN_TEAM_MAP.get(espn_abbr, espn_abbr)
-
-            for inj in entry.get("injuries", []):
-                athlete = inj.get("athlete", {})
-                pos_obj = athlete.get("position", {})
-                position = (
-                    pos_obj.get("abbreviation", "") if isinstance(pos_obj, dict) else ""
-                )
-
-                # Status lives in different fields depending on API version
-                status = (
-                    inj.get("status")
-                    or inj.get("type", {}).get("description", "")
-                    or inj.get("type", {}).get("name", "")
-                )
-
-                results.append(
-                    {
-                        "team_abbr": internal_abbr,
-                        "player_name": athlete.get("displayName", ""),
-                        "position": position,
-                        "injury_status": str(status).strip(),
-                        "report_date": today,
-                    }
-                )
-
-        return results
+        return parse_injuries(data)
 
     def filter_key_players(self, injuries: list[dict]) -> list[dict]:
         """

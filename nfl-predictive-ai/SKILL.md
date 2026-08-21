@@ -13,7 +13,7 @@
 | ML | Game: GradientBoosting **34 feat** (OOS 0.668; weighted-sum 0.672 default). Player: per-position **16 feat** (QB/RB/WR/TE). K/DST heuristic |
 | Fantasy | `fantasy_scorer.py` + `league_settings.py` (scoring **standard default**, league_size 8–20) + `matchup_engine.py` + `lineup_optimizer.py` |
 | Frontend | React 19 + TS + Tailwind v4; localStorage hooks are the state layer (`leagueSettings`, `myRoster`, `draftBoard`) |
-| Tests | **510 backend** (pytest, 31 files) + **120 frontend** (vitest, run from `frontend/`) |
+| Tests | **559 backend** (pytest, 37 files) + **144 frontend** (vitest, run from `frontend/`) |
 | Infra | Docker Compose (nginx frontend → internal api + cron); CI in `.github/workflows/ci.yml`; GHCR on `v*` tags |
 
 ## Hard Rules
@@ -46,6 +46,11 @@
 - **vitest**: run from `frontend/` (setup file + jsdom config only load there); localStorage is polyfilled in `src/test/setup.ts`.
 - **`matchup_cache` / metrics TTL**: `calculate_team_metrics()` cached 1h keyed `(team_id, season)`, bypassed with `cutoff_date` (backtests/retrodictions rely on this).
 - **Retrodiction contract**: `/api/games/{id}/retrodiction` mirrors backtester config (weighted-sum, cutoff-aware, no factors); 400 for unplayed games.
+- **Bye/playoff-SOS planner** (`schedule_outlook.py`): bye weeks from `db.get_bye_weeks()`, opponent schedule from the `games` table (never a hardcoded bye table). `opp_position_dvp()` is PPR-based regardless of league scoring — it's a *relative* difficulty signal (hard/medium/easy vs `league_avg_dvp()`), not a scoring-aware point projection; don't present it as one. Bye collisions (`BYE_COLLISION_THRESHOLD = 3`) are counted across the **whole roster passed in**, not a given week's starters — "starter" only exists relative to one week's optimal lineup, which shifts weekly.
+- **Streaming DST/K/QB** (`streaming.py`): `matchup_grade()` scores a position vs. an opponent, not an individual player — every teammate at that position facing the same defense gets an identical grade. The candidate pool is deduped to **one player per team** before grading (never grade a whole depth chart, it's redundant). `roster_entries` has no starter/depth flag, so the "who's actually playing" pick uses games played this season, falling back to last season for the preseason window when this season has none yet.
+- **`roster_entries` has at least one confirmed bad row** (found 2026-08-21): Tua Tagovailoa resolves to ATL, not MIA, for both 2025 and 2026. A handful of other players spot-checked fine — treat as isolated until root-caused, but don't be surprised if `get_player_team_id` returns a wrong team for an occasional player.
+- **FAAB advisor** (`waiver_advisor.py`): ranks a candidate against the *roster's own* weakest player at that position, not league-wide VBD — a player who'd be a bench-warmer on a stacked roster can be a must-add on a thin one. `build_roster_pool` is reused for both the roster side and the candidate side (same cache-independent projection path), and a position absent from the roster entirely gets a `0.0` replacement level, so any positive projection there is pure delta. Non-positive delta is filtered out, same rule as `swap_list`.
+- **Weekly Briefing tab** (`WeeklyBriefingTab.tsx`) is UI-only composition — it calls `getMyTeamLineup`, `getScheduleOutlook` (scoped to the single selected week, not the default 15-17 playoff window), `getStreamingCandidates('DST', ...)`, and `getFaabRecommendations`, each independently swallowed to `null` on failure. Never add backend logic here; if a briefing number looks wrong, the bug is in one of those four endpoints, not this component.
 
 ## Architecture Conventions
 

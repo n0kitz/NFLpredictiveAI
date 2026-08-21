@@ -27,7 +27,7 @@
 
 ## What this project is — and where it's going
 
-Full-stack NFL **game-prediction + fantasy-football decision engine**. Python 3.12 / FastAPI / SQLite backend (9,455 games 1990–2025, weighted + ML prediction engines, fantasy projections for QB/RB/WR/TE/K/DST, VBD draft rankings, MILP lineup optimizer). React 19 / TypeScript / Tailwind v4 frontend (12 pages incl. a 7-tab fantasy hub, a live draft board and a draft-strategy simulator). Docker Compose + weekly cron + GitHub Actions CI.
+Full-stack NFL **game-prediction + fantasy-football decision engine**. Python 3.12 / FastAPI / SQLite backend (9,455 games 1990–2025, weighted + ML prediction engines, fantasy projections for QB/RB/WR/TE/K/DST, VBD draft rankings, MILP lineup optimizer). React 19 / TypeScript / Tailwind v4 frontend (12 pages incl. a 10-tab fantasy hub, a live draft board and a draft-strategy simulator). Docker Compose + weekly cron + GitHub Actions CI.
 
 **The mission, definition of done, roadmap, and operating calendar live in `nfl-predictor/GUIDEBOOK.md` — read it before proposing new work.** Short version: (1) win the user's fantasy.nfl.com league, (2) keep the game model honest and baseline-beating, (3) make the service run itself. Judge every change against those three pillars.
 
@@ -44,8 +44,8 @@ Full-stack NFL **game-prediction + fantasy-football decision engine**. Python 3.
 
 ```bash
 cd nfl-predictor && source .venv/bin/activate
-python -m pytest -q                        # 510 tests (~15 s in a clean .venv)
-cd frontend && npm run build && npm test   # tsc + vite build, 120 vitest tests (run from frontend/ — vitest setup needs that cwd)
+python -m pytest -q                        # 559 tests (~15 s in a clean .venv)
+cd frontend && npm run build && npm test   # tsc + vite build, 144 vitest tests (run from frontend/ — vitest setup needs that cwd)
 ```
 
 ## Running
@@ -72,6 +72,10 @@ cd nfl-predictor && docker compose up --build       # frontend :3000 (nginx) →
 | Matchup grades A–F | `src/prediction/matchup_engine.py` (DvP/pace/PROE) |
 | Lineup optimizer | `src/prediction/lineup_optimizer.py` (MILP/PuLP, season + DK/FD) |
 | Roster-aware advice | `src/prediction/roster_advisor.py` (`build_roster_pool`, `lineup_advice`, `swap_list`) + `frontend/src/pages/fantasy/MyTeamTab.tsx` |
+| Bye/playoff-SOS planner | `src/prediction/schedule_outlook.py` (`build_schedule_outlook`; bye collisions ≥3, wk15-17 DvP difficulty) + `frontend/src/pages/fantasy/ScheduleTab.tsx` |
+| Streaming DST/K/QB | `src/prediction/streaming.py` (`streaming_candidates`; deduped one-per-team, ranked by `matchup_grade`) + `frontend/src/pages/fantasy/StreamingPanel.tsx` (in Waiver tab) |
+| FAAB waiver advisor | `src/prediction/waiver_advisor.py` (`faab_recommendations`; value over roster's own replacement level, bid % tiers) + `frontend/src/pages/fantasy/FaabPanel.tsx` (in Waiver tab) |
+| Weekly briefing | `frontend/src/pages/fantasy/WeeklyBriefingTab.tsx` — pure composition of My Team + Schedule + Streaming + FAAB, no new backend logic |
 | Player weekly data | `src/scraper/player_weekly_importer.py` (**nflverse `stats_player_week` parquet — nfl_data_py weekly is dead for 2025+**) |
 | DST data | `src/scraper/dst_importer.py` (synthetic players `DST-{abbr}` + defteam aggregation) |
 | ADP import | `src/scraper/adp_importer.py` (live `fetch_ffc_adp` **or** CSV) + `scripts/import_adp.py` → `player_adp` table |
@@ -92,7 +96,7 @@ cd nfl-predictor && docker compose up --build       # frontend :3000 (nginx) →
 - **teams**: `/api/teams`, `/{id}`, `/{id}/stats|profile|season/{year}|games|roster|starters|upcoming`
 - **games**: `/api/games`, `/{id}` (detail: odds+weather+factors+box score 2018+), `/{id}/retrodiction` (cutoff-aware HIT/MISS), `/{id}/odds`, `/{id}/conditions`
 - **predictions**: `POST /api/predict` (auto-saves; `vegas_context`+`conditions` display-only), `/predict/explain` (SHAP), `GET /predict/{away}/{home}?model=ml`, `/h2h/{t1}/{t2}`, `/predictions/history`, `POST /predictions/enrich`
-- **fantasy**: `/api/fantasy/top|projections|start-sit|waiver|draft-rankings|trade-analyze|power-rankings|trade-values|roster/import-by-names|model-info` — `scoring=standard` default, `half_ppr` accepted; `draft-rankings` takes `league_size=8..20`, is **computed per request, VBD-ordered**
+- **fantasy**: `/api/fantasy/top|projections|start-sit|waiver|draft-rankings|trade-analyze|power-rankings|trade-values|roster/import-by-names|model-info` (GET) + `POST /start-sit/rank` (N-way), `POST /my-team/lineup` (roster-constrained), `POST /schedule-outlook` (byes + wk15-17 SOS), `POST /streaming` (best DST/K/QB by matchup grade), `POST /waiver/faab` (bid % vs. roster replacement level) — `scoring=standard` default, `half_ppr` accepted; `draft-rankings` takes `league_size=8..20`, is **computed per request, VBD-ordered**
 - **matchup**: `/api/fantasy/matchup/{player_id}` (A–F grade), `POST /api/fantasy/optimize`, `/optimize/dfs`
 - **nfl_league**: `GET /api/nfl-league/{id}` (experimental sync; 503 without cookie)
 - **misc**: `/api/health`, `/metrics`, `/accuracy`, `/factors`, `/model/info`, `/scrape/status`, `/players/{id}`, `/players/search`, `/players/{id}/weekly-stats`, `/seasons/{year}/playoff-picture`, `/picks/value`, `/picks/history`
@@ -100,7 +104,7 @@ cd nfl-predictor && docker compose up --build       # frontend :3000 (nginx) →
 
 ## Frontend routes
 
-`/` Dashboard · `/predict` · `/teams` · `/teams/:abbr` (+ `/schedule`) · `/compare/:t1?/:t2?` · `/seasons/:year?` (standings/games/playoff picture) · `/history` (self-graded prediction log) · `/playoffs` (bracket sim) · `/players/:id` (+ game log) · `/games/:id` (scoreboard, retrodiction HIT/MISS, ATS cover, box score) · `/fantasy` (7 tabs: Dashboard, Leaderboards, Waiver, Draft, Trade, Power Rankings, Optimizer) · `/draft` (live draft board) · `/draft/sim` (strategy simulator: batch compare + mock draft)
+`/` Dashboard · `/predict` · `/teams` · `/teams/:abbr` (+ `/schedule`) · `/compare/:t1?/:t2?` · `/seasons/:year?` (standings/games/playoff picture) · `/history` (self-graded prediction log) · `/playoffs` (bracket sim) · `/players/:id` (+ game log) · `/games/:id` (scoreboard, retrodiction HIT/MISS, ATS cover, box score) · `/fantasy` (10 tabs: Weekly Briefing, My Team, Schedule, Dashboard, Leaderboards, Waiver, Draft, Trade, Power Rankings, Optimizer) · `/draft` (live draft board) · `/draft/sim` (strategy simulator: batch compare + mock draft)
 
 ## Architecture notes that prevent rework
 

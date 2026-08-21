@@ -18,15 +18,16 @@
 
 ### Fantasy football — the league-winning stack
 - **Draft war room** (`/draft`): live snake-draft board for 8–20 team leagues — best-available by VBD, positional-need weighting, tier-break alarms, survives page refreshes
-- **Rankings that adapt to *your* league**: standard / half-PPR / PPR scoring and league size change the replacement levels, tiers, and the whole board; real ADP import (FantasyPros CSV) exposes value vs. market
+- **Rankings that adapt to *your* league**: standard / half-PPR / PPR scoring and league size change the replacement levels, tiers, and the whole board; real ADP (live from Fantasy Football Calculator's public API, or a CSV) exposes value vs. market
 - **Every position**: QB/RB/WR/TE via per-position ML models (16 features), K and DST from real weekly data (FG distance buckets, points-allowed brackets)
-- **In-season loop**: weekly projections with A–F matchup grades → start/sit → waiver wire (your roster excluded) → trade analyzer with ROS values → **MILP lineup optimizer** (season-long + DraftKings/FanDuel salary modes)
+- **My Team advisor**: give it your roster once and it returns the best legal lineup, the specific swaps to reach it with reasons, and bye-week collision + fantasy-playoff (weeks 15-17) strength-of-schedule warnings — all before it hits the in-season loop below
+- **In-season loop**: weekly projections with A–F matchup grades → start/sit (N-way, ranked in your league's scoring) → waiver wire (your roster excluded) → trade analyzer with ROS values → **MILP lineup optimizer** (season-long + DraftKings/FanDuel salary modes)
 - **Experimental**: read-only fantasy.nfl.com league sync (settings + rosters)
 
 ### Platform
 - FastAPI + SQLite backend (51 endpoints across 7 domain routers, Swagger at `/docs`), React 19 + TypeScript + Tailwind v4 frontend (14 routes)
 - Docker Compose: nginx frontend → internal API + weekly cron container (Wed 06:00 UTC full data refresh)
-- GitHub Actions CI: lint + 510 backend / 120 frontend tests on every push; GHCR images on `v*` tags
+- GitHub Actions CI: lint + 559 backend / 144 frontend tests on every push; GHCR images on `v*` tags
 - Observability: structured JSON logs, `X-Request-ID`, `GET /api/metrics`
 
 ---
@@ -57,8 +58,8 @@ docker compose up --build -d              # frontend :3000 (nginx) → api inter
 
 ### Tests
 ```bash
-python -m pytest -q                       # backend (510)
-cd frontend && npm test && npm run build  # frontend (109) + typecheck
+python -m pytest -q                       # backend (559)
+cd frontend && npm test && npm run build  # frontend (144) + typecheck
 ```
 
 ---
@@ -72,7 +73,7 @@ cd frontend && npm test && npm run build  # frontend (109) + typecheck
 | ESPN | Rosters (all 32 teams), injuries | Public APIs, no auth |
 | Open-Meteo | Game weather + dome handling | No auth |
 | The Odds API | Vegas spreads / totals (display-only) | `ODDS_API_KEY` env var, optional |
-| FantasyPros CSV | Real ADP for draft value | `scripts/import_adp.py` |
+| Fantasy Football Calculator | Real ADP for draft value | `scripts/import_adp.py --season <yr>` (public JSON, no key); `--file <csv>` also accepted |
 
 The Wednesday cron (`scripts/weekly_scrape.py`) refreshes all of it and regenerates projections; model retraining is deliberately manual (`scripts/train_model.py`, `scripts/train_player_models.py`).
 
@@ -99,7 +100,7 @@ nfl-predictor/
 │   └── database/       # SQLite schema + migrations + CRUD
 ├── frontend/src/       # React app: pages/, pages/fantasy/, api/, components/, theme/
 ├── scripts/            # cron, imports, training, backtest
-├── tests/              # 510 pytest across 31 files
+├── tests/              # 559 pytest across 37 files
 └── data/nfl.db         # SQLite — ships loaded
 ```
 

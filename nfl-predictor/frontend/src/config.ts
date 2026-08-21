@@ -21,16 +21,43 @@ export function currentNflSeason(now: Date = new Date()): number {
 export const CURRENT_SEASON = currentNflSeason();
 
 /**
- * Last season with complete played data — used for fantasy leaderboards, draft
- * rankings, trade values, etc. that need a fully-played season of stats.
+ * Last season with complete played data — used for fantasy leaderboards, waiver
+ * ranks, power rankings and trade values, which all need a fully-played season.
+ *
+ * This is NOT simply `CURRENT_SEASON - 1`. During the offseason (Feb–Aug) the
+ * season labelled `CURRENT_SEASON` has already finished, so it *is* the last
+ * completed one; only while a season is running (Sep–Jan, January being its
+ * playoffs) does the completed season sit one label behind.
  */
-export const LAST_COMPLETED_SEASON = CURRENT_SEASON - 1;
+export function lastCompletedSeason(now: Date = new Date()): number {
+  const season = currentNflSeason(now);
+  const month = now.getMonth(); // 0 = Jan … 8 = Sep
+  const seasonInProgress = month >= 8 || month === 0; // Sep–Dec, plus Jan playoffs
+  return seasonInProgress ? season - 1 : season;
+}
+
+export const LAST_COMPLETED_SEASON = lastCompletedSeason();
 
 /**
  * The season being drafted for. During the offseason (Feb–Aug) fantasy drafts
  * target the *next* season label, i.e. CURRENT_SEASON + 1.
  */
 export const UPCOMING_SEASON = CURRENT_SEASON + 1;
+
+/**
+ * The season actually being drafted for or played — `lastCompletedSeason() + 1`.
+ *
+ * Differs from `UPCOMING_SEASON` on purpose: that one rolls to the *following*
+ * year the moment September arrives, which is right for draft prep in the
+ * offseason but wrong once the season kicks off. Use `ACTIVE_SEASON` for
+ * rosters, weekly projections and lineup advice; mirrors `ACTIVE_SEASON` in
+ * the backend `src/config.py`.
+ */
+export function activeSeason(now: Date = new Date()): number {
+  return lastCompletedSeason(now) + 1;
+}
+
+export const ACTIVE_SEASON = activeSeason();
 
 export const SEASON_COUNT = CURRENT_SEASON - FIRST_SEASON + 1;
 

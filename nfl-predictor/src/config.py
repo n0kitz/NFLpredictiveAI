@@ -13,11 +13,52 @@ Env vars:
 
 import os
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 # nfl-predictor/  (src/config.py -> parent is src/, parent.parent is project root)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# ── Season math ──────────────────────────────────────────────────────────────
+# An NFL season runs Sep–early Feb and is named for the year it STARTS in, so
+# the calendar year is never the season label on its own. These mirror
+# frontend/src/config.ts; keep the two in step.
+
+FIRST_SEASON = 1990
+
+
+def current_nfl_season(today: Optional[date] = None) -> int:
+    """The current NFL season label. Jan–Aug belongs to the previous label."""
+    today = today or date.today()
+    return today.year if today.month >= 9 else today.year - 1
+
+
+def last_completed_season(today: Optional[date] = None) -> int:
+    """Most recent season with a full set of played games.
+
+    Not simply ``current_nfl_season() - 1``: from February to August the season
+    labelled current has already finished, so it *is* the last completed one.
+    """
+    today = today or date.today()
+    season = current_nfl_season(today)
+    in_progress = today.month >= 9 or today.month == 1  # Sep–Dec + Jan playoffs
+    return season - 1 if in_progress else season
+
+
+def active_season(today: Optional[date] = None) -> int:
+    """The season being drafted for or currently played.
+
+    Deliberately ``last_completed + 1`` rather than ``current + 1``: the latter
+    rolls to the following year the moment September arrives, even though the
+    season just kicking off is the one fantasy actually cares about.
+    """
+    return last_completed_season(today) + 1
+
+
+CURRENT_SEASON = current_nfl_season()
+LAST_COMPLETED_SEASON = last_completed_season()
+ACTIVE_SEASON = active_season()
 
 _DEFAULT_CORS = (
     "http://localhost:5173",

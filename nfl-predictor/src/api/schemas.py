@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
 from enum import Enum
 
+from ..config import ACTIVE_SEASON, CURRENT_SEASON, FIRST_SEASON
+
 # ── Enums ──────────────────────────────────────────────
 
 
@@ -332,8 +334,8 @@ class FactorListResponse(BaseModel):
 
 
 class ScrapeRequest(BaseModel):
-    start_year: int = Field(1990, ge=1960, le=2030)
-    end_year: int = Field(2025, ge=1960, le=2030)
+    start_year: int = Field(FIRST_SEASON, ge=1960, le=2030)
+    end_year: int = Field(CURRENT_SEASON, ge=1960, le=2030)
 
 
 class ScrapeStatusResponse(BaseModel):
@@ -620,6 +622,79 @@ class FantasyProjectionEntry(BaseModel):
     bye_week: Optional[int] = None
 
 
+class StartSitRankRequest(BaseModel):
+    player_ids: List[int] = Field(max_length=25)
+    week: int
+    season: int = ACTIVE_SEASON
+    slots: int = 1
+    scoring: str = "standard"
+    league_size: int = 10
+
+
+class StartSitRankEntry(BaseModel):
+    rank: int
+    player_id: int
+    full_name: str
+    position: Optional[str] = None
+    team_abbr: Optional[str] = None
+    headshot_url: Optional[str] = None
+    projected_points: float
+    projected_points_ppr: float
+    matchup_score: float
+    injury_status: Optional[str] = None
+    verdict: str
+    edge_over_next: float
+    confidence: str
+    reasoning: str
+
+
+class StartSitRankResponse(BaseModel):
+    week: int
+    season: int
+    slots: int
+    scoring: str
+    confidence: str
+    ranked: List[StartSitRankEntry]
+
+
+class LineupAdviceRequest(BaseModel):
+    player_ids: List[int] = Field(max_length=25)
+    week: int
+    season: int = ACTIVE_SEASON
+    current_starter_ids: Optional[List[int]] = None
+    scoring: str = "standard"
+    league_size: int = 10
+
+
+class LineupSlotEntry(BaseModel):
+    player_id: int
+    full_name: str
+    position: Optional[str] = None
+    team_abbr: Optional[str] = None
+    slot: Optional[str] = None
+    projected_points: float
+
+
+class LineupSwapEntry(BaseModel):
+    slot: Optional[str] = None
+    start_player_id: int
+    start_name: str
+    sit_player_id: int
+    sit_name: str
+    point_delta: float
+    reason: str
+
+
+class LineupAdviceResponse(BaseModel):
+    lineup: List[LineupSlotEntry]
+    bench: List[LineupSlotEntry]
+    projected_points: float
+    current_projected_points: float
+    points_gained: float
+    swaps: List[LineupSwapEntry]
+    warnings: List[str] = []
+
+
 class StartSitPlayerEntry(BaseModel):
     player_id: int
     full_name: str
@@ -722,12 +797,12 @@ class TradeAnalyzeRequest(BaseModel):
     give_player_ids: List[int] = Field(max_length=10)
     get_player_ids: List[int] = Field(max_length=10)
     week: int
-    season: int = 2024
+    season: int = ACTIVE_SEASON
 
 
 class ImportByNamesRequest(BaseModel):
     names: List[str] = Field(max_length=50)
-    season: int = 2024
+    season: int = ACTIVE_SEASON
 
 
 # ── Value Picks ────────────────────────────────────────

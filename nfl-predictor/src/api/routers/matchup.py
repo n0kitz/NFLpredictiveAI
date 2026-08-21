@@ -8,6 +8,7 @@ is absent (the optimizer endpoints then return 503).
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..deps import get_db
+from ...config import ACTIVE_SEASON
 from ..schemas import (
     MatchupComponentScores,
     MatchupGradeResponse,
@@ -167,7 +168,7 @@ def optimize_dfs(req: OptimizeDFSRequest):
 def get_matchup_grade(
     player_id: int,
     week: int = Query(..., ge=1, le=22, description="NFL week number"),
-    season: int = Query(2024, ge=1990, le=2100),
+    season: int = Query(ACTIVE_SEASON, ge=1990, le=2100),
     db: Database = Depends(get_db),
 ):
     """Advanced matchup grade for a player vs their scheduled opponent.

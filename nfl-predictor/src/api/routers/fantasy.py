@@ -7,7 +7,12 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..deps import get_db
+from ...config import ACTIVE_SEASON, LAST_COMPLETED_SEASON
 from ..schemas import (
+    StartSitRankRequest,
+    StartSitRankResponse,
+    LineupAdviceRequest,
+    LineupAdviceResponse,
     FantasyPlayerEntry,
     FantasyLeaderboardResponse,
     FantasyProjectionEntry,
@@ -82,7 +87,7 @@ def get_fantasy_model_info():
 @router.get("/api/fantasy/top", response_model=FantasyLeaderboardResponse)
 def get_fantasy_top(
     position: Optional[str] = Query(None),
-    season: int = Query(2024),
+    season: int = Query(LAST_COMPLETED_SEASON),
     scoring: str = Query("standard"),
     limit: int = Query(50, ge=1, le=200),
     db=Depends(get_db),
@@ -114,7 +119,7 @@ def get_fantasy_top(
 @router.get("/api/fantasy/projections", response_model=List[FantasyProjectionEntry])
 def get_fantasy_projections(
     week: int = Query(...),
-    season: int = Query(2024),
+    season: int = Query(ACTIVE_SEASON),
     position: str = Query("all"),
     scoring: str = Query("standard"),
     db=Depends(get_db),
@@ -132,12 +137,72 @@ def get_fantasy_projections(
     return [_proj_row_to_entry(r, week, season, boom_bust, bye_by_team) for r in rows]
 
 
+@router.post("/api/fantasy/start-sit/rank", response_model=StartSitRankResponse)
+def rank_start_sit(req: StartSitRankRequest, db=Depends(get_db)):
+    """Rank any number of players for a week — "which of my 3 WRs do I start?"."""
+    from ...prediction.fantasy_scorer import FantasyScorer
+    from ...prediction.league_settings import LeagueSettings
+
+    try:
+        settings = LeagueSettings(scoring=req.scoring, league_size=req.league_size)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    scorer = FantasyScorer(db)
+    result = scorer.rank_start_sit(
+        req.player_ids, req.week, req.season, slots=req.slots, settings=settings
+    )
+    return StartSitRankResponse(**result)
+
+
+@router.post("/api/fantasy/my-team/lineup", response_model=LineupAdviceResponse)
+def my_team_lineup(req: LineupAdviceRequest, db=Depends(get_db)):
+    """Best legal lineup from the caller's own roster, plus the swaps to reach it."""
+    from ...prediction.fantasy_scorer import FantasyScorer
+    from ...prediction.league_settings import LeagueSettings
+
+    try:
+        settings = LeagueSettings(scoring=req.scoring, league_size=req.league_size)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    scorer = FantasyScorer(db)
+    try:
+        from ...prediction.roster_advisor import build_roster_pool, lineup_advice
+    except ImportError:
+        raise HTTPException(
+            status_code=503, detail="Optimizer unavailable (pulp missing)"
+        )
+
+    # Projected per player rather than read from the fantasy_projections cache:
+    # for an upcoming season those cached rows are unreliable (a backup QB
+    # ranked above an elite RB), while calculate_projection is the verified path.
+    pool = build_roster_pool(
+        scorer, req.player_ids, req.week, req.season, settings=settings
+    )
+    if not pool:
+        raise HTTPException(
+            status_code=404,
+            detail="No projections could be produced for those players.",
+        )
+
+    try:
+        result = lineup_advice(
+            pool, settings=settings, current_starter_ids=req.current_starter_ids
+        )
+    except ImportError:
+        raise HTTPException(
+            status_code=503, detail="Optimizer unavailable (pulp missing)"
+        )
+    return LineupAdviceResponse(**result)
+
+
 @router.get("/api/fantasy/start-sit", response_model=StartSitResponse)
 def get_start_sit(
     player1_id: int = Query(...),
     player2_id: int = Query(...),
     week: int = Query(...),
-    season: int = Query(2024),
+    season: int = Query(ACTIVE_SEASON),
     db=Depends(get_db),
 ):
     from ...prediction.fantasy_scorer import FantasyScorer
@@ -169,7 +234,7 @@ def get_start_sit(
 @router.get("/api/fantasy/waiver", response_model=List[FantasyProjectionEntry])
 def get_waiver_wire(
     week: int = Query(...),
-    season: int = Query(2024),
+    season: int = Query(ACTIVE_SEASON),
     scoring: str = Query("standard"),
     position: str = Query("all"),
     limit: int = Query(30, ge=1, le=100),
@@ -197,7 +262,7 @@ def get_waiver_wire(
 
 @router.get("/api/fantasy/draft-rankings", response_model=List[DraftRankingEntry])
 def get_draft_rankings(
-    season: int = Query(2025),
+    season: int = Query(ACTIVE_SEASON),
     scoring: str = Query("standard"),
     position: str = Query("all"),
     league_size: int = Query(10, ge=8, le=20),
@@ -285,7 +350,7 @@ def analyze_trade(req: TradeAnalyzeRequest, db=Depends(get_db)):
 @router.get("/api/fantasy/power-rankings")
 def get_power_rankings(
     week: int = Query(...),
-    season: int = Query(2024),
+    season: int = Query(LAST_COMPLETED_SEASON),
     db=Depends(get_db),
 ):
     # Bulk-load everything _compute needs ONCE, then score in Python.
@@ -496,7 +561,7 @@ def import_roster_by_names(req: ImportByNamesRequest, db=Depends(get_db)):
 
 @router.get("/api/fantasy/trade-values")
 def get_trade_values(
-    week: int = Query(...), season: int = Query(2024), db=Depends(get_db)
+    week: int = Query(...), season: int = Query(ACTIVE_SEASON), db=Depends(get_db)
 ):
     rows = db.fetchall(
         """

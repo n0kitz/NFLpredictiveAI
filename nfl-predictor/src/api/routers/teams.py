@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Path
 
 from ..deps import get_db
+from ...config import ACTIVE_SEASON
 from ..helpers import resolve_team, row_to_game, row_to_player_entry
 from ..schemas import (
     TeamResponse,
@@ -230,7 +231,7 @@ def get_team_starters(
 @router.get("/api/teams/{identifier}/upcoming")
 def get_team_upcoming(
     identifier: str,
-    season: int = Query(2025),
+    season: int = Query(ACTIVE_SEASON),
     limit: int = Query(4, ge=1, le=20),
     db=Depends(get_db),
 ):

@@ -9,9 +9,7 @@ client = TestClient(app)
 
 class TestStreamingCandidates:
     def test_rejects_non_streamable_position(self):
-        r = client.post(
-            "/api/fantasy/streaming", json={"position": "WR", "week": 1}
-        )
+        r = client.post("/api/fantasy/streaming", json={"position": "WR", "week": 1})
         assert r.status_code == 422
 
     def test_rejects_oversized_exclude_list(self):

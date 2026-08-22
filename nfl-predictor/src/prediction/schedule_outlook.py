@@ -116,9 +116,7 @@ def build_schedule_outlook(
                 playoff_weeks.append(entry)
 
         dvp_values = [pw["dvp"] for pw in playoff_weeks if pw["dvp"] is not None]
-        sos_score = (
-            round(sum(dvp_values) / len(dvp_values), 2) if dvp_values else None
-        )
+        sos_score = round(sum(dvp_values) / len(dvp_values), 2) if dvp_values else None
 
         players.append(
             {

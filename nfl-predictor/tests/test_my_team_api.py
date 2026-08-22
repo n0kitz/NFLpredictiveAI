@@ -77,8 +77,6 @@ class TestScheduleOutlook:
         assert r.json()["season"] > 2000
 
     def test_unknown_player_is_silently_skipped_not_500(self):
-        r = client.post(
-            "/api/fantasy/schedule-outlook", json={"player_ids": [999999]}
-        )
+        r = client.post("/api/fantasy/schedule-outlook", json={"player_ids": [999999]})
         assert r.status_code == 200
         assert r.json()["players"] == []

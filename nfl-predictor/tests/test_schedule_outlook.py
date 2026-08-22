@@ -70,7 +70,9 @@ class TestPlayoffWeeks:
         db.get_player_by_id.return_value = {"full_name": "CMC", "position": "RB"}
         db.get_player_team_id.return_value = 1
         db.fetchone.return_value = {"abbreviation": "SF"}
-        db.fetchall.return_value = [{"week_int": 15, "home_team_id": 1, "away_team_id": 9}]
+        db.fetchall.return_value = [
+            {"week_int": 15, "home_team_id": 1, "away_team_id": 9}
+        ]
         mock_dvp.return_value = 6.0  # league_avg_dvp("RB") == 9.5
         result = build_schedule_outlook(db, [1], season=2026, weeks=(15,))
         wk = result["players"][0]["playoff_weeks"][0]
@@ -88,7 +90,9 @@ class TestPlayoffWeeks:
         db.get_player_by_id.return_value = {"full_name": "CMC", "position": "RB"}
         db.get_player_team_id.return_value = 1
         db.fetchone.return_value = {"abbreviation": "SF"}
-        db.fetchall.return_value = [{"week_int": 15, "home_team_id": 1, "away_team_id": 9}]
+        db.fetchall.return_value = [
+            {"week_int": 15, "home_team_id": 1, "away_team_id": 9}
+        ]
         mock_dvp.return_value = 13.0  # well above 9.5
         result = build_schedule_outlook(db, [1], season=2026, weeks=(15,))
         assert result["players"][0]["playoff_weeks"][0]["difficulty"] == "easy"
@@ -99,7 +103,9 @@ class TestPlayoffWeeks:
         db.get_player_by_id.return_value = {"full_name": "CMC", "position": "RB"}
         db.get_player_team_id.return_value = 1
         db.fetchone.return_value = {"abbreviation": "SF"}
-        db.fetchall.return_value = [{"week_int": 15, "home_team_id": 1, "away_team_id": 9}]
+        db.fetchall.return_value = [
+            {"week_int": 15, "home_team_id": 1, "away_team_id": 9}
+        ]
         mock_dvp.return_value = 9.5  # exactly league average
         result = build_schedule_outlook(db, [1], season=2026, weeks=(15,))
         assert result["players"][0]["playoff_weeks"][0]["difficulty"] == "medium"
@@ -110,7 +116,9 @@ class TestPlayoffWeeks:
         db.get_player_by_id.return_value = {"full_name": "SF DST", "position": "DST"}
         db.get_player_team_id.return_value = 1
         db.fetchone.return_value = {"abbreviation": "SF"}
-        db.fetchall.return_value = [{"week_int": 15, "home_team_id": 1, "away_team_id": 9}]
+        db.fetchall.return_value = [
+            {"week_int": 15, "home_team_id": 1, "away_team_id": 9}
+        ]
         result = build_schedule_outlook(db, [1], season=2026, weeks=(15,))
         wk = result["players"][0]["playoff_weeks"][0]
         assert wk["opponent_team_id"] == 9
@@ -151,7 +159,10 @@ class TestByeCollisions:
             "position": "WR",
         }
         db.get_player_team_id.side_effect = lambda pid, season: {
-            1: 10, 2: 10, 3: 10, 4: 20,
+            1: 10,
+            2: 10,
+            3: 10,
+            4: 20,
         }[pid]
         db.get_bye_weeks.return_value = {10: 7, 20: 7}
         db.fetchone.return_value = {"abbreviation": "X"}

@@ -17,8 +17,10 @@ from ..schemas import (
     ScheduleOutlookResponse,
     StreamingRequest,
     StreamingResponse,
+    StreamingCandidate,
     FaabRequest,
     FaabResponse,
+    FaabCandidate,
     FantasyPlayerEntry,
     FantasyLeaderboardResponse,
     FantasyProjectionEntry,
@@ -233,7 +235,7 @@ def get_streaming_candidates(req: StreamingRequest, db=Depends(get_db)):
         position=req.position.upper(),
         week=req.week,
         season=req.season,
-        candidates=candidates,
+        candidates=[StreamingCandidate(**c) for c in candidates],
     )
 
 
@@ -265,7 +267,7 @@ def get_faab_recommendations(req: FaabRequest, db=Depends(get_db)):
         week=req.week,
         season=req.season,
         budget_remaining=req.budget_remaining,
-        candidates=candidates,
+        candidates=[FaabCandidate(**c) for c in candidates],
     )
 
 

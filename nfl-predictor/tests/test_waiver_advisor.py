@@ -81,10 +81,10 @@ class TestBidTiers:
         mock_pool.side_effect = [
             [_p(1, "Base", "WR", 5.0)],
             [
-                _p(10, "Speculative", "WR", 6.5),   # delta 1.5
-                _p(11, "Solid", "WR", 8.5),          # delta 3.5
-                _p(12, "Priority", "WR", 12.0),      # delta 7.0
-                _p(13, "MustAdd", "WR", 20.0),        # delta 15.0
+                _p(10, "Speculative", "WR", 6.5),  # delta 1.5
+                _p(11, "Solid", "WR", 8.5),  # delta 3.5
+                _p(12, "Priority", "WR", 12.0),  # delta 7.0
+                _p(13, "MustAdd", "WR", 20.0),  # delta 15.0
             ],
         ]
         result = faab_recommendations(
@@ -96,9 +96,7 @@ class TestBidTiers:
         assert by_id[11]["tier"] == "solid"
         assert by_id[12]["tier"] == "priority"
         assert by_id[13]["tier"] == "must-add"
-        assert by_id[13]["suggested_bid_amount"] == round(
-            100 * BID_TIERS[-1][1] / 100
-        )
+        assert by_id[13]["suggested_bid_amount"] == round(100 * BID_TIERS[-1][1] / 100)
 
 
 class TestRankingAndLimit:
@@ -123,7 +121,9 @@ class TestRankingAndLimit:
                 _p(12, "C", "WR", 8.0),
             ],
         ]
-        result = faab_recommendations(db, MagicMock(), [1], week=1, season=2026, limit=2)
+        result = faab_recommendations(
+            db, MagicMock(), [1], week=1, season=2026, limit=2
+        )
         assert len(result) == 2
         assert [c["player_id"] for c in result] == [12, 11]
 

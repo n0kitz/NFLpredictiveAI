@@ -52,7 +52,9 @@ class TestDeduplication:
                 {"team_id": 1, "player_id": 10, "gp_cur": 15, "gp_prev": 16},
                 {"team_id": 1, "player_id": 11, "gp_cur": 2, "gp_prev": 0},
             ],
-            [{"week_int": 1, "home_team_id": 1, "away_team_id": 9}],  # schedule for team 1
+            [
+                {"week_int": 1, "home_team_id": 1, "away_team_id": 9}
+            ],  # schedule for team 1
         ]
         db.fetchone.return_value = {"abbreviation": "BUF"}
         db.get_player_by_id.return_value = {"full_name": "Josh Allen"}

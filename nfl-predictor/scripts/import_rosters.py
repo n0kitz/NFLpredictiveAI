@@ -172,6 +172,18 @@ def _passer_rating(comp: int, att: int, yds: int, tds: int, ints: int) -> float:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 
+def should_purge_stale(teams_with_players: int, expected_teams: int = 32) -> bool:
+    """Whether it is safe to purge roster entries this run left untouched.
+
+    Only a run that covered every team may purge. evaluate_roster_import()
+    deliberately returns ok=True on partial coverage (it hard-fails only when
+    nothing was upserted), so gating the purge on `import_ok` alone would let a
+    20/32 run delete the twelve missing teams' rosters outright -- turning a
+    transient ESPN hiccup into data loss right before draft night.
+    """
+    return teams_with_players >= expected_teams
+
+
 def main() -> None:
     import argparse
 
@@ -253,6 +265,18 @@ def main() -> None:
     if not import_ok:
         db.close()
         sys.exit(1)
+
+    # Snapshot, not accumulation: drop entries this run never refreshed, so a
+    # player who changed teams stops appearing on both. Full coverage only --
+    # see should_purge_stale().
+    if should_purge_stale(teams_with_players):
+        removed = db.purge_stale_roster_entries(roster_season, fetched_at)
+        print(f"  Stale entries purged:    {removed}")
+    else:
+        print(
+            f"  Stale entries purged:    0 (skipped — only {teams_with_players}/32 "
+            "teams returned players; purging a partial run would delete real rosters)"
+        )
 
     # ── Step 2: nfl_data_py player season stats ───────────────────────────────
     if args.skip_stats:

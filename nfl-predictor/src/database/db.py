@@ -1632,6 +1632,36 @@ class Database:
                     break
         return result
 
+    def purge_stale_roster_entries(self, season: int, before_iso: str) -> int:
+        """Delete roster_entries for `season` not refreshed at/after `before_iso`.
+
+        roster_entries is keyed UNIQUE(player_id, team_id, season), so a player
+        who changes teams keeps both rows and the table accumulates instead of
+        snapshotting. get_player_team_id() then resolves the ambiguity with
+        ORDER BY id DESC -- effectively arbitrary -- and feeds the wrong
+        opponent into schedule_outlook and streaming.
+
+        Callers MUST gate this on a full-coverage run (see
+        scripts.import_rosters.should_purge_stale): evaluate_roster_import()
+        returns ok=True for partial coverage, so purging after a 20/32 fetch
+        would delete twelve teams' rosters outright.
+
+        Synthetic DST players are exempt. They do not exist upstream -- ESPN
+        never returns them, ensure_dst_players() creates them -- so their
+        fetched_at is always older than an ESPN run and a naive purge deletes
+        all 32 defenses from the draft board.
+
+        Returns the number of rows removed.
+        """
+        cur = self.execute(
+            "DELETE FROM roster_entries WHERE season = ? "
+            "AND (fetched_at IS NULL OR fetched_at < ?) "
+            "AND player_id NOT IN (SELECT player_id FROM players WHERE position = 'DST')",
+            (season, before_iso),
+        )
+        self.connection.commit()
+        return cur.rowcount
+
     def get_player_team_id(self, player_id: int, season: int) -> Optional[int]:
         """Return the player's team for `season`, falling back to their most recent entry."""
         row = self.fetchone(

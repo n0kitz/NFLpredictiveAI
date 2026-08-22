@@ -1,7 +1,7 @@
 # NFL Predictor — Guidebook
 
 > **The canonical answer to four questions: what is this project, what does "as good as it can possibly be" look like, how far along is it, and what do I do next?**
-> Last updated: 2026-08-21 (Phases 1-3 of the fantasy-advice wave all complete: bye/playoff-SOS planner, My Team advisor + N-way start/sit, streaming + FAAB waiver advisor + Weekly Briefing; injury pipeline fully repaired; 10 hardcoded season defaults replaced; 559 backend + 144 frontend tests) · Supersedes `PROJECT_PLAN.md` · Dev setup: `README.md` · Data scraping: `SCRAPING_GUIDE.md` · Agent conventions: `../CLAUDE.md`
+> Last updated: 2026-08-21 (Phases 1-3 of the fantasy-advice wave all complete: bye/playoff-SOS planner, My Team advisor + N-way start/sit, streaming + FAAB waiver advisor + Weekly Briefing; injury pipeline fully repaired; 10 hardcoded season defaults replaced; 573 backend + 144 frontend tests) · Supersedes `PROJECT_PLAN.md` · Dev setup: `README.md` · Data scraping: `SCRAPING_GUIDE.md` · Agent conventions: `../CLAUDE.md`
 
 ---
 
@@ -48,7 +48,7 @@ Legend: ✅ done · 🟡 partial / needs action · ⬜ open
 | 1.5 | League scoring **verified against the actual fantasy.nfl.com settings page** (esp. K/DST rules) | ⬜ user action, ~10 min, do before draft |
 | 1.6 | In-season loop: projections → start/sit → waiver (own roster excluded, VBD-ranked) → trade analyzer → optimizer, all league-settings-aware | ✅ **+My Team tab**: give roster once → optimal lineup + swap list with reasons + injury flags; `rank_start_sit` ranks N players in Standard scoring. **+Streaming** + **+FAAB advisor** (value over your own replacement level, bid % tiers) on the Waiver tab. **+Weekly Briefing tab**: one composed "what do I change this week" view (2026-08-21) |
 | 1.9 | **Draft-time roster planning**: bye-week collision warnings + fantasy-playoff (wk15-17) strength-of-schedule per player, so byes and brutal late stretches are visible before you draft, not after | ✅ 2026-08-21 — `/fantasy` → Schedule tab, `POST /api/fantasy/schedule-outlook`, derived from the loaded schedule (no hardcoded bye table) |
-| 1.7 | 2026 rosters current on draft night (weekly `import_rosters.py --season 2026 --skip-stats` through August; final run day before draft) | 🟡 refreshed 2026-08-21 (3,207 entries, 32/32 teams); repeat weekly — **final run the day before the draft is mandatory** |
+| 1.7 | 2026 rosters current on draft night (weekly `import_rosters.py --season 2026 --skip-stats` through August; final run day before draft) | 🟡 refreshed 2026-08-22 (3,043 entries incl. 32 DST, 32/32 teams). The import is now a **true snapshot** — it purges entries it didn't refresh, so the 203 pre-cutdown/duplicate leftovers are gone and no player appears on two teams. Repeat weekly — **final run the day before the draft is mandatory** |
 | 1.8 | **The league is won.** (The only criterion that matters; graded in January.) | ⬜ |
 
 ### Pillar 2 — Honest Model
@@ -73,7 +73,7 @@ Legend: ✅ done · 🟡 partial / needs action · ⬜ open
 | 3.3 | Enrichment live: `ODDS_API_KEY` set + `fetch_odds.py` / `fetch_conditions.py` populating | 🟡 **injuries flowing 2026-08-21** (95 fantasy-relevant rows, all 32 teams resolvable). `game_weather` waits on games inside the 14-day window (season starts 09-10); `game_odds` still needs `ODDS_API_KEY` |
 | 3.4 | A `v*` tag published → GHCR images built by CI (pipeline ✅, first tag ⬜) | 🟡 |
 | 3.5 | CI green on every push: ruff + black + mypy (blocking) + pytest / eslint + tsc + vitest; Docker job on tags | ✅ |
-| 3.6 | Full test suite green: **559 backend + 144 frontend** | ✅ |
+| 3.6 | Full test suite green: **573 backend + 144 frontend** | ✅ |
 | 3.7 | Observability: JSON logs, `X-Request-ID`, `/api/metrics` | ✅ |
 | 3.8 | Data pipeline survives upstream drift (nflverse URL scheme change of 2025 already absorbed; retry/backoff on all scrapers) | ✅ |
 
@@ -159,7 +159,7 @@ python scripts/import_schedule.py          # load the new season's schedule/game
 
 ### Verification (before any "it works" claim)
 ```bash
-python -m pytest -q                         # 559 backend (~15 s in a clean .venv)
+python -m pytest -q                         # 573 backend (~15 s in a clean .venv)
 cd frontend && npm run build && npm test    # tsc + 144 vitest
 ```
 
@@ -178,11 +178,14 @@ cd frontend && npm run build && npm test    # tsc + 144 vitest
 
 ## 7. State snapshot — 2026-08-21 (re-verified)
 
-- **Data**: 9,727 games (1990–2026 — the 2026 schedule is loaded: 272 games, kickoff 2026-09-10, all unplayed) · player weekly stats 2018–2025 incl. K + DST · `player_season_stats` now covers 2018–2025 for offense too (2,146 rows rebuilt from weekly; 2025 previously had **zero** QB/RB/WR/TE rows) · 3,207 roster entries for 2026 (32/32 teams, refreshed 2026-08-21) · `game_odds` 0 · `injury_reports` 0 · **`player_adp` 216, 214/214 matched (refreshed 2026-08-21)**. `player_weekly_stats` needs the one-time rebuild flagged above.
+- **Data**: 9,727 games (1990–2026 — the 2026 schedule is loaded: 272 games, kickoff 2026-09-10, all unplayed) · player weekly stats 2018–2025 incl. K + DST · `player_season_stats` now covers 2018–2025 for offense too (2,146 rows rebuilt from weekly; 2025 previously had **zero** QB/RB/WR/TE rows) · 3,043 roster entries for 2026 (32/32 teams incl. 32 synthetic DST, refreshed 2026-08-22, now snapshot-purged so no player is on two teams) · `game_odds` 0 · `injury_reports` 0 · **`player_adp` 216, 214/214 matched (refreshed 2026-08-21)** · `fantasy_projections` 2026 wk1 regenerated 2026-08-22 after the week-1 fix (1,047 rows, `model_source=heuristic` by design at week 1). `player_weekly_stats` needs the one-time rebuild flagged above.
 - **Models**: game GradientBoosting 34-feat OOS 0.668 (weighted-sum 0.672 remains default; ML opt-in via `?model=ml`) · player models 16-feat, MAE QB 6.48 / RB 5.66 / WR 5.50 / TE 4.26 · K/DST heuristic.
-- **Tests**: 559 backend (37 files) + 144 frontend, all green (~15 s backend).
+- **Tests**: 573 backend (39 files) + 144 frontend, all green (~15 s backend).
 - **Git/CI**: CI green (ruff + black + mypy all clean).
-- **⚠️ Unverified anomaly (2026-08-21)**: `roster_entries` has Tua Tagovailoa on ATL for both 2025 and 2026, not MIA. Spot-checked 4 other well-known players (Allen, Mahomes, Flacco, Dart) and all resolved correctly, so this looks isolated rather than systemic — but not yet root-caused. Worth a `roster_entries` sanity pass (e.g. cross-check a sample against each team's real depth chart) before trusting streaming/My-Team output for edge-case players.
+- **Two data bugs fixed 2026-08-22** (both were live, both under the weekly in-season loop):
+  - *Week-1 projections were position constants.* `build_player_feature_vector` reads history only within the requested season, so at week 1 every rolling feature is 0.0 — **in played seasons too** (Bijan 2025 wk1: all zeros) — and the ML model emitted one value per position (four QBs tied at 12.04, backups on top). Now the ML override is skipped when a player has no in-season history and the heuristic answers instead; the heuristic's own base was separately zeroed by a season-pinned join, now falling back to the most recent season at-or-before (leak-free). Board top is real starters again; Jake Haener went 12.04 → 1.44. **If a prior-season fallback is ever added inside the feature builder, the player models must be retrained** — they learned on week-1 rows full of zeros.
+  - *Roster entries accumulated instead of snapshotting*, leaving 15 players on two teams at once and feeding arbitrary opponents into Schedule SOS and Streaming. The import now purges what it didn't refresh (203 rows removed — these were the "pre-cutdown leftovers" noted here previously), guarded on full 32/32 coverage and exempting synthetic DST.
+- **⚠️ Still unexplained**: `roster_entries` has Tua Tagovailoa on ATL for both 2025 and 2026, not MIA. *Not* the duplicate bug — he has exactly one entry. Four other well-known players resolve correctly. Verify against a real depth chart before treating it as a defect; it may simply be correct upstream data.
 - **Deployment**: none — local/Docker only. This is the top of the list.
 
 ### ⚠️ Open repair — run before trusting the draft board

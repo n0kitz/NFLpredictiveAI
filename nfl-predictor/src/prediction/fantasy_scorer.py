@@ -397,6 +397,12 @@ class FantasyScorer:
         reducing query count from ~12k to ~6 for a full weekly run.
         """
         # ── 1. All skill players + season stats in one query ─────────────────
+        # Season stats come from the most recent season at-or-before the one
+        # being projected, not the exact season. An unplayed season has no
+        # player_season_stats rows at all, so an exact-season join zeroed every
+        # base and the whole board collapsed to constants. This mirrors the
+        # fallback calculate_projection already does via get_player_stats();
+        # `season <= ?` keeps it leak-free (a 2019 backtest never sees 2020).
         player_rows = self.db.fetchall(
             f"""
             SELECT p.player_id, p.full_name, p.position, p.headshot_url,
@@ -406,14 +412,37 @@ class FantasyScorer:
                    pss.games_played, pss.targets
             FROM players p
             JOIN roster_entries re ON re.player_id = p.player_id AND re.season = ?
-            LEFT JOIN player_season_stats pss
-                ON pss.player_id = p.player_id AND pss.season = ?
+            LEFT JOIN (
+                SELECT player_id, fantasy_points_ppr, fantasy_points_standard,
+                       games_played, targets,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY player_id ORDER BY season DESC
+                       ) AS rn
+                FROM player_season_stats
+                WHERE season <= ?
+            ) pss ON pss.player_id = p.player_id AND pss.rn = 1
             LEFT JOIN teams t ON t.team_id = re.team_id
             WHERE p.position IN ({_POSITIONS_SQL})
             GROUP BY p.player_id
             """,
             (season, season),
         )
+
+        # ── 1b. Which players have in-season history before this week ────────
+        # build_player_feature_vector reads history only from within `season`,
+        # so at week 1 every rolling/usage feature is 0.0 -- for a *played*
+        # season too, not just a future one. The model then cannot separate an
+        # elite back from a backup and emits one constant per position. Where
+        # there is no history to learn from, the heuristic (prior-season
+        # per-game average, matchup-adjusted) is the honest answer.
+        players_with_history = {
+            r["player_id"]
+            for r in self.db.fetchall(
+                "SELECT DISTINCT player_id FROM player_weekly_stats "
+                "WHERE season = ? AND week < ?",
+                (season, week),
+            )
+        }
 
         # ── 2. All injuries (most recent report date), indexed by full name ──
         # Keyed on the normalized FULL name, not the last token: "Jr."/"III"
@@ -576,7 +605,9 @@ class FantasyScorer:
             # Skip ML when player is ruled out — keep the zeroed heuristic output
             ruled_out = injury_status in ("Out", "IR", "PUP")
 
-            if ml_positions.get(pos) and not ruled_out and game:
+            has_history = player_id in players_with_history
+
+            if ml_positions.get(pos) and not ruled_out and game and has_history:
                 game_id = game["game_id"]
                 wx = weather_by_home.get(game["home_team_id"])
                 adverse = bool(wx and wx["is_adverse"])

@@ -29,7 +29,16 @@
       "Bash(grep -v \"Warning\\\\|warn\\\\|numpy\\\\|^$\")",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(sqlite3 data/nfl.db \"SELECT MAX\\(season\\) FROM games; SELECT COUNT\\(*\\), MAX\\(season\\) FROM roster_entries; SELECT season, week, COUNT\\(*\\) FROM fantasy_projections GROUP BY season, week ORDER BY season DESC, week DESC LIMIT 5; SELECT MAX\\(season\\), MAX\\(week\\) FROM player_weekly_stats;\")"
+      "Bash(sqlite3 data/nfl.db \"SELECT MAX\\(season\\) FROM games; SELECT COUNT\\(*\\), MAX\\(season\\) FROM roster_entries; SELECT season, week, COUNT\\(*\\) FROM fantasy_projections GROUP BY season, week ORDER BY season DESC, week DESC LIMIT 5; SELECT MAX\\(season\\), MAX\\(week\\) FROM player_weekly_stats;\")",
+      "Bash(curl -v http://localhost:8000/)",
+      "Bash(curl -s http://192.168.178.29:8000/api/teams)",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s \"http://192.168.178.29:8000/api/predictions/history\")",
+      "Bash(curl -s http://localhost:8000/api/teams)",
+      "Bash(sqlite3 *)",
+      "Bash(python3 *)",
+      "Read(//private/tmp/**)",
+      "Bash(curl -s http://localhost:8000/docs)"
     ]
   }
 }

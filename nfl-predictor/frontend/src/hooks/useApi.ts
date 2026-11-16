@@ -1,36 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
+import { useAsync } from './useAsync';
 import { api } from '../api/client';
 import { ACCURACY_SEASONS } from '../config';
 import type { TeamList, Prediction, PredictionExplanation, H2H, TeamMetrics, TeamProfile, GameList, AccuracyStats, InlineFactor, TeamRoster, PlayerProfile, GameDetail } from '../api/types';
-
-/** Generic hook for async data fetching with loading/error states. */
-function useAsync<T>(fetcher: () => Promise<T>, deps: unknown[] = []) {
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    fetcher()
-      .then((result) => {
-        if (!cancelled) setData(result);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-
-  return { data, loading, error };
-}
 
 /** Fetch all teams (cached for the session). */
 export function useTeams() {

@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Game, PlayoffPicture, PlayoffTeamEntry } from '../api/types';
+import { useAsync } from '../hooks/useAsync';
+import type { Game, PlayoffPicture, PlayoffTeamEntry, Team } from '../api/types';
 import Spinner from '../components/Spinner';
 import PlayoffBracket from '../components/PlayoffBracket';
 import { getTeamColors } from '../theme/teamColors';
@@ -22,90 +23,71 @@ interface Standing {
   winPct: number;
 }
 
+/** Regular-season standings from played games, best record first. */
+function buildStandings(games: Game[], teams: Team[]): Standing[] {
+  const teamMap = new Map<number, Standing>();
+  for (const t of teams) {
+    teamMap.set(t.team_id, {
+      abbr: t.abbreviation,
+      name: `${t.city} ${t.name}`,
+      conference: t.conference,
+      division: t.division,
+      wins: 0, losses: 0, ties: 0, pf: 0, pa: 0, winPct: 0,
+    });
+  }
+
+  for (const g of games) {
+    if (g.home_score === null || g.away_score === null) continue;
+    if (g.game_type !== 'regular') continue;
+
+    const home = teamMap.get(g.home_team_id);
+    const away = teamMap.get(g.away_team_id);
+    if (!home || !away) continue;
+
+    home.pf += g.home_score;
+    home.pa += g.away_score;
+    away.pf += g.away_score;
+    away.pa += g.home_score;
+
+    if (g.winner_id === g.home_team_id) {
+      home.wins++; away.losses++;
+    } else if (g.winner_id === g.away_team_id) {
+      away.wins++; home.losses++;
+    } else {
+      home.ties++; away.ties++;
+    }
+  }
+
+  const st = Array.from(teamMap.values()).filter((s) => s.wins + s.losses + s.ties > 0);
+  st.forEach((s) => {
+    const total = s.wins + s.losses + s.ties;
+    s.winPct = total > 0 ? (s.wins + s.ties * 0.5) / total : 0;
+  });
+  st.sort((a, b) => b.winPct - a.winPct);
+  return st;
+}
+
 export default function Season() {
   const { year: paramYear } = useParams<{ year?: string }>();
   const navigate = useNavigate();
-  const [year, setYear] = useState(paramYear ? Number(paramYear) : CURRENT_SEASON);
-  const [games, setGames] = useState<Game[]>([]);
-  const [standings, setStandings] = useState<Standing[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // The URL is the single source of truth for the season being shown.
+  const year = paramYear ? Number(paramYear) : CURRENT_SEASON;
+  const setYear = (y: number) => navigate(`/seasons/${y}`, { replace: true });
   const [tab, setTab] = useState<'standings' | 'games' | 'playoff'>('standings');
 
-  useEffect(() => {
-    if (paramYear) setYear(Number(paramYear));
-  }, [paramYear]);
-
-  useEffect(() => {
-    navigate(`/seasons/${year}`, { replace: true });
-  }, [year, navigate]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    async function load() {
-      try {
-        const [gameData, teamData] = await Promise.all([
-          api.getGames(year),
-          api.getTeams(),
-        ]);
-
-        if (cancelled) return;
-        const gs = gameData.games;
-        setGames(gs);
-
-        const teamMap = new Map<number, Standing>();
-        for (const t of teamData.teams) {
-          teamMap.set(t.team_id, {
-            abbr: t.abbreviation,
-            name: `${t.city} ${t.name}`,
-            conference: t.conference,
-            division: t.division,
-            wins: 0, losses: 0, ties: 0, pf: 0, pa: 0, winPct: 0,
-          });
-        }
-
-        for (const g of gs) {
-          if (g.home_score === null || g.away_score === null) continue;
-          if (g.game_type !== 'regular') continue;
-
-          const home = teamMap.get(g.home_team_id);
-          const away = teamMap.get(g.away_team_id);
-          if (!home || !away) continue;
-
-          home.pf += g.home_score;
-          home.pa += g.away_score;
-          away.pf += g.away_score;
-          away.pa += g.home_score;
-
-          if (g.winner_id === g.home_team_id) {
-            home.wins++; away.losses++;
-          } else if (g.winner_id === g.away_team_id) {
-            away.wins++; home.losses++;
-          } else {
-            home.ties++; away.ties++;
-          }
-        }
-
-        const st = Array.from(teamMap.values()).filter((s) => s.wins + s.losses + s.ties > 0);
-        st.forEach((s) => {
-          const total = s.wins + s.losses + s.ties;
-          s.winPct = total > 0 ? (s.wins + s.ties * 0.5) / total : 0;
-        });
-        st.sort((a, b) => b.winPct - a.winPct);
-        setStandings(st);
-      } catch (err: unknown) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load season data');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    load();
-    return () => { cancelled = true; };
-  }, [year]);
+  const { data, loading, error } = useAsync(
+    async () => {
+      const [gameData, teamData] = await Promise.all([api.getGames(year), api.getTeams()]);
+      return {
+        games: gameData.games,
+        standings: buildStandings(gameData.games, teamData.teams),
+      };
+    },
+    [year],
+    'Failed to load season data',
+  );
+  const games: Game[] = data?.games ?? [];
+  const standings: Standing[] = data?.standings ?? [];
 
   const weeks = new Map<string, Game[]>();
   for (const g of games) {
@@ -237,18 +219,10 @@ export default function Season() {
 // ── Playoff Picture Tab ───────────────────────────────────────────────────────
 
 function PlayoffPictureTab({ year }: { year: number }) {
-  const [data, setData] = useState<PlayoffPicture | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setLoading(true);
-    setError(null);
-    api.getPlayoffPicture(year)
-      .then(setData)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [year]);
+  const { data, loading, error } = useAsync<PlayoffPicture>(
+    () => api.getPlayoffPicture(year),
+    [year],
+  );
 
   if (loading) return <Spinner text="Loading playoff picture…" />;
   if (error) return <p className="text-loss text-sm py-4">{error}</p>;

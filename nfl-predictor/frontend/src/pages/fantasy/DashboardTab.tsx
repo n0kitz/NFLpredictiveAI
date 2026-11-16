@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts';
 import { api } from '../../api/client';
+import { useAsync } from '../../hooks/useAsync';
 import type { FantasyProjection } from '../../api/types';
 import Spinner from '../../components/Spinner';
 import DataBadge from '../../components/DataBadge';
@@ -12,37 +13,30 @@ import { posColor, matchupColor } from './helpers';
 import {
   PosBadge, MTooltip, ConfBadge, MLBadge, Headshot, MatchupGradePill,
 } from './shared';
+import { useFantasyWeek } from './currentWeek';
 
 const DASH_POSITIONS = ['QB', 'RB', 'WR', 'TE'] as const;
 
 export default function DashboardTab() {
-  const [week, setWeek] = useState(1);
+  const [week, setWeek] = useFantasyWeek();
   const [season] = useState(CURRENT_SEASON);
-  const [projections, setProjections] = useState<Record<string, FantasyProjection[]>>({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  const load = useCallback(async (w: number) => {
-    setLoading(true);
-    setError(null);
-    try {
+  const { data, loading, error } = useAsync<Record<string, FantasyProjection[]>>(
+    async () => {
       const results = await Promise.all(
-        DASH_POSITIONS.map((pos) => api.getFantasyProjections(w, season, pos, 'ppr'))
+        DASH_POSITIONS.map((pos) => api.getFantasyProjections(week, season, pos, 'ppr')),
       );
       const map: Record<string, FantasyProjection[]> = {};
       DASH_POSITIONS.forEach((pos, i) => {
         map[pos] = results[i].slice(0, 5);
       });
-      setProjections(map);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to load projections');
-    } finally {
-      setLoading(false);
-    }
-  }, [season]);
-
-  useEffect(() => { load(week); }, [week, load]);
+      return map;
+    },
+    [week, season],
+    'Failed to load projections',
+  );
+  const projections = data ?? {};
 
   return (
     <div className="space-y-6">

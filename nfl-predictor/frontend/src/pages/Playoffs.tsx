@@ -113,7 +113,7 @@ export default function Playoffs() {
     } finally {
       setLoading(false);
     }
-  }, [bracket.afc.seeds, bracket.nfc.seeds, allSeeded]);
+  }, [bracket.afc, bracket.nfc, allSeeded]);
 
   return (
     <div>

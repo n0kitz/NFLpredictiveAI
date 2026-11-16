@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
 import {
   LineChart, Line, BarChart, Bar,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
 } from 'recharts';
 import { api } from '../api/client';
+import { useAsync } from '../hooks/useAsync';
+import { CURRENT_SEASON } from '../config';
 import type { TeamSeasonStats } from '../api/types';
 import Spinner from './Spinner';
 
@@ -23,22 +24,14 @@ interface SeasonData {
 }
 
 export default function TrendChart({ teamAbbr, primaryColor, secondaryColor }: Props) {
-  const [data, setData] = useState<SeasonData[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-
-    async function load() {
-      const currentYear = new Date().getFullYear();
-      const years = Array.from({ length: 10 }, (_, i) => currentYear - 9 + i);
-      const results: SeasonData[] = [];
-
+  const { data: loaded, loading } = useAsync<SeasonData[]>(
+    async () => {
+      // Season labels, not calendar years — January belongs to last season.
+      const years = Array.from({ length: 10 }, (_, i) => CURRENT_SEASON - 9 + i);
       const settled = await Promise.allSettled(
         years.map((y) => api.getTeamSeason(teamAbbr, y)),
       );
-
+      const results: SeasonData[] = [];
       settled.forEach((res) => {
         if (res.status === 'fulfilled') {
           const s: TeamSeasonStats = res.value;
@@ -54,17 +47,11 @@ export default function TrendChart({ teamAbbr, primaryColor, secondaryColor }: P
           });
         }
       });
-
-      results.sort((a, b) => a.season - b.season);
-      if (!cancelled) {
-        setData(results);
-        setLoading(false);
-      }
-    }
-
-    load();
-    return () => { cancelled = true; };
-  }, [teamAbbr]);
+      return results.sort((a, b) => a.season - b.season);
+    },
+    [teamAbbr],
+  );
+  const data = loaded ?? [];
 
   if (loading) return <Spinner text="Loading trends..." />;
   if (data.length === 0) return null;

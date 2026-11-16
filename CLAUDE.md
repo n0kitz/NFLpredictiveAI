@@ -37,15 +37,15 @@ Full-stack NFL **game-prediction + fantasy-football decision engine**. Python 3.
 2. **Honest accuracy.** Predictions auto-save and self-grade; retrodictions show HIT/MISS publicly. Never present unvalidated accuracy claims in code or UI.
 3. **Standard scoring is the default** (user's league is NFL.com Standard). League size 8–20 is a parameter, never a constant. All fantasy math flows through `LeagueSettings`.
 4. **Env**: always `cd nfl-predictor && source .venv/bin/activate` (numpy<2). Anaconda base (numpy 2.x) silently breaks player-ML and can poison the projections cache.
-5. **Schema changes** go to `src/database/schema.sql` **and** the `MIGRATIONS` list in `db.py` (at v25). Both, always.
+5. **Schema changes** go to `src/database/schema.sql` **and** the `MIGRATIONS` list in `db.py` (at v26). Both, always.
 6. **TDD** per superpowers skill; verify with the commands below before claiming green.
 
 ## Verification
 
 ```bash
 cd nfl-predictor && source .venv/bin/activate
-python -m pytest -q                        # 573 tests (~15 s in a clean .venv)
-cd frontend && npm run build && npm test   # tsc + vite build, 144 vitest tests (run from frontend/ — vitest setup needs that cwd)
+python -m pytest -q                        # 622 tests (~15 s in a clean .venv)
+cd frontend && npm run build && npm test   # tsc + vite build, 163 vitest tests (run from frontend/ — vitest setup needs that cwd)
 ```
 
 ## Running
@@ -88,15 +88,16 @@ cd nfl-predictor && docker compose up --build       # frontend :3000 (nginx) →
 | Draft simulator | `frontend/src/pages/fantasy/draftSim.ts` (pure: seeded RNG, 8 strategies, bot archetypes, batch compare) + `pages/DraftSimulatorPage.tsx` |
 | API client / types | `frontend/src/api/client.ts` + `types.ts` |
 | Weekly cron | `scripts/weekly_scrape.py` (Wed 06:00 UTC; fcntl-locked; purges stale projections before regen) |
+| Weekly auto-picks | `src/prediction/weekly_picks.py` (`save_upcoming_picks`; cron saves one pick per not-yet-started game of the upcoming week → feeds `/history`) |
 | Observability | `src/observability.py` → `/api/metrics`, JSON logs, `X-Request-ID` |
-| CI | `.github/workflows/ci.yml` (ruff+black+mypy+pytest / eslint+tsc+vitest; GHCR images on `v*` tags) |
+| CI | `.github/workflows/ci.yml` (ruff+black+mypy+pytest / eslint+tsc+vitest, all blocking; GHCR images on `v*` tags) |
 
 ## API surface (by router)
 
 - **teams**: `/api/teams`, `/{id}`, `/{id}/stats|profile|season/{year}|games|roster|starters|upcoming`
 - **games**: `/api/games`, `/{id}` (detail: odds+weather+factors+box score 2018+), `/{id}/retrodiction` (cutoff-aware HIT/MISS), `/{id}/odds`, `/{id}/conditions`
 - **predictions**: `POST /api/predict` (auto-saves; `vegas_context`+`conditions` display-only), `/predict/explain` (SHAP), `GET /predict/{away}/{home}?model=ml`, `/h2h/{t1}/{t2}`, `/predictions/history`, `POST /predictions/enrich`
-- **fantasy**: `/api/fantasy/top|projections|start-sit|waiver|draft-rankings|trade-analyze|power-rankings|trade-values|roster/import-by-names|model-info` (GET) + `POST /start-sit/rank` (N-way), `POST /my-team/lineup` (roster-constrained), `POST /schedule-outlook` (byes + wk15-17 SOS), `POST /streaming` (best DST/K/QB by matchup grade), `POST /waiver/faab` (bid % vs. roster replacement level) — `scoring=standard` default, `half_ppr` accepted; `draft-rankings` takes `league_size=8..20`, is **computed per request, VBD-ordered**
+- **fantasy**: `/api/fantasy/current-week|top|projections|start-sit|waiver|draft-rankings|trade-analyze|power-rankings|trade-values|roster/import-by-names|model-info` (GET) + `POST /start-sit/rank` (N-way), `POST /my-team/lineup` (roster-constrained), `POST /schedule-outlook` (byes + wk15-17 SOS), `POST /streaming` (best DST/K/QB by matchup grade), `POST /waiver/faab` (bid % vs. roster replacement level) — `scoring=standard` default, `half_ppr` accepted; `draft-rankings` takes `league_size=8..20`, is **computed per request, VBD-ordered**
 - **matchup**: `/api/fantasy/matchup/{player_id}` (A–F grade), `POST /api/fantasy/optimize`, `/optimize/dfs`
 - **nfl_league**: `GET /api/nfl-league/{id}` (experimental sync; 503 without cookie)
 - **misc**: `/api/health`, `/metrics`, `/accuracy`, `/factors`, `/model/info`, `/scrape/status`, `/players/{id}`, `/players/search`, `/players/{id}/weekly-stats`, `/seasons/{year}/playoff-picture`, `/picks/value`, `/picks/history`
@@ -117,9 +118,17 @@ cd nfl-predictor && docker compose up --build       # frontend :3000 (nginx) →
 - `sqlite3.Row`: bracket access only — `.get()` doesn't exist.
 - **ESPN 403s custom User-Agents** (since 2026-08-20). `roster_scraper`/`schedule_scraper` must send the default `python-requests/x.y.z` — a `Mozilla/…` or app-branded UA gets every team rejected. Guarded by `tests/test_espn_user_agent.py`. (PFR still *needs* a browser UA — don't touch `pfr_scraper`.)
 - **`player_season_stats` is built from weekly rows**, not `nfl_data_py` — its seasonal feed 404s for 2025+ exactly like the weekly one. `aggregate_offense_season_stats()` + `aggregate_kicker_dst_season_stats()` in `player_weekly_importer.py`. Draft rankings and leaderboards read this table, so a missing season silently degrades both.
+- **Two "current week" helpers, opposite meanings.** `db.get_current_week()` = last *completed* week (the past); `db.get_upcoming_week()` = first regular-season week with an unplayed game (what to project / set a lineup for). Cron projections, `GET /api/fantasy/current-week` and the frontend week pickers (`useFantasyWeek` in `pages/fantasy/currentWeek.ts`) all use *upcoming*.
+- **A bye week projects 0.** `calculate_projection(..., opponent_team_id=None)` resolves the opponent itself via `_scheduled_opponent` (`schedule_outlook.team_schedule`) and returns `on_bye: True` with zero points when the team is idle; the bulk path zeroes bye teams too. A season with no schedule loaded is *not* a bye. Guarded by `tests/test_projection_bye_week.py`.
+- **`prediction_history.source`** (`manual` | `cron`, v26). `/history` accuracy counts one pick per game — the cron's if present, else the latest — so repeat clicks can't weigh a game twice.
+- **`/api/health`** also reports `results_through_week` / `upcoming_week`; the footer's stale badge fires on old rosters *or* an overdue weekly run (`components/dataFreshness.ts`).
+- **Prediction grading is date-aware.** `enrich_prediction_history` grades a pick only against the pairing's next meeting on/after `predicted_at`; games played earlier never grade it (`reset_retroactive_prediction_grades` heals old rows). Guarded by `tests/test_prediction_grading.py`.
+- **PFR is optional in the cron.** ESPN's scoreboard delivers schedule + final scores; Pro-Football-Reference 403s behind Cloudflare. The run is only fatal when *both* fail (`core_scrape_failed` in `weekly_scrape.py`).
 - `LAST_COMPLETED_SEASON` ≠ `CURRENT_SEASON - 1` in the offseason — see `lastCompletedSeason()` in `frontend/src/config.ts`.
 - **ADP**: `python scripts/import_adp.py --season <yr>` fetches live consensus ADP (Fantasy Football Calculator, public JSON, no key); `--file` still takes a CSV. FFC echoes `teams` but returns **the same pooled ADP for every league size** — league size enters through VBD, not ADP. Positions arrive as `PK`/`DEF` and are normalized to `K`/`DST`; defenses match by team abbr to the synthetic `DST-{abbr}` player, not by name.
 - Frontend: ErrorBoundary wraps routes; all pages lazy; team theming via `teamColors.ts` + CSS vars; Recharts for charts; no state library — localStorage hooks (`useLeagueSettings`, `myRoster`, draft board) are the persistence layer.
+- **Frontend data fetching goes through `src/hooks/useAsync.ts`** (`useAsync(fetcher | null, deps, fallbackError)` → `{data, loading, error}`; `loading` is derived, never set inside an effect). Don't write `useEffect(() => { setLoading(true); api.x()… })` — `react-hooks/set-state-in-effect` fails the build now that **ESLint is blocking in CI**. State that must reset on a prop change: remount with `key`, don't reset from an effect.
+- **vitest 5**: `src/test/setup.ts` imports `@testing-library/jest-dom/vitest` (the plain entry no longer augments vitest's `expect` types — tests pass but `tsc -b` fails).
 - Frontend tests: vitest **must run from `frontend/`** (setup + jsdom config), localStorage is polyfilled in `src/test/setup.ts`.
 
 ## Database tables (beyond the obvious)

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
+import { useAsync } from '../hooks/useAsync';
 import type { DraftRanking } from '../api/types';
 import Spinner from '../components/Spinner';
 import { UPCOMING_SEASON } from '../config';
@@ -17,8 +18,6 @@ type Mode = 'batch' | 'interactive';
 
 export default function DraftSimulatorPage() {
   const [league] = useLeagueSettings();
-  const [rankings, setRankings] = useState<DraftRanking[]>([]);
-  const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<Mode>('batch');
 
   const [leagueSize, setLeagueSize] = useState(league.leagueSize);
@@ -31,13 +30,11 @@ export default function DraftSimulatorPage() {
     [leagueSize, mySlot, rounds, scoring],
   );
 
-  useEffect(() => {
-    setLoading(true);
-    api.getDraftRankings(UPCOMING_SEASON, scoring, 'all', leagueSize)
-      .then(setRankings)
-      .catch(() => setRankings([]))
-      .finally(() => setLoading(false));
-  }, [scoring, leagueSize]);
+  const { data, loading } = useAsync<DraftRanking[]>(
+    () => api.getDraftRankings(UPCOMING_SEASON, scoring, 'all', leagueSize),
+    [scoring, leagueSize],
+  );
+  const rankings = useMemo(() => data ?? [], [data]);
 
   return (
     <div className="space-y-6">
@@ -336,18 +333,78 @@ interface MockState {
   overall: number;
 }
 
+const EMPTY_MOCK: MockState = { taken: new Set(), myPicks: [], board: [], overall: 1 };
+
+/** Advance the draft until it's my turn again (or the draft ends). */
+function runBots(
+  start: MockState,
+  players: DraftRanking[],
+  settings: SimSettings,
+  bots: ReturnType<typeof assignBotArchetypes>,
+  rng: ReturnType<typeof makeRng>,
+): MockState {
+  const myIdx = settings.mySlot - 1;
+  const totalPicks = settings.leagueSize * settings.rounds;
+  const taken = new Set(start.taken);
+  const board = [...start.board];
+  let overall = start.overall;
+
+  while (overall <= totalPicks) {
+    const teamIdx = teamForPick(overall, settings.leagueSize);
+    if (teamIdx === myIdx) break;
+
+    const pool = players.filter((p) => !taken.has(p.player_id));
+    if (!pool.length) break;
+
+    const botRoster = board.filter((b) => b.teamIdx === teamIdx).map((b) => b.player);
+    const r = Math.floor((overall - 1) / settings.leagueSize) + 1;
+    // Reuse the engine by simulating a single pick for this bot.
+    const choice = botPick(bots[teamIdx], pool, botRoster, r, settings, rng);
+    taken.add(choice.player_id);
+    board.push({ overall, teamIdx, player: choice });
+    overall++;
+  }
+  return { taken, board, overall, myPicks: start.myPicks };
+}
+
 function InteractiveMode({ players, settings }: { players: DraftRanking[]; settings: SimSettings }) {
   const [seed, setSeed] = useState(1);
+  // A new seed or changed settings is a new draft: remount instead of
+  // resetting state from an effect.
+  return (
+    <MockDraft
+      key={`${seed}|${JSON.stringify(settings)}`}
+      players={players}
+      settings={settings}
+      seed={seed}
+      onNewDraft={() => setSeed((s) => s + 1)}
+    />
+  );
+}
+
+function MockDraft({ players, settings, seed, onNewDraft }: {
+  players: DraftRanking[];
+  settings: SimSettings;
+  seed: number;
+  onNewDraft: () => void;
+}) {
   const [strategy, setStrategy] = useState('need-based');
-  const [state, setState] = useState<MockState>(() => ({
-    taken: new Set(), myPicks: [], board: [], overall: 1,
-  }));
+  // Bots, their RNG and the opening picks (bots ahead of my first turn) are
+  // fixed for the lifetime of one draft.
+  const [{ bots, rng, opening }] = useState(() => {
+    const draftBots = assignBotArchetypes(settings, makeRng(seed));
+    const draftRng = makeRng(seed + 7);
+    return {
+      bots: draftBots,
+      rng: draftRng,
+      opening: runBots(EMPTY_MOCK, players, settings, draftBots, draftRng),
+    };
+  });
+  const [state, setState] = useState<MockState>(opening);
   const [history, setHistory] = useState<MockState[]>([]);
 
   const myIdx = settings.mySlot - 1;
   const totalPicks = settings.leagueSize * settings.rounds;
-  const bots = useMemo(() => assignBotArchetypes(settings, makeRng(seed)), [settings, seed]);
-  const rng = useMemo(() => makeRng(seed + 7), [seed]);
 
   const available = useMemo(
     () => players.filter((p) => !state.taken.has(p.player_id)),
@@ -359,39 +416,12 @@ function InteractiveMode({ players, settings }: { players: DraftRanking[]; setti
   const myTurn = onClock === myIdx;
   const done = state.overall > totalPicks;
 
-  function reset() {
-    setState({ taken: new Set(), myPicks: [], board: [], overall: 1 });
-    setHistory([]);
-  }
-
   function commit(next: MockState) {
     setHistory((h) => [...h, state]);
     setState(next);
   }
 
-  /** Advance the draft until it's my turn again (or the draft ends). */
-  function runBotsFrom(start: MockState): MockState {
-    const taken = new Set(start.taken);
-    const board = [...start.board];
-    let overall = start.overall;
-
-    while (overall <= totalPicks) {
-      const teamIdx = teamForPick(overall, settings.leagueSize);
-      if (teamIdx === myIdx) break;
-
-      const pool = players.filter((p) => !taken.has(p.player_id));
-      if (!pool.length) break;
-
-      const botRoster = board.filter((b) => b.teamIdx === teamIdx).map((b) => b.player);
-      const r = Math.floor((overall - 1) / settings.leagueSize) + 1;
-      // Reuse the engine by simulating a single pick for this bot.
-      const choice = botPick(bots[teamIdx], pool, botRoster, r, settings, rng);
-      taken.add(choice.player_id);
-      board.push({ overall, teamIdx, player: choice });
-      overall++;
-    }
-    return { taken, board, overall, myPicks: start.myPicks };
-  }
+  const runBotsFrom = (start: MockState) => runBots(start, players, settings, bots, rng);
 
   function draftPlayer(p: DraftRanking) {
     const taken = new Set(state.taken);
@@ -419,14 +449,6 @@ function InteractiveMode({ players, settings }: { players: DraftRanking[]; setti
     setHistory((h) => h.slice(0, -1));
     setState(prev);
   }
-
-  // Bots pick before my very first turn when I'm not at slot 1.
-  useEffect(() => {
-    if (state.overall === 1 && !state.board.length && myIdx !== 0) {
-      setState((s) => runBotsFrom(s));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.overall, state.board.length, myIdx, seed, settings]);
 
   const evaluation = evaluateRoster(state.myPicks, settings);
   const suggestions = useMemo(() => {
@@ -489,7 +511,7 @@ function InteractiveMode({ players, settings }: { players: DraftRanking[]; setti
             Undo
           </button>
           <button
-            onClick={() => { setSeed((s) => s + 1); reset(); }}
+            onClick={onNewDraft}
             className="rounded-lg border border-border px-3 py-1 text-sm text-text-secondary hover:border-border-strong hover:text-text-primary"
           >
             New draft

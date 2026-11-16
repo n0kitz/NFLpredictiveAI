@@ -11,6 +11,7 @@ import H2HTimeline from '../components/H2HTimeline';
 import TeamLogo from '../components/TeamLogo';
 import { getTeamColors } from '../theme/teamColors';
 import { api } from '../api/client';
+import { useAsync } from '../hooks/useAsync';
 import { CURRENT_SEASON } from '../config';
 import type { Prediction, TeamMetrics, UpcomingGame, SimulationResult } from '../api/types';
 
@@ -22,8 +23,14 @@ export default function Compare() {
   const [t1, setT1] = useState(paramT1 ?? '');
   const [t2, setT2] = useState(paramT2 ?? '');
 
-  useEffect(() => { if (paramT1) setT1(paramT1); }, [paramT1]);
-  useEffect(() => { if (paramT2) setT2(paramT2); }, [paramT2]);
+  // Adopt a changed URL (back/forward, link) during render rather than from
+  // an effect, so there is no frame showing the previous matchup.
+  const [seenParams, setSeenParams] = useState({ t1: paramT1, t2: paramT2 });
+  if (seenParams.t1 !== paramT1 || seenParams.t2 !== paramT2) {
+    setSeenParams({ t1: paramT1, t2: paramT2 });
+    if (paramT1) setT1(paramT1);
+    if (paramT2) setT2(paramT2);
+  }
 
   useEffect(() => {
     if (t1 && t2) navigate(`/compare/${t1}/${t2}`, { replace: true });
@@ -206,16 +213,11 @@ function diffBadge(d: 'easy' | 'medium' | 'hard') {
 }
 
 function ScheduleColumn({ abbr, color, season }: { abbr: string; color: string; season?: number }) {
-  const [games, setGames] = useState<UpcomingGame[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    api.getTeamUpcoming(abbr, season ?? CURRENT_SEASON, 4)
-      .then((r) => setGames(r.games))
-      .catch(() => setGames([]))
-      .finally(() => setLoading(false));
-  }, [abbr, season]);
+  const { data, loading } = useAsync(
+    () => api.getTeamUpcoming(abbr, season ?? CURRENT_SEASON, 4),
+    [abbr, season],
+  );
+  const games: UpcomingGame[] = data?.games ?? [];
 
   return (
     <div className="flex-1">
@@ -268,9 +270,6 @@ function MonteCarloPanel({ t1, t2, c1, c2 }: { t1: string; t2: string; c1: strin
       setLoading(false);
     }
   }, [t1, t2, n]);
-
-  // reset when teams change
-  useEffect(() => { setResult(null); setError(null); }, [t1, t2]);
 
   const homePct = result ? result.home_win_pct * 100 : 50;
   const awayPct = result ? result.away_win_pct * 100 : 50;
@@ -453,7 +452,8 @@ function CompareBody({ t1, t2 }: { t1: string; t2: string }) {
       <QuickPredict t1={t1} t2={t2} c1={c1} c2={c2} />
 
       {/* Monte Carlo Simulator */}
-      <MonteCarloPanel t1={t1} t2={t2} c1={c1} c2={c2} />
+      {/* keyed: a new matchup starts with a clean simulator */}
+      <MonteCarloPanel key={`${t1}-${t2}`} t1={t1} t2={t2} c1={c1} c2={c2} />
 
       {/* H2H summary + timeline */}
       {!hl && h2h && h2h.total_games > 0 && (

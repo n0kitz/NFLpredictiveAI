@@ -1,22 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { api } from '../../api/client';
+import { useAsync } from '../../hooks/useAsync';
 import type { PowerRanking } from '../../api/types';
 import Spinner from '../../components/Spinner';
 import { LAST_COMPLETED_SEASON } from '../../config';
+import { useFantasyWeek } from './currentWeek';
 
 export default function PowerRankingsTab() {
-  const [week, setWeek] = useState(1);
+  const [week, setWeek] = useFantasyWeek();
   const [season] = useState(LAST_COMPLETED_SEASON);
-  const [rankings, setRankings] = useState<PowerRanking[]>([]);
-  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    setLoading(true);
-    api.getFantasyPowerRankings(week, season)
-      .then((r) => setRankings(r.rankings))
-      .catch(() => setRankings([]))
-      .finally(() => setLoading(false));
-  }, [week, season]);
+  const { data, loading } = useAsync(
+    () => api.getFantasyPowerRankings(week, season),
+    [week, season],
+  );
+  const rankings: PowerRanking[] = data?.rankings ?? [];
 
   function trendIcon(t: PowerRanking['trend'], change: number) {
     if (t === 'rising')  return <span className="text-win text-xs">▲{Math.abs(change)}</span>;

@@ -66,6 +66,18 @@ ESPN_PLAYER_STATS_URL = (
 # Guarded by tests/test_espn_user_agent.py.
 
 
+def should_purge_stale(teams_with_players: int, expected_teams: int = 32) -> bool:
+    """Whether it is safe to purge roster entries this run left untouched.
+
+    Only a run that covered every team may purge. evaluate_roster_import()
+    deliberately returns ok=True on partial coverage (it hard-fails only when
+    nothing was upserted), so gating the purge on `import_ok` alone would let a
+    20/32 run delete the twelve missing teams' rosters outright -- turning a
+    transient ESPN hiccup into data loss right before draft night.
+    """
+    return teams_with_players >= expected_teams
+
+
 def evaluate_roster_import(
     teams_fetched: int,
     entries_upserted: int,

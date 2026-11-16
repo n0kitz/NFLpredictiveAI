@@ -252,13 +252,6 @@ export interface TeamProfile {
   last_season_year: number | null;
 }
 
-export interface HealthStatus {
-  status: string;
-  total_teams: number;
-  total_games: number;
-  database: string;
-}
-
 export interface InlineFactor {
   factor_type: string;
   team: 'home' | 'away';
@@ -279,6 +272,8 @@ export interface PredictionHistoryItem {
   actual_winner_abbr: string | null;
   correct: boolean | null;
   game_id: number | null;
+  /** 'cron' = saved automatically by the weekly job before kickoff. */
+  source?: 'manual' | 'cron';
 }
 
 export interface PredictionHistory {
@@ -549,6 +544,11 @@ export interface StreamingCandidate {
   grade: 'A' | 'B' | 'C' | 'D' | 'F';
   score: number;
   explanation: string;
+}
+
+export interface CurrentWeek {
+  season: number;
+  week: number;
 }
 
 export interface StreamingResult {
@@ -868,6 +868,9 @@ export interface HealthResponse {
   last_scrape_ok: boolean | null;
   last_scrape_error: string | null;
   data_updated_at: string | null;
+  results_season: number | null;
+  results_through_week: number | null;
+  upcoming_week: number | null;
 }
 
 // ── Monte Carlo Simulation ────────────────────────────────────────────────────

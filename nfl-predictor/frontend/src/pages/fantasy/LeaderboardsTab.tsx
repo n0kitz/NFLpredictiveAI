@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
+import { useAsync } from '../../hooks/useAsync';
 import type { FantasyLeaderboard, FantasyPlayerEntry } from '../../api/types';
 import Spinner from '../../components/Spinner';
 import { LAST_COMPLETED_SEASON } from '../../config';
@@ -17,17 +18,12 @@ export default function LeaderboardsTab() {
   const setScoring = (s: string) =>
     setSettings({ ...settings, scoring: s as Scoring });
   const [season] = useState(LAST_COMPLETED_SEASON);
-  const [data, setData] = useState<FantasyLeaderboard | null>(null);
-  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    setLoading(true);
-    api.getFantasyTop(position === 'ALL' ? undefined : position, season, scoring, 50)
-      .then(setData)
-      .catch(() => setData(null))
-      .finally(() => setLoading(false));
-  }, [position, scoring, season]);
+  const { data, loading } = useAsync<FantasyLeaderboard>(
+    () => api.getFantasyTop(position === 'ALL' ? undefined : position, season, scoring, 50),
+    [position, scoring, season],
+  );
 
   const players: FantasyPlayerEntry[] = data?.players ?? [];
 

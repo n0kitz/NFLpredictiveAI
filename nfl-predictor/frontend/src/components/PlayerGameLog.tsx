@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
+import { useAsync } from '../hooks/useAsync';
 import type { PlayerWeeklyStatsResponse, PlayerWeekCell } from '../api/types';
 import { LAST_COMPLETED_SEASON, recentSeasons } from '../config';
 import Spinner from './Spinner';
@@ -48,20 +49,11 @@ function Td({ children, className = '' }: { children: React.ReactNode; className
 
 export default function PlayerGameLog({ playerId, position, defaultSeason }: Props) {
   const [season, setSeason] = useState(defaultSeason ?? LAST_COMPLETED_SEASON);
-  const [data, setData] = useState<PlayerWeeklyStatsResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    api.getPlayerWeeklyStats(playerId, season)
-      .then((d) => { if (!cancelled) setData(d); })
-      .catch((e) => { if (!cancelled) setError(e?.message ?? 'Failed to load game log'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [playerId, season]);
+  const { data, loading, error } = useAsync<PlayerWeeklyStatsResponse>(
+    () => api.getPlayerWeeklyStats(playerId, season),
+    [playerId, season],
+    'Failed to load game log',
+  );
 
   const pos = (position ?? '').toUpperCase();
   const isQB = pos === 'QB';

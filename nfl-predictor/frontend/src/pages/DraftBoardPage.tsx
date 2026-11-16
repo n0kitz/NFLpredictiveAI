@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import { api } from '../api/client';
+import { useAsync } from '../hooks/useAsync';
 import type { DraftRanking } from '../api/types';
 import Spinner from '../components/Spinner';
 import { UPCOMING_SEASON } from '../config';
@@ -16,20 +17,17 @@ import {
 
 export default function DraftBoardPage() {
   const [state, dispatch] = useReducer(draftReducer, undefined, loadDraftState);
-  const [rankings, setRankings] = useState<DraftRanking[]>([]);
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => saveDraftState(state), [state]);
 
   const { scoring, leagueSize } = state.settings;
-  useEffect(() => {
-    if (!state.started) return;
-    setLoading(true);
-    api.getDraftRankings(UPCOMING_SEASON, scoring, 'all', leagueSize)
-      .then(setRankings)
-      .catch(() => setRankings([]))
-      .finally(() => setLoading(false));
-  }, [state.started, scoring, leagueSize]);
+  const { data, loading } = useAsync<DraftRanking[]>(
+    state.started
+      ? () => api.getDraftRankings(UPCOMING_SEASON, scoring, 'all', leagueSize)
+      : null,
+    [state.started, scoring, leagueSize],
+  );
+  const rankings = useMemo(() => data ?? [], [data]);
 
   if (!state.started) {
     return <DraftSetup onStart={(settings) => dispatch({ type: 'SETUP', settings })} />;
@@ -147,11 +145,13 @@ function DraftRoom({ state, rankings, loading, onPick, onUndo, onReset }: {
     return m;
   }, [rankings]);
 
-  const myIds = myRoster(state);
-  const myPositions = myIds
-    .map((id) => rankingById.get(id)?.position)
-    .filter((p): p is string => Boolean(p));
-  const needs = positionalNeeds(myPositions, state.settings.rosterSlots);
+  const myIds = useMemo(() => myRoster(state), [state]);
+  const needs = useMemo(() => {
+    const myPositions = myIds
+      .map((id) => rankingById.get(id)?.position)
+      .filter((p): p is string => Boolean(p));
+    return positionalNeeds(myPositions, state.settings.rosterSlots);
+  }, [myIds, rankingById, state.settings.rosterSlots]);
   const suggestions = useMemo(
     () => applyNeedBoost(available, needs),
     [available, needs]);

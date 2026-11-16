@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import CalibrationPanel, { bucketMidpoint, calibrationGap } from './CalibrationPanel';
+import CalibrationPanel from './CalibrationPanel';
+import { bucketMidpoint, calibrationGap } from './calibration';
 
 const CALIBRATION = {
   '50-55%': { total: 113, correct: 65 },

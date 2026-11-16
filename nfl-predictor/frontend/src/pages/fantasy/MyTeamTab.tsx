@@ -5,6 +5,7 @@ import { ACTIVE_SEASON } from '../../config';
 import { useLeagueSettings } from './leagueSettings';
 import { PosBadge, Headshot } from './shared';
 import RosterImportHelper from './RosterImportHelper';
+import { useFantasyWeek } from './currentWeek';
 
 interface Props {
   rosterIds: number[];
@@ -19,7 +20,7 @@ interface Props {
  */
 export default function MyTeamTab({ rosterIds, onImported }: Props) {
   const [{ scoring, leagueSize }] = useLeagueSettings();
-  const [week, setWeek] = useState(1);
+  const [week, setWeek] = useFantasyWeek();
   const [advice, setAdvice] = useState<LineupAdvice | null>(null);
   const [compare, setCompare] = useState<StartSitRank | null>(null);
   const [loading, setLoading] = useState(false);

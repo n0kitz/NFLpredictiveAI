@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../../api/client';
+import { useAsync } from '../../hooks/useAsync';
 import type {
   TradeAnalysis, TradePlayer, PlayerSearchResult, TradeValue,
 } from '../../api/types';
 import Spinner from '../../components/Spinner';
 import { CURRENT_SEASON, LAST_COMPLETED_SEASON } from '../../config';
 import { PosBadge, Headshot } from './shared';
+import { useFantasyWeek } from './currentWeek';
 
 function PlayerSearchPanel({
   label,
@@ -243,18 +245,13 @@ function TradeTab({ externalWeek }: { externalWeek?: number } = {}) {
 }
 
 function TradeValueBoard({ week, season }: { week: number; season: number }) {
-  const [players, setPlayers] = useState<TradeValue[]>([]);
-  const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
-    setLoading(true);
-    api.getFantasyTradeValues(week, season)
-      .then((r) => setPlayers(r.players))
-      .catch(() => setPlayers([]))
-      .finally(() => setLoading(false));
-  }, [open, week, season]);
+  const { data, loading } = useAsync(
+    open ? () => api.getFantasyTradeValues(week, season) : null,
+    [open, week, season],
+  );
+  const players: TradeValue[] = data?.players ?? [];
 
   function schedColor(s: TradeValue['schedule_difficulty']) {
     return s === 'easy' ? 'text-win' : s === 'hard' ? 'text-loss' : 'text-text-muted';
@@ -316,7 +313,7 @@ function TradeValueBoard({ week, season }: { week: number; season: number }) {
 }
 
 export default function TradeTabWithValues() {
-  const [week, setWeek] = useState(1);
+  const [week, setWeek] = useFantasyWeek();
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">

@@ -8,7 +8,7 @@ from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
-from ..config import settings
+from ..config import current_nfl_season, settings
 
 # Default database path (overridable via DB_PATH env — see src/config.py)
 DEFAULT_DB_PATH = settings.db_path
@@ -68,6 +68,8 @@ MIGRATIONS: List[str] = [
         source TEXT DEFAULT 'csv',
         UNIQUE(season, player_id)
     )""",
+    # v26: who saved a prediction -- 'manual' (UI/API) or 'cron' (weekly auto-pick)
+    "ALTER TABLE prediction_history ADD COLUMN source TEXT DEFAULT 'manual'",
 ]
 
 
@@ -690,13 +692,15 @@ class Database:
         home_prob: float,
         away_prob: float,
         confidence: str,
+        source: str = "manual",
     ) -> int:
         """Save a prediction to history. Returns the row id."""
         cursor = self.execute(
             """
             INSERT INTO prediction_history
-                (home_team_id, away_team_id, predicted_winner_id, home_prob, away_prob, confidence)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (home_team_id, away_team_id, predicted_winner_id, home_prob, away_prob,
+                 confidence, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 home_team_id,
@@ -705,6 +709,7 @@ class Database:
                 home_prob,
                 away_prob,
                 confidence,
+                source,
             ),
         )
         self.commit()
@@ -733,12 +738,26 @@ class Database:
         )
 
     def get_prediction_history_stats(self) -> Optional[sqlite3.Row]:
-        """Get aggregate accuracy stats for resolved predictions."""
+        """Aggregate accuracy stats; each graded game counts once.
+
+        `total` is every saved pick. `resolved`/`correct` take one pick per
+        game -- the cron's if there is one, otherwise the latest -- so saving
+        the same matchup repeatedly cannot weigh that game more than others.
+        """
         return self.fetchone("""
-            SELECT COUNT(*) AS total,
-                   SUM(CASE WHEN correct = 1 THEN 1 ELSE 0 END) AS correct,
-                   COUNT(CASE WHEN correct IS NOT NULL THEN 1 END) AS resolved
-            FROM prediction_history
+            WITH graded AS (
+                SELECT correct,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY COALESCE(game_id, -id)
+                           ORDER BY (source = 'cron') DESC, predicted_at DESC, id DESC
+                       ) AS rn
+                FROM prediction_history
+                WHERE correct IS NOT NULL
+            )
+            SELECT (SELECT COUNT(*) FROM prediction_history) AS total,
+                   COALESCE(SUM(CASE WHEN correct = 1 THEN 1 ELSE 0 END), 0) AS correct,
+                   COUNT(*) AS resolved
+            FROM graded WHERE rn = 1
             """)
 
     # Advanced stats operations
@@ -773,26 +792,55 @@ class Database:
             (team_id, season),
         )
 
+    def reset_retroactive_prediction_grades(self) -> int:
+        """Un-grade predictions that were scored against a game played earlier.
+
+        Enrichment used to match a prediction to the most recent completed game
+        of its pairing regardless of date, so a pick saved in April was "graded"
+        by the game from the previous January -- one the model had already
+        learned from. Those rows go back to unresolved; a real later meeting
+        can still grade them. Idempotent. Returns the number of rows reset.
+        """
+        cur = self.execute("""
+            UPDATE prediction_history
+            SET game_id = NULL, actual_winner_id = NULL, correct = NULL
+            WHERE correct IS NOT NULL
+              AND game_id IN (
+                  SELECT g.game_id FROM games g
+                  WHERE g.game_id = prediction_history.game_id
+                    AND g.date < date(prediction_history.predicted_at)
+              )
+            """)
+        if cur.rowcount:
+            self.commit()
+        return cur.rowcount
+
     def enrich_prediction_history(self) -> int:
-        """Match unresolved predictions to completed games and fill actual_winner_id/correct/game_id."""
+        """Grade unresolved predictions against the game they were made for.
+
+        That game is the pairing's next meeting on or after the day of the
+        prediction (same home/away). It grades the prediction once it has a
+        winner; a game played *before* the prediction never does -- that would
+        be scoring the model on its own history. Game-day picks count, since no
+        kickoff time is stored.
+        """
         # Link already-resolved rows that predate game_id tracking (idempotent, ~0 rows after first run)
         self.backfill_prediction_game_ids()
+        # Heal rows graded under the old most-recent-game rule
+        self.reset_retroactive_prediction_grades()
         # Single JOIN query instead of N+1 per-prediction lookups
         rows = self.fetchall("""
             SELECT ph.id, ph.predicted_winner_id,
                    g.winner_id, g.game_id
             FROM prediction_history ph
             JOIN games g
-              ON g.home_team_id = ph.home_team_id
-             AND g.away_team_id = ph.away_team_id
-             AND g.home_score IS NOT NULL
-             AND g.winner_id IS NOT NULL
+              ON g.winner_id IS NOT NULL
              AND g.game_id = (
                  SELECT game_id FROM games g2
                  WHERE g2.home_team_id = ph.home_team_id
                    AND g2.away_team_id = ph.away_team_id
-                   AND g2.home_score IS NOT NULL
-                 ORDER BY g2.date DESC LIMIT 1
+                   AND g2.date >= date(ph.predicted_at)
+                 ORDER BY g2.date ASC LIMIT 1
              )
             WHERE ph.correct IS NULL
             """)
@@ -1376,16 +1424,49 @@ class Database:
     def get_current_week(self, season: Optional[int] = None) -> int:
         """Return the most recently completed week number for a season (default: current)."""
         if season is None:
-            from datetime import date as _date
-
-            now = _date.today()
-            season = now.year if now.month >= 9 else now.year - 1
+            season = current_nfl_season()
         row = self.fetchone(
             "SELECT MAX(CAST(week AS INTEGER)) as max_week FROM games WHERE season=? AND home_score IS NOT NULL",
             (season,),
         )
         if row and row["max_week"]:
             return int(row["max_week"])
+        return 1
+
+    def get_results_through_week(self, season: int) -> Optional[int]:
+        """Last regular-season week of `season` with a played game, or None."""
+        row = self.fetchone(
+            "SELECT MAX(CAST(week AS INTEGER)) AS week FROM games "
+            "WHERE season = ? AND game_type = 'regular' AND home_score IS NOT NULL",
+            (season,),
+        )
+        return int(row["week"]) if row and row["week"] else None
+
+    def get_upcoming_week(self, season: int) -> int:
+        """Return the next regular-season week still to be played.
+
+        The first week with an unplayed game -- so a week stays "upcoming" from
+        Wednesday's cron through Monday night, including after its Thursday
+        game. Once the regular season is over this is its last week; a season
+        with no schedule loaded is week 1.
+
+        Not get_current_week(): that is the most recently *completed* week,
+        i.e. the past, which is the wrong week to project or set a lineup for.
+        """
+        row = self.fetchone(
+            "SELECT MIN(CAST(week AS INTEGER)) AS week FROM games "
+            "WHERE season = ? AND game_type = 'regular' AND home_score IS NULL",
+            (season,),
+        )
+        if row and row["week"]:
+            return int(row["week"])
+        row = self.fetchone(
+            "SELECT MAX(CAST(week AS INTEGER)) AS week FROM games "
+            "WHERE season = ? AND game_type = 'regular'",
+            (season,),
+        )
+        if row and row["week"]:
+            return int(row["week"])
         return 1
 
     def upsert_fantasy_projection(self, data: Dict[str, Any]) -> None:

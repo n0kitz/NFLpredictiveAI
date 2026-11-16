@@ -8,11 +8,12 @@ import { CURRENT_SEASON } from '../../config';
 import { posColor } from './helpers';
 import { useLeagueSettings } from './leagueSettings';
 import { PosBadge, Headshot } from './shared';
+import { useFantasyWeek } from './currentWeek';
 
 const SEASON_LONG_SLOTS: Record<string, number> = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1 };
 
 export default function OptimizerTab() {
-  const [week, setWeek]           = useState(1);
+  const [week, setWeek] = useFantasyWeek();
   const [season]                  = useState(CURRENT_SEASON);
   const [{ scoring }]             = useLeagueSettings();
   const [mode, setMode]           = useState<'season' | 'dk' | 'fd'>('season');

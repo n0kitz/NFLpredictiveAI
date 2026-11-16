@@ -42,4 +42,13 @@ describe('History', () => {
     await waitFor(() => expect(screen.getByText('WRONG')).toBeInTheDocument());
     expect(screen.queryByTitle('View game detail')).not.toBeInTheDocument();
   });
+
+  it('marks picks the weekly job saved on its own', async () => {
+    vi.mocked(api.getPredictionHistory).mockResolvedValue(
+      payload([item({ id: 1, source: 'cron' }), item({ id: 2, source: 'manual' })]),
+    );
+    render(<MemoryRouter><History /></MemoryRouter>);
+    await waitFor(() => expect(screen.getAllByText(/CORRECT/).length).toBe(2));
+    expect(screen.getAllByText('auto').length).toBe(1);
+  });
 });

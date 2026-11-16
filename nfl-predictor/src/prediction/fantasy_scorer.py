@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..scraper.player_weekly_importer import normalize_player_name
 from .player_features import (
@@ -294,6 +294,27 @@ class FantasyScorer:
             base_ppr = 0.0
             base_std = 0.0
 
+        # Callers that only know the player (My Team, start/sit, FAAB, trade
+        # ROS) pass no opponent; look it up so they get a matchup -- and a zero
+        # when the team is idle.
+        on_bye = False
+        if opponent_team_id is None:
+            opponent_team_id, on_bye = self._scheduled_opponent(player_id, season, week)
+        if on_bye:
+            return {
+                "player_id": player_id,
+                "full_name": name,
+                "position": pos,
+                "projected_points_ppr": 0.0,
+                "projected_points_std": 0.0,
+                "matchup_score": 1.0,
+                "confidence": "high",
+                "injury_status": None,
+                "weather_impact": False,
+                "opponent_team_id": None,
+                "on_bye": True,
+            }
+
         matchup_score = 1.0
         if opponent_team_id:
             matchup_score = self.calculate_matchup_score(
@@ -344,7 +365,31 @@ class FantasyScorer:
             "confidence": confidence,
             "injury_status": injury_status,
             "weather_impact": weather_impact,
+            "opponent_team_id": opponent_team_id,
+            "on_bye": False,
         }
+
+    def _scheduled_opponent(
+        self, player_id: int, season: int, week: int
+    ) -> Tuple[Optional[int], bool]:
+        """Look up who a player's team faces in `week`: ``(opponent_id, on_bye)``.
+
+        A bye is a week inside the team's loaded schedule with no game. A
+        season with no schedule yet, or a week past the team's last game, is
+        simply unknown -- ``(None, False)`` -- so draft-prep projections for an
+        unscheduled season are not zeroed.
+        """
+        from .schedule_outlook import team_schedule
+
+        team_id = self.db.get_player_team_id(player_id, season)
+        if team_id is None:
+            return None, False
+        schedule = team_schedule(self.db, team_id, season)
+        if not schedule:
+            return None, False
+        if week in schedule:
+            return schedule[week], False
+        return None, 1 <= week <= max(schedule)
 
     # ── Opportunity score ────────────────────────────────────────────────────
 
@@ -537,6 +582,9 @@ class FantasyScorer:
                     else game["home_team_id"]
                 )
 
+            # The week has games but this team isn't in one of them: bye.
+            on_bye = game is None and bool(week_games)
+
             # Base points per game from prefetched stats
             gp = int(p["games_played"] or 0)
             if gp > 0:
@@ -656,6 +704,11 @@ class FantasyScorer:
             floor_ppr, ceiling_ppr = floor_ceiling_from_projection(
                 proj_ppr, bb, model_source
             )
+            if on_bye:
+                # No game, no points -- whatever the season average says.
+                proj_ppr = proj_std = 0.0
+                floor_ppr = ceiling_ppr = 0.0
+                confidence = "high"
             proj: Dict[str, Any] = {
                 "player_id": player_id,
                 "full_name": name,
@@ -680,6 +733,7 @@ class FantasyScorer:
                 "boom_pct": bb.get("boom_pct"),
                 "bust_pct": bb.get("bust_pct"),
                 "bye_week": bye_by_team.get(team_id),
+                "on_bye": on_bye,
             }
 
             self.db.upsert_fantasy_projection(
@@ -1075,6 +1129,8 @@ class FantasyScorer:
         Availability beats everything else; after that the sentence quotes the
         same number the ranking used, so the advice and the maths agree.
         """
+        if proj.get("on_bye"):
+            return "On bye this week - do not start."
         inj = proj.get("injury_status")
         if inj in ("Out", "IR", "PUP"):
             return f"Ruled out ({inj}) - do not start."

@@ -1,4 +1,4 @@
-import '@testing-library/jest-dom';
+import '@testing-library/jest-dom/vitest';
 
 // jsdom in this setup exposes no localStorage; provide an in-memory
 // implementation so persistence code (league settings, draft board) is

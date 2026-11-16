@@ -13,7 +13,7 @@ import re
 import sys
 import difflib
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -28,7 +28,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from src.database.db import Database
-from src.scraper.roster_scraper import RosterScraper, evaluate_roster_import
+from src.scraper.roster_scraper import (
+    RosterScraper,
+    evaluate_roster_import,
+    should_purge_stale,
+)
 from src.scraper.nfl_data_importer import import_player_season_stats
 
 CURRENT_SEASON = (
@@ -172,18 +176,6 @@ def _passer_rating(comp: int, att: int, yds: int, tds: int, ints: int) -> float:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 
-def should_purge_stale(teams_with_players: int, expected_teams: int = 32) -> bool:
-    """Whether it is safe to purge roster entries this run left untouched.
-
-    Only a run that covered every team may purge. evaluate_roster_import()
-    deliberately returns ok=True on partial coverage (it hard-fails only when
-    nothing was upserted), so gating the purge on `import_ok` alone would let a
-    20/32 run delete the twelve missing teams' rosters outright -- turning a
-    transient ESPN hiccup into data loss right before draft night.
-    """
-    return teams_with_players >= expected_teams
-
-
 def main() -> None:
     import argparse
 
@@ -220,7 +212,7 @@ def main() -> None:
 
     players_upserted = 0
     roster_entries_upserted = 0
-    fetched_at = datetime.utcnow().isoformat()
+    fetched_at = datetime.now(timezone.utc).isoformat()
 
     for team_abbr, players in all_rosters.items():
         team = db.find_team(team_abbr)

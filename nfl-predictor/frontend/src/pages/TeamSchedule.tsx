@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../api/client';
+import { useAsync } from '../hooks/useAsync';
 import type { TeamScheduleResponse, TeamScheduleEntry } from '../api/types';
 import TeamLogo from '../components/TeamLogo';
 import Spinner from '../components/Spinner';
@@ -43,22 +44,14 @@ export default function TeamSchedule() {
   const { abbr } = useParams<{ abbr: string }>();
   const navigate = useNavigate();
   const [season, setSeason] = useState(CURRENT_YEAR);
-  const [data, setData] = useState<TeamScheduleResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const teamAbbr = abbr?.toUpperCase() ?? '';
   const colors = getTeamColors(teamAbbr);
 
-  useEffect(() => {
-    if (!abbr) return;
-    setLoading(true);
-    setError(null);
-    api.getTeamSchedule(abbr, season)
-      .then(setData)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [abbr, season]);
+  const { data, loading, error } = useAsync<TeamScheduleResponse>(
+    abbr ? () => api.getTeamSchedule(abbr, season) : null,
+    [abbr, season],
+  );
 
   return (
     <div>

@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS prediction_history (
     game_id INTEGER,  -- nullable, matched after game is played
     actual_winner_id INTEGER,  -- filled in by enrichment
     correct INTEGER,  -- 1/0/null
+    source TEXT DEFAULT 'manual',  -- 'manual' (UI/API) or 'cron' (weekly auto-pick)
     FOREIGN KEY (home_team_id) REFERENCES teams(team_id),
     FOREIGN KEY (away_team_id) REFERENCES teams(team_id),
     FOREIGN KEY (predicted_winner_id) REFERENCES teams(team_id),

@@ -374,6 +374,7 @@ class PredictionHistoryItem(BaseModel):
     actual_winner_abbr: Optional[str] = None
     correct: Optional[bool] = None
     game_id: Optional[int] = None  # linked completed game (set by enrichment)
+    source: str = "manual"  # 'manual' (UI/API) or 'cron' (weekly auto-pick)
 
 
 class PredictionHistoryResponse(BaseModel):
@@ -983,6 +984,10 @@ class HealthResponse(BaseModel):
     last_scrape_ok: Optional[bool] = None
     last_scrape_error: Optional[str] = None
     data_updated_at: Optional[str] = None
+    # How far game results reach — rosters can be fresh while results are not.
+    results_season: Optional[int] = None
+    results_through_week: Optional[int] = None
+    upcoming_week: Optional[int] = None
 
 
 # ── Matchup Engine ─────────────────────────────────────
@@ -993,6 +998,13 @@ class MatchupComponentScores(BaseModel):
     ypp: float
     pace: float
     proe: float
+
+
+class CurrentWeekResponse(BaseModel):
+    """The season and week fantasy advice currently applies to."""
+
+    season: int
+    week: int
 
 
 class MatchupGradeResponse(BaseModel):

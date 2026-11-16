@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
+import { useAsync } from '../../hooks/useAsync';
 import type { DraftRanking } from '../../api/types';
 import Spinner from '../../components/Spinner';
 import BoomBustBadge from '../../components/BoomBustBadge';
@@ -16,20 +17,16 @@ export default function DraftTab() {
   const [settings, setSettings] = useLeagueSettings();
   const [position, setPosition] = useState<PositionFilter>('ALL');
   const [search, setSearch] = useState('');
-  const [rankings, setRankings] = useState<DraftRanking[]>([]);
-  const [loading, setLoading] = useState(false);
   const [mockMode, setMockMode] = useState(false);
   const [drafted, setDrafted] = useState<Set<number>>(new Set());
   const navigate = useNavigate();
   const { scoring, leagueSize } = settings;
 
-  useEffect(() => {
-    setLoading(true);
-    api.getDraftRankings(season, scoring, position === 'ALL' ? 'all' : position, leagueSize)
-      .then(setRankings)
-      .catch(() => setRankings([]))
-      .finally(() => setLoading(false));
-  }, [season, scoring, position, leagueSize]);
+  const { data, loading } = useAsync<DraftRanking[]>(
+    () => api.getDraftRankings(season, scoring, position === 'ALL' ? 'all' : position, leagueSize),
+    [season, scoring, position, leagueSize],
+  );
+  const rankings = data ?? [];
 
   const filtered = rankings.filter((r) => {
     if (mockMode && drafted.has(r.player_id)) return false;
@@ -45,7 +42,6 @@ export default function DraftTab() {
     });
   }
 
-  let lastTier = -1;
 
   return (
     <div className="space-y-4">
@@ -115,9 +111,8 @@ export default function DraftTab() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r) => {
-                const tierSep = r.tier !== lastTier;
-                lastTier = r.tier;
+              {filtered.map((r, i) => {
+                const tierSep = i === 0 || r.tier !== filtered[i - 1].tier;
                 return [
                   tierSep && (
                     <tr key={`tier-${r.tier}`}>

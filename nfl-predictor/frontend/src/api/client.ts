@@ -10,9 +10,10 @@ import type {
   StartSitRank,
   ScheduleOutlook,
   StreamingResult,
+  CurrentWeek,
   FaabResult,
   Team, TeamList, GameList, Prediction, PredictionExplanation,
-  H2H, TeamMetrics, TeamSeasonStats, TeamProfile, HealthStatus,
+  H2H, TeamMetrics, TeamSeasonStats, TeamProfile, HealthResponse,
   AccuracyStats, InlineFactor, PredictionHistory,
   TeamRoster, PlayerProfile, PlayerSearchResult, FantasyLeaderboard,
   FantasyProjection, StartSitResult, DraftRanking, TradeAnalysis,
@@ -51,7 +52,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 // ── Public API ───────────────────────────────────────
 
 export const api = {
-  health: () => get<HealthStatus>('/health'),
+  health: () => get<HealthResponse>('/health'),
 
   // Teams
   getTeams: () => get<TeamList>('/teams'),
@@ -193,6 +194,8 @@ export const api = {
       season,
       weeks,
     }),
+
+  getCurrentWeek: () => get<CurrentWeek>('/fantasy/current-week'),
 
   getStreamingCandidates: (
     position: string,

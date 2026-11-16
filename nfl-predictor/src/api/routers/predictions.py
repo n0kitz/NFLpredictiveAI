@@ -353,6 +353,7 @@ def prediction_history(
                 actual_winner_abbr=d.get("actual_winner_abbr"),
                 correct=bool(d["correct"]) if d["correct"] is not None else None,
                 game_id=d.get("game_id"),
+                source=d.get("source") or "manual",
             )
         )
 

@@ -9,7 +9,7 @@ import atexit
 import fcntl
 import logging
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Ensure project root is on path
@@ -17,26 +17,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from datetime import timedelta
 
-from src.config import settings
+from src.config import current_nfl_season, settings
 from src.database.db import create_database
 from src.scraper.pfr_scraper import PFRScraper
 from src.scraper.schedule_scraper import ScheduleScraper
 from src.scraper.odds_scraper import OddsScraper
 from src.scraper.injury_scraper import InjuryScraper
 from src.scraper.weather_scraper import WeatherScraper
-from src.scraper.roster_scraper import RosterScraper
+from src.scraper.roster_scraper import RosterScraper, should_purge_stale
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-
-def get_current_nfl_season() -> int:
-    """NFL season year: Sept-Dec = current year, Jan-Aug = previous year."""
-    now = datetime.now()
-    return now.year if now.month >= 9 else now.year - 1
 
 
 _LOCK_PATH = Path(__file__).parent.parent / "data" / ".weekly_scrape.lock"
@@ -60,6 +54,58 @@ def _acquire_singleton_lock():
     return fd
 
 
+def core_scrape_failed(espn_games: int, pfr_seasons_ok: int) -> bool:
+    """Whether the run failed at its core job of refreshing game results.
+
+    Either source is enough. ESPN's scoreboard carries schedule and final
+    scores; Pro-Football-Reference sits behind Cloudflare and 403s for weeks at
+    a time, which used to mark every run as failed even though the results had
+    already landed via ESPN.
+    """
+    return espn_games == 0 and pfr_seasons_ok == 0
+
+
+def refresh_rosters(db, rosters: dict, season: int) -> dict:
+    """Store an ESPN roster fetch as a snapshot of `season`.
+
+    Mirrors scripts/import_rosters.py: every entry of the run shares one
+    `fetched_at`, and entries the run did not refresh are purged so a traded
+    player stops appearing on both teams -- but only after full 32-team
+    coverage (see should_purge_stale).
+
+    Returns counts: entries upserted, teams that returned players, rows purged.
+    """
+    fetched_at = datetime.now(timezone.utc).isoformat()
+    entries = 0
+    for team_abbr, players in rosters.items():
+        team = db.get_team_by_abbreviation(team_abbr)
+        if not team:
+            continue
+        for p in players:
+            if not p.get("espn_id") or not p.get("full_name"):
+                continue
+            player_id = db.upsert_player(p)
+            db.upsert_roster_entry(
+                {
+                    "player_id": player_id,
+                    "team_id": team["team_id"],
+                    "season": season,
+                    "depth_position": p.get("depth_position"),
+                    "is_starter": p.get("is_starter", False),
+                    "roster_status": p.get("status", "Active"),
+                    "fetched_at": fetched_at,
+                }
+            )
+            entries += 1
+    db.commit()
+
+    teams = sum(1 for players in rosters.values() if players)
+    purged = 0
+    if entries and should_purge_stale(teams):
+        purged = db.purge_stale_roster_entries(season, fetched_at)
+    return {"entries": entries, "teams": teams, "purged": purged}
+
+
 def main():
     if _acquire_singleton_lock() is None:
         logger.warning(
@@ -68,7 +114,7 @@ def main():
         )
         return
 
-    current_season = get_current_nfl_season()
+    current_season = current_nfl_season()
     start = current_season - 1  # Also refresh prior season for corrections
     end = current_season
 
@@ -81,9 +127,11 @@ def main():
     fatal_errors: list = []
 
     # Step 0: Fetch upcoming schedule from ESPN (fast, no Cloudflare issues)
+    espn_games = 0
     try:
         schedule_scraper = ScheduleScraper(db)
         esp_games = schedule_scraper.fetch_season(current_season)
+        espn_games = len(esp_games)
         esp_ins, esp_skip = schedule_scraper.store_games(esp_games)
         if esp_ins > 0:
             db.calculate_team_season_stats(current_season)
@@ -112,9 +160,12 @@ def main():
             logger.error(f"Error scraping season {season}: {e}")
             fatal_errors.append(f"season {season}: {e}")
 
-    # If every season-scrape attempt failed, the run did not achieve its purpose.
-    if seasons_scraped_ok == 0:
-        fatal_errors.append("no seasons scraped successfully")
+    # Game results come from ESPN or PFR; the run only missed its purpose if
+    # neither delivered.
+    if core_scrape_failed(espn_games, seasons_scraped_ok):
+        fatal_errors.append("no game results from ESPN or PFR")
+    elif seasons_scraped_ok == 0:
+        logger.warning("PFR unavailable — game results came from ESPN only")
 
     # Enrich prediction history with completed game results
     try:
@@ -123,6 +174,24 @@ def main():
             logger.info(f"Enriched {enriched} prediction(s) with game results")
     except Exception as e:
         logger.error(f"Error enriching prediction history: {e}")
+
+    # Save a pick for every game of the upcoming week. Predictions are only
+    # graded by games played afterwards, so this is what feeds /history.
+    try:
+        from src.prediction.engine import PredictionEngine
+        from src.prediction.weekly_picks import save_upcoming_picks
+
+        pick_week = db.get_upcoming_week(current_season)
+        picks = save_upcoming_picks(db, PredictionEngine(db), current_season, pick_week)
+        logger.info(
+            "Weekly picks (week %s): %s saved, %s already present, %s failed",
+            pick_week,
+            picks["saved"],
+            picks["skipped"],
+            picks["failed"],
+        )
+    except Exception as e:
+        logger.error(f"Saving weekly picks failed (non-fatal): {e}")
 
     # Fetch upcoming odds (silently skip if ODDS_API_KEY not set)
     odds_api_key = settings.odds_api_key
@@ -233,30 +302,10 @@ def main():
     try:
         roster_scraper = RosterScraper()
         rosters = roster_scraper.fetch_all_rosters()
-        players_upserted = 0
-        entries_upserted = 0
-        current_season = get_current_nfl_season()
-        for team_abbr, players in rosters.items():
-            team = db.get_team_by_abbreviation(team_abbr)
-            if not team:
-                continue
-            team_id = team["team_id"]
-            for p in players:
-                player_id = db.upsert_player(p)
-                db.upsert_roster_entry(
-                    {
-                        "player_id": player_id,
-                        "team_id": team_id,
-                        "season": current_season,
-                        "depth_position": p.get("depth_position"),
-                        "is_starter": p.get("is_starter", False),
-                        "roster_status": p.get("status", "Active"),
-                    }
-                )
-                players_upserted += 1
-                entries_upserted += 1
+        roster_result = refresh_rosters(db, rosters, current_season)
         logger.info(
-            f"Roster update: {players_upserted} players, {entries_upserted} entries"
+            "Roster update: %(entries)s entries from %(teams)s/32 teams, "
+            "%(purged)s stale purged" % roster_result
         )
     except Exception as e:
         logger.error(f"Roster fetch failed (non-fatal): {e}")
@@ -292,7 +341,7 @@ def main():
     # the weekly job only refreshes data + projections. To retrain, run from the
     # clean venv:  python scripts/train_player_models.py
 
-    # Generate fantasy projections for the current week (uses ML if loaded).
+    # Generate fantasy projections for the upcoming week (uses ML if loaded).
     # Stale rows are deleted first — the projections endpoint serves cached
     # rows, so leftovers from an older server (e.g. heuristic-only) would
     # otherwise mask the fresh run.
@@ -300,7 +349,9 @@ def main():
         from src.prediction.fantasy_scorer import FantasyScorer
 
         scorer = FantasyScorer(db)
-        current_week = db.get_current_week(current_season)
+        # The week still to be played -- the cron runs on Wednesday, when the
+        # most recently completed week is already history.
+        current_week = db.get_upcoming_week(current_season)
         db.execute(
             "DELETE FROM fantasy_projections WHERE season = ? AND week = ?",
             (current_season, current_week),

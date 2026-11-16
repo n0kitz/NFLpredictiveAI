@@ -6,6 +6,7 @@ import type {
 import { ACTIVE_SEASON } from '../../config';
 import { useLeagueSettings } from './leagueSettings';
 import RosterImportHelper from './RosterImportHelper';
+import { useFantasyWeek } from './currentWeek';
 
 interface Props {
   rosterIds: number[];
@@ -27,7 +28,7 @@ async function settle<T>(promise: Promise<T>): Promise<T | null> {
  */
 export default function WeeklyBriefingTab({ rosterIds, onImported }: Props) {
   const [{ scoring, leagueSize }] = useLeagueSettings();
-  const [week, setWeek] = useState(1);
+  const [week, setWeek] = useFantasyWeek();
   const [lineup, setLineup] = useState<LineupAdvice | null>(null);
   const [byeWeekPlayers, setByeWeekPlayers] = useState<PlayerScheduleOutlook[]>([]);
   const [streamPick, setStreamPick] = useState<StreamingCandidate | null>(null);

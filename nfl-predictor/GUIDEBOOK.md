@@ -1,7 +1,7 @@
 # NFL Predictor — Guidebook
 
 > **The canonical answer to four questions: what is this project, what does "as good as it can possibly be" look like, how far along is it, and what do I do next?**
-> Last updated: 2026-08-21 (Phases 1-3 of the fantasy-advice wave all complete: bye/playoff-SOS planner, My Team advisor + N-way start/sit, streaming + FAAB waiver advisor + Weekly Briefing; injury pipeline fully repaired; 10 hardcoded season defaults replaced; 573 backend + 144 frontend tests) · Supersedes `PROJECT_PLAN.md` · Dev setup: `README.md` · Data scraping: `SCRAPING_GUIDE.md` · Agent conventions: `../CLAUDE.md`
+> Last updated: 2026-11-14 (mid-season catch-up, see §7) · previously 2026-08-21 (Phases 1-3 of the fantasy-advice wave all complete: bye/playoff-SOS planner, My Team advisor + N-way start/sit, streaming + FAAB waiver advisor + Weekly Briefing; injury pipeline fully repaired; 10 hardcoded season defaults replaced; 622 backend + 163 frontend tests) · Supersedes `PROJECT_PLAN.md` · Dev setup: `README.md` · Data scraping: `SCRAPING_GUIDE.md` · Agent conventions: `../CLAUDE.md`
 
 ---
 
@@ -73,7 +73,7 @@ Legend: ✅ done · 🟡 partial / needs action · ⬜ open
 | 3.3 | Enrichment live: `ODDS_API_KEY` set + `fetch_odds.py` / `fetch_conditions.py` populating | 🟡 **injuries flowing 2026-08-21** (95 fantasy-relevant rows, all 32 teams resolvable). `game_weather` waits on games inside the 14-day window (season starts 09-10); `game_odds` still needs `ODDS_API_KEY` |
 | 3.4 | A `v*` tag published → GHCR images built by CI (pipeline ✅, first tag ⬜) | 🟡 |
 | 3.5 | CI green on every push: ruff + black + mypy (blocking) + pytest / eslint + tsc + vitest; Docker job on tags | ✅ |
-| 3.6 | Full test suite green: **573 backend + 144 frontend** | ✅ |
+| 3.6 | Full test suite green: **622 backend + 163 frontend** | ✅ |
 | 3.7 | Observability: JSON logs, `X-Request-ID`, `/api/metrics` | ✅ |
 | 3.8 | Data pipeline survives upstream drift (nflverse URL scheme change of 2025 already absorbed; retry/backoff on all scrapers) | ✅ |
 
@@ -108,7 +108,7 @@ This project is calendar-driven. "Done" is not a state, it's a rhythm:
 
 ### Next — in-season quality
 - **Mobile pass** on the fantasy hub + draft board (draft night happens on couches, not desks). First code pass done 2026-07-08 (tables scroll horizontally instead of clipping, dashboards stack on small screens) — still needs a check on a real phone.
-- ~~Flip `black`/`mypy` to blocking~~ ✅ 2026-07-17: backlog cleared (73 files formatted, 55 type errors → 0), both CI steps blocking. Frontend eslint stays non-blocking (react-hooks findings, tracked separately).
+- ~~Flip `black`/`mypy` to blocking~~ ✅ 2026-07-17: backlog cleared (73 files formatted, 55 type errors → 0), both CI steps blocking. Frontend eslint is blocking too since 2026-11-14 (28 react-hooks findings cleared).
 
 ### Next — draft prep
 - **Use the simulator before draft night** (`/draft/sim`): run 100+ drafts from your actual slot and league size to see which strategy wins. Early results from slot 1 favour Hero-RB / Best-Available; slot 10 favours Robust-RB / Late-QB — but re-run it once real ADP is loaded, because that changes the bots' behaviour and makes "Value vs ADP" meaningful.
@@ -159,8 +159,8 @@ python scripts/import_schedule.py          # load the new season's schedule/game
 
 ### Verification (before any "it works" claim)
 ```bash
-python -m pytest -q                         # 573 backend (~15 s in a clean .venv)
-cd frontend && npm run build && npm test    # tsc + 144 vitest
+python -m pytest -q                         # 622 backend (~15 s in a clean .venv)
+cd frontend && npm run build && npm test    # tsc + 163 vitest
 ```
 
 ### Gotchas (the ones that actually bite)
@@ -171,16 +171,29 @@ cd frontend && npm run build && npm test    # tsc + 144 vitest
 - **Projections empty for a season** → that season has no `roster_entries`.
 - **`sqlite3.Row`**: bracket access only, `.get()` doesn't exist.
 - **DST are synthetic players** (`espn_id='DST-{abbr}'`); ESPN kickers arrive as `PK` and are normalized to `K`.
-- **Schema changes** go to `schema.sql` **and** the `MIGRATIONS` list in `db.py` (currently at v25).
+- **Schema changes** go to `schema.sql` **and** the `MIGRATIONS` list in `db.py` (currently at v26).
 - **ADP `teams` is not segmented.** FFC echoes the `teams` parameter but returns identical pooled ADP for 8- and 14-team leagues (verified 2026-08-21). Never present ADP as tuned to league size — VBD is what carries league size.
 
 ---
 
 ## 7. State snapshot — 2026-08-21 (re-verified)
 
+### Update 2026-11-14 — mid-season catch-up (week 10)
+- **The DB was 10 weeks stale**: 0 of 272 season-2026 games had scores, no 2026 weekly stats, rosters from 08-22, `scrape_log` empty — the cron never ran because nothing is deployed (3.1 is still the gap). One manual `python scripts/weekly_scrape.py` caught it up: **137 games scored (wk 1–9 + TNF wk 10)**, 3,593 weekly rows for 2026, 626 season-stat rows, 2,590 roster entries (32/32, 0 duplicates, 833 stale purged), 50 injuries, weather for 31 games, **842 week-10 projections (448 ML / 394 heuristic)**, first `scrape_log` row (success).
+- **Three cron bugs fixed first** (each would have recurred weekly): projections targeted the last *completed* week instead of the upcoming one (`db.get_upcoming_week`); the roster step upserted without the snapshot purge (`refresh_rosters`); a PFR 403 marked every run failed although ESPN had delivered the results (`core_scrape_failed`).
+- **Fantasy week pickers open on the upcoming week** (`GET /api/fantasy/current-week` + `useFantasyWeek`) instead of week 1.
+- **Self-grading was inflated and is repaired.** `prediction_history` graded picks against games played *before* the pick (230 of 231 graded rows → `/history` ~99.6%). Enrichment now binds a pick to the pairing's next meeting on/after `predicted_at`; the 230 retroactive grades were reset. Honest state today: **271 saved, 1 resolved (1 correct)**, 2 more pending a scheduled meeting. Criterion 2.3 holds again, but the ledger only fills from picks saved before kickoff — the cron does not save any yet.
+- **The cron now saves picks for the upcoming week** (`weekly_picks.save_upcoming_picks`, weighted-sum, no factors, deduped per week). First batch saved by hand 2026-11-14: **13 picks for week 10** (the Sunday/Monday games; TNF had already been played). Ledger: 284 saved, 1 resolved — the week-10 picks grade on the next refresh. Without a deployed cron this still needs a manual `weekly_scrape.py` run each week.
+- **Bye-week players projected at full value — fixed.** Week 10 (CHI/DEN/PHI/TB idle) had 101 cached projections for idle teams, top: Caleb Williams 18.4. Worse, My Team, start/sit, FAAB and trade ROS never passed an opponent, so they had neither matchup nor bye. Both paths now zero a bye (`on_bye`) and the single-player path resolves its opponent from the schedule. Week 10 regenerated: 842 rows, the 101 bye rows sum to 0.0, no non-bye value changed.
+- **Ledger hygiene**: `prediction_history.source` (`manual`/`cron`, schema v26); `/history` accuracy counts each game once. 13 cron picks, 271 manual.
+- **Freshness**: `/api/health` reports `results_through_week`/`upcoming_week`; footer shows "Results through Wk X" and flags an overdue weekly run, not only old rosters.
+- **Deps**: frontend refreshed within semver ranges (React 19.3.1, Vite 8.3.8, Tailwind 4.3.5) and **vitest 3 → 5.1** (clears both critical `tinypool` advisories). `npm audit`: 7 moderate left, all `minimatch` via `typescript-eslint` (lint tooling only; the offered "fix" is a downgrade).
+- **ESLint backlog cleared and made blocking**: 28 findings → 0. 23 hand-rolled fetch effects now use `hooks/useAsync.ts`; URL-synced state (`Season`, `Compare`) and the mock draft's opening bot picks no longer set state from effects; `TrendChart` stopped using the calendar year as a season label.
+- Still open: deploy (3.1/3.2), `ODDS_API_KEY` (3.3), PFR access (optional now), dependency refresh (numpy<2 pin holds back scipy/scikit-learn/shap; vitest 3→5 has open advisories).
+
 - **Data**: 9,727 games (1990–2026 — the 2026 schedule is loaded: 272 games, kickoff 2026-09-10, all unplayed) · player weekly stats 2018–2025 incl. K + DST · `player_season_stats` now covers 2018–2025 for offense too (2,146 rows rebuilt from weekly; 2025 previously had **zero** QB/RB/WR/TE rows) · 3,043 roster entries for 2026 (32/32 teams incl. 32 synthetic DST, refreshed 2026-08-22, now snapshot-purged so no player is on two teams) · `game_odds` 0 · `injury_reports` 0 · **`player_adp` 216, 214/214 matched (refreshed 2026-08-21)** · `fantasy_projections` 2026 wk1 regenerated 2026-08-22 after the week-1 fix (1,047 rows, `model_source=heuristic` by design at week 1). `player_weekly_stats` needs the one-time rebuild flagged above.
 - **Models**: game GradientBoosting 34-feat OOS 0.668 (weighted-sum 0.672 remains default; ML opt-in via `?model=ml`) · player models 16-feat, MAE QB 6.48 / RB 5.66 / WR 5.50 / TE 4.26 · K/DST heuristic.
-- **Tests**: 573 backend (39 files) + 144 frontend, all green (~15 s backend).
+- **Tests**: 622 backend (43 files) + 163 frontend, all green (~15 s backend).
 - **Git/CI**: CI green (ruff + black + mypy all clean).
 - **Two data bugs fixed 2026-08-22** (both were live, both under the weekly in-season loop):
   - *Week-1 projections were position constants.* `build_player_feature_vector` reads history only within the requested season, so at week 1 every rolling feature is 0.0 — **in played seasons too** (Bijan 2025 wk1: all zeros) — and the ML model emitted one value per position (four QBs tied at 12.04, backups on top). Now the ML override is skipped when a player has no in-season history and the heuristic answers instead; the heuristic's own base was separately zeroed by a season-pinned join, now falling back to the most recent season at-or-before (leak-free). Board top is real starters again; Jake Haener went 12.04 → 1.44. **If a prior-season fallback is ever added inside the feature builder, the player models must be retrained** — they learned on week-1 rows full of zeros.

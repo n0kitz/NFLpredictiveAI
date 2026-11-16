@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
+import { useAsync } from '../../hooks/useAsync';
 import type { FantasyProjection } from '../../api/types';
 import Spinner from '../../components/Spinner';
 import BoomBustBadge from '../../components/BoomBustBadge';
@@ -12,24 +13,21 @@ import {
 } from './shared';
 import StreamingPanel from './StreamingPanel';
 import FaabPanel from './FaabPanel';
+import { useFantasyWeek } from './currentWeek';
 
 export default function WaiverTab({ excludeIds = [] }: { excludeIds?: number[] }) {
-  const [week, setWeek] = useState(1);
+  const [week, setWeek] = useFantasyWeek();
   const [season] = useState(LAST_COMPLETED_SEASON);
   const [position, setPosition] = useState<PositionFilter>('ALL');
   const [hideBye, setHideBye] = useState(true);
-  const [players, setPlayers] = useState<FantasyProjection[]>([]);
-  const [loading, setLoading] = useState(false);
   const [settings] = useLeagueSettings();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    setLoading(true);
-    api.getWaiverWire(week, season, settings.scoring, position === 'ALL' ? 'all' : position, 30)
-      .then(setPlayers)
-      .catch(() => setPlayers([]))
-      .finally(() => setLoading(false));
-  }, [week, season, position, settings.scoring]);
+  const { data, loading } = useAsync<FantasyProjection[]>(
+    () => api.getWaiverWire(week, season, settings.scoring, position === 'ALL' ? 'all' : position, 30),
+    [week, season, position, settings.scoring],
+  );
+  const players = data ?? [];
 
   const rostered = new Set(excludeIds);
   const visible = players

@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useGameDetail } from '../hooks/useApi';
 import { api } from '../api/client';
+import { useAsync } from '../hooks/useAsync';
 import Spinner from '../components/Spinner';
 import { getTeamColors } from '../theme/teamColors';
 import type { GameBoxScorePlayer, GameDetail, GameOdds, GameRetrodiction } from '../api/types';
@@ -73,20 +73,11 @@ function teamTotals(players: GameBoxScorePlayer[]) {
 }
 
 function RetrodictionCard({ gameId }: { gameId: number }) {
-  const [data, setData] = useState<GameRetrodiction | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    api.getGameRetrodiction(gameId)
-      .then((d) => { if (!cancelled) setData(d); })
-      .catch((e) => { if (!cancelled) setError(e?.message ?? 'Retrodiction unavailable'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [gameId]);
+  const { data, loading, error } = useAsync<GameRetrodiction>(
+    () => api.getGameRetrodiction(gameId),
+    [gameId],
+    'Retrodiction unavailable',
+  );
 
   if (loading) {
     return (

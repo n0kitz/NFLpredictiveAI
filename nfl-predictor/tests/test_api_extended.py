@@ -496,6 +496,14 @@ class TestPredictionGameLink:
             away_prob=0.4,
             confidence="low",
         )
+        # Only a game played after the prediction may grade it — backdate the
+        # pick to just before this pairing's game.
+        db.execute(
+            "UPDATE prediction_history SET predicted_at = "
+            "(SELECT datetime(date, '-1 day') FROM games WHERE game_id = ?) WHERE id = ?",
+            (game["game_id"], pred_id),
+        )
+        db.commit()
         try:
             r = client.post("/api/predictions/enrich")
             assert r.status_code == 200

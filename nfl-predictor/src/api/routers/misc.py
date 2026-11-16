@@ -10,6 +10,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from ..deps import get_db, get_engine
+from ...config import ACTIVE_SEASON
 from ..helpers import row_to_player_entry
 from ..schemas import (
     HealthResponse,
@@ -67,6 +68,13 @@ def health_check(db=Depends(get_db)):
     except Exception:
         pass
 
+    results_through_week = upcoming_week = None
+    try:
+        results_through_week = db.get_results_through_week(ACTIVE_SEASON)
+        upcoming_week = db.get_upcoming_week(ACTIVE_SEASON)
+    except Exception:
+        pass
+
     return HealthResponse(
         status="ok",
         total_teams=teams["count"] if teams else 0,
@@ -76,6 +84,9 @@ def health_check(db=Depends(get_db)):
         last_scrape_ok=bool(scrape_log["success"]) if scrape_log else None,
         last_scrape_error=scrape_log["error_message"] if scrape_log else None,
         data_updated_at=data_updated_at,
+        results_season=ACTIVE_SEASON,
+        results_through_week=results_through_week,
+        upcoming_week=upcoming_week,
     )
 
 

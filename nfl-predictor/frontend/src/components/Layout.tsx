@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import type { PlayerSearchResult } from '../api/types';
+import type { HealthResponse, PlayerSearchResult } from '../api/types';
+import { isDataStale } from './dataFreshness';
 import Ticker from './Ticker';
 import { SEASON_COUNT, SEASON_RANGE_LABEL } from '../config';
 
@@ -108,31 +109,27 @@ function PlayerSearch() {
 
 function useModelStatus() {
   const [online, setOnline] = useState<boolean | null>(null);
-  const [dataUpdatedAt, setDataUpdatedAt] = useState<string | null>(null);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
 
   useEffect(() => {
     api.health()
       .then((h) => {
         setOnline(true);
-        // h may be typed as HealthStatus (old type alias) but now includes data_updated_at
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        setDataUpdatedAt((h as any).data_updated_at ?? null);
+        setHealth(h);
       })
       .catch(() => setOnline(false));
   }, []);
 
-  // Compute staleness
-  const isStale = dataUpdatedAt !== null && (() => {
-    const updated = new Date(dataUpdatedAt).getTime();
-    const now = Date.now();
-    return (now - updated) > 7 * 24 * 60 * 60 * 1000;
-  })();
-
-  return { online, dataUpdatedAt, isStale };
+  return {
+    online,
+    dataUpdatedAt: health?.data_updated_at ?? null,
+    resultsThroughWeek: health?.results_through_week ?? null,
+    isStale: health !== null && isDataStale(health),
+  };
 }
 
 export default function Layout() {
-  const { online: modelOnline, dataUpdatedAt, isStale } = useModelStatus();
+  const { online: modelOnline, dataUpdatedAt, resultsThroughWeek, isStale } = useModelStatus();
   return (
     <div className="min-h-screen flex flex-col">
       {/* Sticky header: TopBar + Ticker */}
@@ -198,6 +195,11 @@ export default function Layout() {
             {isStale && (
               <span className="text-[10px] text-yellow-500 font-semibold uppercase tracking-wider">
                 ⚠ Data may be stale
+              </span>
+            )}
+            {resultsThroughWeek !== null && (
+              <span className="text-[11px] text-text-muted">
+                Results through Wk {resultsThroughWeek}
               </span>
             )}
             {dataUpdatedAt && (

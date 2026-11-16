@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from ..deps import get_db
 from ...config import ACTIVE_SEASON, LAST_COMPLETED_SEASON
 from ..schemas import (
+    CurrentWeekResponse,
     StartSitRankRequest,
     StartSitRankResponse,
     LineupAdviceRequest,
@@ -121,6 +122,14 @@ def get_fantasy_top(
         scoring=scoring,
         players=players,
         count=len(players),
+    )
+
+
+@router.get("/api/fantasy/current-week", response_model=CurrentWeekResponse)
+def get_current_fantasy_week(db=Depends(get_db)):
+    """The week still to be played — what the week pickers should open on."""
+    return CurrentWeekResponse(
+        season=ACTIVE_SEASON, week=db.get_upcoming_week(ACTIVE_SEASON)
     )
 
 

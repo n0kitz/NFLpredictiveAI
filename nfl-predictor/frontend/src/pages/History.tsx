@@ -1,27 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
+import { useAsync } from '../hooks/useAsync';
 import type { PredictionHistory } from '../api/types';
 import Spinner from '../components/Spinner';
 import { getTeamColors } from '../theme/teamColors';
 
 export default function History() {
-  const [data, setData] = useState<PredictionHistory | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const limit = 30;
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    api.getPredictionHistory(limit, page * limit)
-      .then((d) => { if (!cancelled) setData(d); })
-      .catch((err: unknown) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load history'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [page]);
+  const { data, loading, error } = useAsync<PredictionHistory>(
+    () => api.getPredictionHistory(limit, page * limit),
+    [page],
+    'Failed to load history',
+  );
 
   return (
     <div>
@@ -44,7 +36,7 @@ export default function History() {
       {data && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8 animate-fade-up stagger-1">
           <StatCard label="Total Predictions" value={String(data.total)} />
-          <StatCard label="Resolved" value={String(data.resolved)} />
+          <StatCard label="Games Graded" value={String(data.resolved)} />
           <StatCard label="Correct" value={String(data.correct)} color="var(--color-win)" />
           <StatCard
             label="Accuracy"
@@ -78,6 +70,14 @@ export default function History() {
                     <tr key={p.id} className="border-b border-border hover:bg-surface-700/30 transition-colors">
                       <td className="px-4 py-2.5 text-text-muted text-xs tabular-nums whitespace-nowrap">
                         {p.predicted_at.slice(0, 16)}
+                        {p.source === 'cron' && (
+                          <span
+                            title="Saved automatically by the weekly job, before kickoff"
+                            className="ml-2 text-[9px] font-display uppercase tracking-wider text-accent"
+                          >
+                            auto
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-2.5">
                         <span className="text-text-secondary">

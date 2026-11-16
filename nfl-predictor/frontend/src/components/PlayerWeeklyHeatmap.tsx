@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { api } from '../api/client';
+import { useAsync } from '../hooks/useAsync';
 import type { PlayerWeeklyStatsResponse, PlayerWeekCell } from '../api/types';
 import HeatStrip from './HeatStrip';
 import Spinner from './Spinner';
@@ -43,20 +44,11 @@ function tooltip(c: PlayerWeekCell): string {
 
 export default function PlayerWeeklyHeatmap({ playerId, position, defaultSeason }: Props) {
   const [season, setSeason] = useState(defaultSeason ?? SEASON_OPTIONS[1]);
-  const [data, setData] = useState<PlayerWeeklyStatsResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    api.getPlayerWeeklyStats(playerId, season)
-      .then((d) => { if (!cancelled) setData(d); })
-      .catch((e) => { if (!cancelled) setError(e?.message ?? 'Failed to load weekly stats'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [playerId, season]);
+  const { data, loading, error } = useAsync<PlayerWeeklyStatsResponse>(
+    () => api.getPlayerWeeklyStats(playerId, season),
+    [playerId, season],
+    'Failed to load weekly stats',
+  );
 
   if (loading) return <Spinner text="Loading weekly stats…" />;
   if (error) return <div className="text-text-muted text-xs">{error}</div>;
